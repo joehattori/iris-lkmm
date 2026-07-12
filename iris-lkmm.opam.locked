@@ -1,0 +1,21 @@
+opam-version: "2.0"
+name: "iris-lkmm"
+version: "dev"
+synopsis: "Locked development dependencies for iris-lkmm"
+maintainer: "iris-lkmm contributors"
+authors: "iris-lkmm contributors"
+license: "BSD-3-Clause"
+homepage: "https://github.com/iris-lkmm/iris-lkmm"
+bug-reports: "https://github.com/iris-lkmm/iris-lkmm/issues"
+
+depends: [
+  "ocaml" {= "5.2.1"}
+  "dune" {>= "3.8"}
+  "rocq-core" {= "9.1.0"}
+  "rocq-stdlib" {= "9.1.0"}
+  "rocq-stdpp" {= "1.13.0"}
+  "rocq-iris" {= "4.5.0"}
+]
+
+build: [make "all"]
+

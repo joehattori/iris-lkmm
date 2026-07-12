@@ -1,0 +1,13 @@
+/_opam/
+/.coq-native/
+/CoqMakefile
+/CoqMakefile.conf
+*.aux
+*.glob
+*.vo
+*.vos
+*.vok
+*.vio
+*.d
+.lia.cache
+
