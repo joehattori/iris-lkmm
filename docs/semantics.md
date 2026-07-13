@@ -28,12 +28,172 @@ grace-period certificate refers only to sections that have closed.
 sufficient to take the finish transition.  Neither theorem invokes
 `rcu_consistent` or inspects a completed graph.
 
+## Independent graph-chain invariant
+
+The graph kernel also has an operationally useful, nonrecursive
+characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
+are either:
+
+- a grace-period event, with identical start and end and balance `+1`; or
+- an inverse matched critical section, from unlock to lock, with balance
+  `-1`.
+
+Every adjacent pair must be connected by `rcu-link`.  A completed chain is
+accepted when the sum of its atom balances is nonnegative.  This is a final
+balance condition, not a prefix condition: the valid
+`inverse-RSCS ; rcu-link ; GP` chain has balances `[-1, +1]`.
+
+Append composes both the link witnesses and balances.  The mechanized theorem
+`rcu_order_chain_equiv` proves that this invariant recognizes exactly the
+normal-RCU recursive `rcu-order` relation.
+
+## Machine-to-chain refinement
+
+`event_integrity` records that every lock on an open stack, both endpoints
+of every closed section, and every completed GP certificate are backed by
+events emitted by the machine.  `operational_event_integrity` proves this
+for every reachable state.
+
+`graph_of_state` extracts the finite emitted event identifiers, GP labels,
+and matched critical sections.  Its `po`, `hb`, `prop`, and `pb`
+relations are supplied by an explicit `abstract_relations` parameter.
+
+`certificate_covers s cert cs` says that:
+
+- `cert` is a completed GP certificate;
+- `cs` is a completed critical section; and
+- the lock endpoint of `cs` occurred in the GP's immutable begin snapshot.
+
+`completed_run_snapshot_chain_bridge` proves that every captured lock in
+every completed certificate resolves to such a section.  It proves the GP
+and inverse-RSCS atoms valid in the extracted graph and provides both
+implications:
+
+```text
+rcu-link(lock, gp)   -> chain [RSCS(unlock, lock), GP(gp)]
+rcu-link(gp, unlock) -> chain [GP(gp), RSCS(unlock, lock)]
+```
+
+The theorem does not assume or synthesize those links.  Their incremental
+construction is handled by the graph builder below.
+
+## Incremental graph builder
+
+`rcu_builder.v` represents the finite graph as explicit event, base-edge,
+and matched-section lists.  A raw mutation adds exactly one of:
+
+- a fresh labeled event;
+- one `po`, `hb`, `prop`, or `pb` edge; or
+- one matched critical section.
+
+A `link_commitment` records all four intermediate events witnessing
+`po? ; hb* ; pb* ; prop ; po`.  `link_valid_sound` proves that a valid
+commitment denotes `rcu_link`; `link_valid_complete` proves that every
+`rcu_link` has such a record; and `commit_ready_link` permits the commitment
+only after all of its component paths are present.  Graph monotonicity proves
+that an already committed link remains valid as later facts are added.
+
+For a raw mutation, the builder also supplies an `rb` delta satisfying:
+
+```text
+rb(new graph) = seen-rb ∪ delta
+irreflexive(delta)
+```
+
+The transition refers only to the current state, the one-step successor, and
+the delta.  It has no final candidate and no `rcu_consistent` premise.
+`builder_invariant` proves that `seen-rb` is exactly the current graph's `rb`,
+that it is irreflexive, and that all stored link witnesses remain valid.
+Consequently, `completed_builder_run_rb_irreflexive` proves
+`rcu_consistent` for every finite builder run from `initial_builder`.
+
+## Independent candidates and finite scheduling
+
+`finite_candidate` is a declarative record of labeled events, four base-edge
+lists, and matched critical sections.  It contains no operational state,
+delta, transition list, or schedule.  `candidate_well_formed` requires unique
+event identifiers, relation endpoints in the event set, and correctly
+labeled section endpoints.
+
+`candidate_has_raw_schedule` enumerates those finite components one at a
+time.  `lift_safe_raw_schedule` turns that enumeration into builder steps by
+partitioning each successor's `rb` relation into previously seen and new
+pairs.  Monotonicity of `rb` and consistency of the final candidate prove
+that each new delta is locally irreflexive.
+
+The resulting completeness theorem is:
+
+```text
+candidate_well_formed(C) /\ rcu_consistent(candidate_graph(C))
+->
+exists s,
+  builder_run(initial_builder, s) /\
+  graph(s) = candidate_graph(C)
+```
+
+The initial builder is one fixed empty constant and has no field in which a
+candidate or its future choices could be preloaded.  The proof is a
+candidate-directed existence proof, as operational completeness normally is;
+the transition relation itself never receives the final candidate.
+
+## Coupled delayed-commitment execution
+
+`rcu_coupled.v` combines program-machine steps and graph-builder steps as an
+asynchronous product.  A machine step changes only the machine state; a
+builder step changes only the graph state.  A completed execution requires
+the builder's event and matched-section lists to equal the machine's emitted
+events and closed sections.
+
+This makes delayed commitment explicit: execution need not guess its final
+graph initially, and graph facts need not be committed in lockstep with
+instruction execution.  `coupled_operational_soundness` projects any
+completed product run to:
+
+- a run of the minimal program (`minimal_program_graph`);
+- an `rcu_consistent` committed graph;
+- sound GP certificates;
+- emitted-event integrity; and
+- unique, disjoint reader-stack safety.
+
+Conversely, `consistent_program_candidate_is_schedulable` combines any
+machine-compatible, well-formed, RCU-consistent finite candidate with its
+machine run and builder schedule to obtain a completed coupled run.  The
+initial coupled state contains neither that candidate nor its choices.
+
+## Iris reader and grace-period protocol
+
+`rcu_ghost.v` uses three ghost components:
+
+- an authoritative ghost map of open reader IDs, with an exclusive token for
+  each reader;
+- an authoritative GP map whose entries change from an exact pending snapshot
+  to a persistent done certificate; and
+- an authoritative MaxNat epoch with persistent lower bounds.
+
+Reader entry allocates a fresh exclusive map entry; reader exit consumes it
+and deletes the entry.  GP begin registers `dom(open)` as an immutable
+snapshot.  GP completion requires that snapshot to be disjoint from the
+current open domain, updates the registered GP entry to done, advances the
+MaxNat epoch, and returns a persistent certificate.  `rcu_gp_finish_frame`
+proves the update while preserving an arbitrary client resource `R`.
+
+`rcu_machine_safety.v` proves that reachable stacks have globally unique
+reader IDs and are disjoint from completed sections.  Therefore every stored
+machine GP certificate satisfies the exact snapshot/current-open
+disjointness premise used by the Iris rule.
+`completed_machine_gp_reclamation_frame` in `rcu_machine_ghost.v` composes
+the operational theorem and Iris update directly.
+
 ## Deliberate limitations
 
 - Reads and writes emit labels but do not yet choose values or construct
   `rf`, `co`, dependency, `hb`, `prop`, or `pb` edges.
-- The machine's grace-period certificates are not yet proved equivalent to
-  the graph kernel's recursive `rcu_order`.
-- There is no whole-graph operational completeness theorem.
+- The coupled `minimal_program_graph` covers the gate language's emitted
+  events and matched RCU sections.  It is not the future full LKMM-Core
+  `ProgramGraph`, which must also cover values, reads-from, coherence,
+  dependencies, and RMW behavior.
+- The completeness proof uses propositional excluded middle to partition an
+  `rb` relation into old and new pairs.  A reflected finite checker could
+  later replace this classical proof step.
 - Grace-period liveness is out of scope; a pending grace period may remain
   pending forever.

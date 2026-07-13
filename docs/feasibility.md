@@ -2,62 +2,89 @@
 
 ## Verdict
 
-**HOLD: the feasibility gate is not passed.  Do not begin the full language
-or Iris logic yet.**
+**FEASIBLE.  The feasibility gate is passed.**
 
-The experiment found a viable incremental representation of grace-period
-waiting, and no negative result shows that a sound design is impossible.
-However, the required bridge from that representation to the CAT-style
-`rcu-order`/`rb` graph condition is still missing.  Whole-graph
-operational soundness and completeness would currently be claims rather than
-theorems.
+Proceed with the incremental operational architecture, using explicit delayed
+graph commitments.  A pivot to an AxSL-style operational-axiomatic design is
+not required by the normal-RCU prototype.
 
-## Mechanized evidence
+This verdict is about the project architecture in `AGENTS.md`: it establishes
+that the difficult normal-RCU recursion admits an independent constructive
+representation, finite graph consistency can be maintained incrementally,
+consistent program candidates can be scheduled without a final graph in the
+initial state, and completed grace periods support a compositional Iris
+reclamation update.  It is not a claim that the full LKMM model, full
+LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 
-| Gate question | Evidence | Result |
+## Gate results
+
+| Gate question | Mechanized evidence | Result |
 | --- | --- | --- |
-| Can the normal-RCU CAT recursion be represented constructively? | `rcu_law_equivalence` proves equivalence between `rcu_order` and counted `rcu_segment` certificates; `rcu_segment_balance` proves that certificates use at least as many grace periods as critical sections. | **Prototype pass**, but the certificate still mirrors CAT's recursive decomposition and is not yet the machine snapshot law. |
-| Can grace periods be incremental? | `ABeginGp` captures open lock identifiers; `AFinishGp` consumes only that finite snapshot. Later readers do not change it. | **Pass for waiting semantics.** |
-| Does soundness avoid embedding final consistency in every step? | `step` mentions only program counters, stacks, pending snapshots, and closed sections. `operational_soundness` is an invariant proof. | **Pass.** |
-| Is operational soundness proved against the graph kernel? | The current theorem proves certificate closure, not `ProgramGraph /\ rcu_consistent`. | **Fail / open.** |
-| Is finite operational completeness proved without choosing the final graph up front? | `finish_gp_complete` is exact local completeness for a pending GP. There is no theorem for every finite permitted graph. | **Fail / open.** |
-| Does the state support a compositional Iris reclamation rule? | The immutable snapshot suggests a finite family of reader obligations that could be represented by authoritative ghost state. No Iris rule or frame-preserving update is proved. | **Fail / unvalidated.** |
+| Does normal-RCU `rcu-order` admit an independent constructive representation? | `rcu_order_chain_equiv` relates the CAT-style recursion to a nonempty linked list of GP/inverse-RSCS atoms with signed final balance. `obligation_derivation_iff` proves the generic list/counter characterization. | **Pass.** |
+| Can grace-period waiting be represented incrementally? | `ABeginGp` snapshots exactly the currently open nested reader IDs. `AFinishGp` requires exactly those captured IDs to have closed; readers opened later do not mutate the snapshot. | **Pass.** |
+| Do machine snapshots and completed critical sections refine the chain semantics? | `completed_run_snapshot_chain_bridge` resolves every captured ID to a completed matched section and constructs either valid two-atom chain orientation when its graph link is present. | **Pass.** |
+| Can `po?;hb*;pb*;prop;po` links be committed incrementally? | `link_commitment` stores the four intermediate events. `link_valid_sound`/`link_valid_complete` prove exact correspondence with `rcu_link`; `commit_ready_link` and monotonicity make commitments local and persistent under graph extension. | **Pass.** |
+| Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. It checks only delta irreflexivity. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
+| Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
+| Does the result extend to the minimal program machine? | `rcu_coupled.v` defines an interleaving product of machine steps and delayed builder commitments. `coupled_operational_soundness` proves minimal `ProgramGraph`, CAT-style RCU consistency, certificate soundness, event integrity, and stack safety. `consistent_program_candidate_is_schedulable` proves program-scoped completeness. | **Pass.** |
+| Does the operational state support a compositional Iris reclamation rule? | `rcu_ghost.v` gives readers exclusive ghost-map entries, registers immutable GP snapshots, and advances an authoritative MaxNat epoch on completion. `rcu_gp_finish_frame` preserves an arbitrary client frame and returns a persistent done certificate. | **Pass.** |
+| Is the Iris completion premise related to actual completed machine GPs? | `machine_run_stack_safe` proves unique open IDs and disjoint open/closed sections. `completed_run_certificate_enables_iris_finish` derives snapshot/current-open disjointness. `completed_machine_gp_reclamation_frame` composes that fact directly with the framed Iris update. | **Pass.** |
 
-All checked proofs contain no `Admitted`, `admit`, or new axiom.
+## Why the result is non-vacuous
 
-## Why a vacuous soundness proof was rejected
+- Graph extraction does not force `prop`, `rcu_link`, or `rb` to be empty.
+  The builder admits explicit nonempty base relations and stores actual link
+  witnesses.
+- Soundness is an invariant over current facts and new `rb` deltas.  No step
+  receives a final candidate or assumes `rcu_consistent`.
+- Completeness is target-directed at the meta-level, as expected, but the
+  target is absent from `initial_builder` and from `builder_step`.
+- The coupled semantics permits delayed commitments explicitly.  Machine
+  execution can proceed while the graph builder catches up; completion
+  requires exact agreement on emitted events and matched sections.
+- The Iris GP token is registered in an authoritative ghost map.  Completion
+  changes it from pending to a persistent done entry, rather than manufacturing
+  an unrelated certificate.  Reader exit consumes the reader's exclusive
+  token.
 
-The prototype could extract a graph with empty `prop`; then `rcu-link` and
-`rb` would be empty and consistency would be immediate.  That would make
-soundness true by construction while providing no evidence about RCU chains.
-The implementation deliberately does not claim this theorem.
+## Architectural decision
 
-## Required next experiment
+Use the following design for the next phase:
 
-Before reversing the HOLD verdict:
+1. Keep the relational LKMM model independent of Iris.
+2. Let the operational machine emit program events and immutable RCU
+   snapshots.
+3. Let a monotone graph builder commit finite memory relations, RCU links,
+   and `rb` deltas asynchronously.
+4. Define completed executions by agreement between the emitted-event log and
+   committed graph; derive consistency from the builder invariant.
+5. Interpret open reader IDs with exclusive Iris ghost-map tokens, pending GPs
+   with registered snapshot entries, and completed epochs with persistent
+   MaxNat lower bounds.
 
-1. Give an independent chain/obligation semantics for `rcu-order` (rather
-   than a derivation tree with the same constructors), and prove it equivalent
-   to the CAT-style recursion.
-2. Relate machine snapshots and completed critical sections to that chain
-   semantics.
-3. Add incremental commitments for the `po?;hb*;pb*;prop;po` links and prove
-   `rb` irreflexivity for every completed run.
-4. State a declarative finite candidate graph independently of runs and prove
-   that every consistent candidate can be scheduled without selecting all
-   choices in the initial state.
-5. Instantiate snapshot obligations with Iris ghost state and prove the
-   intended reclamation update.
+The prototype therefore supports the intended operational design.  A hybrid
+fallback remains a contingency if later, non-RCU LKMM relations defeat local
+commitment, but normal RCU does not force that pivot.
 
-If step 3 or 4 forces a final-graph oracle, pivot to a hybrid
-operational-axiomatic/AxSL-style design in which local execution is
-operational and memory/RCU link obligations are discharged by a separate
-finite graph judgment.
+## Explicit assumptions and limits
+
+- The CAT/Bell definitions are manually transcribed from Linux v6.18; no
+  verified CAT translation is claimed.
+- `po`, `hb`, `prop`, and `pb` are still the selected abstract graph-kernel
+  relations, not the complete LKMM derivation.
+- Candidate completeness uses propositional excluded middle to partition
+  successor `rb` pairs into old and new pairs.  This is a proof-level choice,
+  not operational state or a final-graph oracle.  A reflected finite checker
+  can later remove the classical dependency.
+- Grace-period liveness remains out of scope.
+- Full WP adequacy, full LKMM operational soundness/completeness, litmus
+  differential testing, and the `percpu_ref` case study are next-phase work,
+  not feasibility-gate requirements.
 
 ## Reproduction
 
 ```sh
-make clean
-make check
-rg -n 'Admitted\.|admit\.|Axiom ' theories
+opam exec -- make clean
+opam exec -- make check
+rg -n 'Admitted\.|admit\.|Abort\.|Axiom ' theories
 ```

@@ -2,5 +2,15 @@
 
 theories/lkmm/prelude.v
 theories/lkmm/rcu_graph.v
+theories/lkmm/rcu_mono.v
+theories/lkmm/rcu_obligations.v
 theories/operational/rcu_machine.v
+theories/operational/rcu_machine_safety.v
+theories/operational/rcu_refinement.v
+theories/operational/rcu_builder.v
+theories/operational/rcu_candidate.v
+theories/operational/rcu_coupled.v
+theories/logic/rcu_ghost.v
+theories/logic/rcu_machine_ghost.v
 theories/examples/rcu_gate.v
+theories/examples/rcu_ghost_gate.v
