@@ -173,7 +173,7 @@ Module RcuMachineSafety.
         * apply Nat.lt_succ_diag_r.
       + rewrite update_neq in Hin; last done.
         eapply Nat.lt_trans; [by eapply Hbelow | apply Nat.lt_succ_diag_r].
-    - unfold begin_gp. simpl. exact Hbelow.
+    - unfold begin_gp. simpl. done.
     - unfold finish_gp. simpl. intros a' l Hin.
       eapply Nat.lt_trans; [by eapply Hbelow | apply Nat.lt_succ_diag_r].
   Qed.
@@ -187,16 +187,16 @@ Module RcuMachineSafety.
     intros Hstacks Hsections Hstep. inversion Hstep; subst.
     - unfold ordinary_emit. simpl. intros cs Hcs.
       destruct (Hsections cs Hcs) as [Hl Hu]. split.
-      + exact (Nat.lt_trans _ _ _ Hl (Nat.lt_succ_diag_r _)).
-      + exact (Nat.lt_trans _ _ _ Hu (Nat.lt_succ_diag_r _)).
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
     - unfold ordinary_emit. simpl. intros cs Hcs.
       destruct (Hsections cs Hcs) as [Hl Hu]. split.
-      + exact (Nat.lt_trans _ _ _ Hl (Nat.lt_succ_diag_r _)).
-      + exact (Nat.lt_trans _ _ _ Hu (Nat.lt_succ_diag_r _)).
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
     - unfold lock_emit. simpl. intros cs Hcs.
       destruct (Hsections cs Hcs) as [Hl Hu]. split.
-      + exact (Nat.lt_trans _ _ _ Hl (Nat.lt_succ_diag_r _)).
-      + exact (Nat.lt_trans _ _ _ Hu (Nat.lt_succ_diag_r _)).
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
     - unfold unlock_emit. simpl. intros cs [Hnew | Hcs].
       + subst cs. simpl. split.
         * eapply Nat.lt_trans.
@@ -204,13 +204,13 @@ Module RcuMachineSafety.
           -- apply Nat.lt_succ_diag_r.
         * apply Nat.lt_succ_diag_r.
       + destruct (Hsections cs Hcs) as [Hl Hu]. split.
-        * exact (Nat.lt_trans _ _ _ Hl (Nat.lt_succ_diag_r _)).
-        * exact (Nat.lt_trans _ _ _ Hu (Nat.lt_succ_diag_r _)).
-    - unfold begin_gp. simpl. exact Hsections.
+        * eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+        * eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+    - unfold begin_gp. simpl. done.
     - unfold finish_gp. simpl. intros cs Hcs.
       destruct (Hsections cs Hcs) as [Hl Hu]. split.
-      + exact (Nat.lt_trans _ _ _ Hl (Nat.lt_succ_diag_r _)).
-      + exact (Nat.lt_trans _ _ _ Hu (Nat.lt_succ_diag_r _)).
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
+      + eapply Nat.lt_trans; [done | apply Nat.lt_succ_diag_r].
   Qed.
 
   Lemma stack_unique_step P agents s act s' :
@@ -237,11 +237,11 @@ Module RcuMachineSafety.
     inversion Hstep; subst; simpl; try done.
     - unfold sections_disjoint_from_stacks, lock_emit. simpl.
       eapply (@pushed_sections_disjoint s.(open_stack)
-        s.(closed_sections) s.(next_id) a); last exact Hdisjoint.
+        s.(closed_sections) s.(next_id) a); last done.
       intros cs Hcs. by destruct (Hsections cs Hcs).
     - unfold sections_disjoint_from_stacks, unlock_emit. simpl.
       eapply (@popped_sections_disjoint s.(open_stack)
-        s.(closed_sections) a l rest s.(next_id)); eauto.
+        s.(closed_sections) a l rest s.(next_id)); done.
   Qed.
 
   Lemma machine_stack_safe_step P agents s act s' :
@@ -278,9 +278,8 @@ Module RcuMachineSafety.
     RcuMachine.run P agents s1 actions s2 ->
     machine_stack_safe s2.
   Proof.
-    intros Hsafe Hrun. induction Hrun.
-    - done.
-    - apply IHHrun. by eapply machine_stack_safe_step.
+    intros Hsafe Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply machine_stack_safe_step.
   Qed.
 
   Theorem machine_run_stack_safe P agents actions s :
@@ -303,7 +302,7 @@ Module RcuMachineSafety.
   Proof.
     unfold open_map_from_locks, lock_set. rewrite dom_list_to_map_L.
     induction locks as [|l locks IH]; simpl; first done.
-    f_equal. exact IH.
+    f_equal. done.
   Qed.
 
   Lemma completed_snapshot_disjoint_from_open agents s captured :
@@ -318,7 +317,7 @@ Module RcuMachineSafety.
     destruct (Hclosed l Hcaptured) as (cs & Hcs & Hlock).
     unfold snapshot in Hopen. apply in_flat_map in Hopen.
     destruct Hopen as (a & _ & Hstack).
-    exact (Hdisjoint a l cs Hstack Hcs Hlock).
+    by apply (Hdisjoint a l cs).
   Qed.
 
   Theorem completed_run_certificate_snapshot_clear
@@ -332,7 +331,7 @@ Module RcuMachineSafety.
     - by eapply machine_run_stack_safe.
     - pose proof (RcuMachine.operational_soundness P agents actions s Hrun)
         as Hsound.
-      exact (Hsound cert Hcert).
+      by apply (Hsound cert).
   Qed.
 
   Theorem completed_run_certificate_enables_iris_finish

@@ -116,9 +116,7 @@ Module RcuGraph.
 
   Lemma rcu_segment_sound G x y ng nc :
     rcu_segment G x y ng nc -> rcu_order G x y.
-  Proof.
-    induction 1; eauto using rcu_order.
-  Qed.
+  Proof. induction 1; by econstructor. Qed.
 
   Lemma rcu_order_complete G x y :
     rcu_order G x y ->
@@ -129,12 +127,12 @@ Module RcuGraph.
     - exists 1, 1. by econstructor.
     - exists 1, 1. by econstructor.
     - destruct IHrcu_order as (ng & nc & Hseg).
-      exists (S ng), (S nc). by econstructor; eauto.
+      exists (S ng), (S nc). by econstructor.
     - destruct IHrcu_order as (ng & nc & Hseg).
-      exists (S ng), (S nc). by econstructor; eauto.
+      exists (S ng), (S nc). by econstructor.
     - destruct IHrcu_order1 as (ng1 & nc1 & Hseg1).
       destruct IHrcu_order2 as (ng2 & nc2 & Hseg2).
-      exists (ng1 + ng2), (nc1 + nc2). by econstructor; eauto.
+      exists (ng1 + ng2), (nc1 + nc2). by econstructor.
   Qed.
 
   Theorem rcu_law_equivalence G x y :

@@ -77,11 +77,11 @@ Module RcuObligations.
           (pre & a & post & -> & Ha & Hpre).
         exists (x :: pre), a, post. cbn [obligation_balance].
         rewrite Hx. cbn.
-        split; first done. split; first done.
+        repeat split; try done.
         change (q + (1 + obligation_balance pre) = 0).
         replace (q + (1 + obligation_balance pre))
           with (q + 1 + obligation_balance pre) by ring.
-        exact Hpre.
+        done.
       - intros Hq Hneg.
         destruct (Z.eq_dec q 0) as [-> | Hq0].
         + exists [], x, xs. cbn [obligation_balance].
@@ -97,7 +97,7 @@ Module RcuObligations.
             (pre & a & post & -> & Ha & Hpre).
           exists (x :: pre), a, post. cbn [obligation_balance].
           rewrite Hx. cbn.
-          split; first done. split; first done.
+          repeat split; try done.
           change (q + (-1 + obligation_balance pre) = 0).
           replace (q + (-1 + obligation_balance pre))
             with (q - 1 + obligation_balance pre) by ring.
@@ -130,7 +130,7 @@ Module RcuObligations.
             (pre & a & post & -> & Ha & Hpre).
           exists (x :: pre), a, post. cbn [obligation_balance].
           rewrite Hx. cbn.
-          split; first done. split; first done.
+          repeat split; try done.
           change (- q + (1 + obligation_balance pre) = 0).
           replace (- q + (1 + obligation_balance pre))
             with (- (q - 1) + obligation_balance pre) by ring.
@@ -147,7 +147,7 @@ Module RcuObligations.
           (pre & a & post & -> & Ha & Hpre).
         exists (x :: pre), a, post. cbn [obligation_balance].
         rewrite Hx. cbn.
-        split; first done. split; first done.
+        repeat split; try done.
         change (- q + (-1 + obligation_balance pre) = 0).
         replace (- q + (-1 + obligation_balance pre))
           with (- (q + 1) + obligation_balance pre) by ring.
@@ -254,11 +254,10 @@ Module RcuObligations.
             as [Htail | Htail].
           * eapply OD_join with (xs := [a]) (ys := t :: tail).
             -- by apply OD_gp.
-            -- apply IH.
-               ++ exact ((proj2
-                    (Nat.succ_le_mono (length (t :: tail)) n)) Hlen).
+            -- apply IH; last done.
+               ++ by apply (proj2
+                    (Nat.succ_le_mono (length (t :: tail)) n)).
                ++ discriminate.
-               ++ done.
           * change (0 <=
               match kind a with
               | KGP => 1 + obligation_balance (t :: tail)
@@ -279,25 +278,25 @@ Module RcuObligations.
               change (obligation_balance pre = 0) in Hpre.
               lia. }
             assert (Htaillen : (length (t :: tail) <= n)%nat).
-            { exact ((proj2
-                (Nat.succ_le_mono (length (t :: tail)) n)) Hlen). }
+            { by apply (proj2
+                (Nat.succ_le_mono (length (t :: tail)) n)). }
             rewrite Hsplit, length_app in Htaillen. simpl in Htaillen.
             assert (Hprelen : (length pre <= n)%nat) by lia.
             assert (Hpostlen : (length post <= n)%nat) by lia.
             assert (Hblock : obligation_derivation (a :: pre ++ [b])).
             { destruct pre as [|p pre].
               - simpl. by apply OD_gp_rscs.
-              - apply OD_gp_inner_rscs; [done | | done].
-                apply IH; [done | discriminate | lia]. }
+              - apply OD_gp_inner_rscs; try done.
+                apply IH; try done. lia. }
             rewrite Hsplit.
             replace (a :: pre ++ b :: post)
               with ((a :: pre ++ [b]) ++ post).
             2: { rewrite <- app_comm_cons. f_equal.
                  exact (eq_sym (app_assoc pre [b] post)). }
             destruct post as [|p post].
-            { rewrite app_nil_r. exact Hblock. }
+            { by rewrite app_nil_r. }
             apply OD_join; first done.
-            apply IH; [done | discriminate | lia].
+            apply IH; try done. lia.
         + change (0 <=
             match kind a with
             | KGP => 1 + obligation_balance tail
@@ -318,24 +317,24 @@ Module RcuObligations.
             change (obligation_balance pre = 0) in Hpre.
             lia. }
           assert (Htaillen : (length tail <= n)%nat).
-          { exact ((proj2 (Nat.succ_le_mono (length tail) n)) Hlen). }
+          { by apply (proj2 (Nat.succ_le_mono (length tail) n)). }
           rewrite Hsplit, length_app in Htaillen. simpl in Htaillen.
           assert (Hprelen : (length pre <= n)%nat) by lia.
           assert (Hpostlen : (length post <= n)%nat) by lia.
           assert (Hblock : obligation_derivation (a :: pre ++ [b])).
           { destruct pre as [|p pre].
             - simpl. by apply OD_rscs_gp.
-            - apply OD_rscs_inner_gp; [done | | done].
-              apply IH; [done | discriminate | lia]. }
+            - apply OD_rscs_inner_gp; try done.
+              apply IH; try done. lia. }
           rewrite Hsplit.
           replace (a :: pre ++ b :: post)
             with ((a :: pre ++ [b]) ++ post).
           2: { rewrite <- app_comm_cons. f_equal.
                exact (eq_sym (app_assoc pre [b] post)). }
           destruct post as [|p post].
-          { rewrite app_nil_r. exact Hblock. }
+          { by rewrite app_nil_r. }
           apply OD_join; first done.
-          apply IH; [done | discriminate | done].
+          apply IH; done.
     Qed.
 
     Theorem obligation_derivation_iff xs :
@@ -347,7 +346,8 @@ Module RcuObligations.
         + by apply obligation_derivation_nonempty.
         + by apply obligation_derivation_sound.
       - intros [Hne Hbal].
-        eapply obligation_derivation_complete_bounded; eauto.
+        apply (obligation_derivation_complete_bounded (length xs) xs);
+          done.
     Qed.
   End GenericObligations.
 
@@ -414,11 +414,10 @@ Module RcuObligations.
     induction Hchain as
       [first Hfirst
       | first rest rx ry Hfirst Hrest IH Hfirstlink].
-    - simpl. eapply Linked_cons with (x := atom_start last).
-      + done.
-      + by apply Linked_one.
-      + done.
-    - simpl. eapply Linked_cons; eauto.
+    - simpl. eapply Linked_cons with (x := atom_start last); try done.
+      by apply Linked_one.
+    - simpl. eapply Linked_cons; try done.
+      by apply IH.
   Qed.
 
   Lemma linked_chain_join G left right x y z w :
@@ -431,8 +430,9 @@ Module RcuObligations.
     induction Hleft as
       [first Hfirst
       | first rest rx ry Hfirst Hrest IH Hfirstlink].
-    - simpl. eapply Linked_cons with (x := z); eauto.
-    - simpl. eapply Linked_cons with (x := rx); eauto.
+    - simpl. eapply Linked_cons with (x := z); done.
+    - simpl. eapply Linked_cons with (x := rx); try done.
+      by apply IH.
   Qed.
 
   Lemma linked_chain_one_inv G a x y :
@@ -452,7 +452,8 @@ Module RcuObligations.
   Proof.
     intros Hne Hchain. inversion Hchain; subst.
     - exfalso. by apply Hne.
-    - repeat split; eauto.
+    - repeat split; try done.
+      eexists. split; eassumption.
   Qed.
 
   Lemma linked_chain_app_inv G left right x y :
@@ -499,7 +500,7 @@ Module RcuObligations.
       as (m & n & Hpre & Hlast & Hlink).
     destruct (linked_chain_one_inv G last n y Hlast)
       as (Hvalid & -> & ->).
-    eauto.
+    exists m. repeat split; done.
   Qed.
 
   Lemma rcu_order_chain_sound G x y :
@@ -510,23 +511,17 @@ Module RcuObligations.
       + by constructor.
       + cbn [chain_balance obligation_balance atom_kind_of]. lia.
     - exists [AtomGp g; AtomRscs u l]. split.
-      + eapply Linked_cons with (x := u).
-        * done.
-        * by apply Linked_one.
-        * done.
+      + eapply Linked_cons with (x := u); try done.
+        by apply Linked_one.
       + cbn [chain_balance obligation_balance atom_kind_of]. lia.
     - exists [AtomRscs u l; AtomGp g]. split.
-      + eapply Linked_cons with (x := g).
-        * done.
-        * by apply Linked_one.
-        * done.
+      + eapply Linked_cons with (x := g); try done.
+        by apply Linked_one.
       + cbn [chain_balance obligation_balance atom_kind_of]. lia.
     - destruct IHHorder as (atoms & Hchain & Hbal).
       exists ((AtomGp g :: atoms) ++ [AtomRscs u l]). split.
-      + eapply linked_chain_append.
-        * by eapply linked_chain_prepend.
-        * done.
-        * done.
+      + eapply linked_chain_append; try done.
+        by eapply linked_chain_prepend.
       + unfold chain_balance.
         unfold chain_balance in Hbal.
         rewrite obligation_balance_app.
@@ -535,10 +530,8 @@ Module RcuObligations.
         lia.
     - destruct IHHorder as (atoms & Hchain & Hbal).
       exists ((AtomRscs u l :: atoms) ++ [AtomGp g]). split.
-      + eapply linked_chain_append.
-        * by eapply linked_chain_prepend.
-        * done.
-        * done.
+      + eapply linked_chain_append; try done.
+        by eapply linked_chain_prepend.
       + unfold chain_balance.
         unfold chain_balance in Hbal.
         rewrite obligation_balance_app.
@@ -594,7 +587,7 @@ Module RcuObligations.
     - destruct a as [g | u1 l1]; cbn in Ha; try discriminate.
       destruct b as [g2 | u l]; cbn in Hb; try discriminate.
       assert (Hinnerne : inner <> []).
-      { exact (obligation_derivation_nonempty atom_kind_of inner Hinner). }
+      { by apply (obligation_derivation_nonempty atom_kind_of inner Hinner). }
       assert (Hprefixne : AtomGp g :: inner <> []) by discriminate.
       change (linked_chain G ((AtomGp g :: inner) ++ [AtomRscs u l])
           x y) in Hchain.
@@ -605,11 +598,13 @@ Module RcuObligations.
           Hinnerne Hprefix)
         as (Hgp & -> & z & Hinnerchain & Hfirstlink).
       cbn in Hgp, Hcs, Hfirstlink, Hlastlink.
-      eapply RO_gp_inner_rscs; eauto.
+      eapply RO_gp_inner_rscs with (x := z) (y := m) (u := u);
+        try done.
+      by apply IH.
     - destruct a as [g1 | u l]; cbn in Ha; try discriminate.
       destruct b as [g | u2 l2]; cbn in Hb; try discriminate.
       assert (Hinnerne : inner <> []).
-      { exact (obligation_derivation_nonempty atom_kind_of inner Hinner). }
+      { by apply (obligation_derivation_nonempty atom_kind_of inner Hinner). }
       assert (Hprefixne : AtomRscs u l :: inner <> []) by discriminate.
       change (linked_chain G ((AtomRscs u l :: inner) ++ [AtomGp g])
           x y) in Hchain.
@@ -620,15 +615,17 @@ Module RcuObligations.
           Hinnerne Hprefix)
         as (Hcs & -> & z & Hinnerchain & Hfirstlink).
       cbn in Hgp, Hcs, Hfirstlink, Hlastlink.
-      eapply RO_rscs_inner_gp; eauto.
+      eapply RO_rscs_inner_gp with (l := l) (x := z) (y := m);
+        try done.
+      by apply IH.
     - assert (Hleftne : left <> []).
-      { exact (obligation_derivation_nonempty atom_kind_of left Hleft). }
+      { by apply (obligation_derivation_nonempty atom_kind_of left Hleft). }
       assert (Hrightne : right <> []).
-      { exact (obligation_derivation_nonempty atom_kind_of right Hright). }
+      { by apply (obligation_derivation_nonempty atom_kind_of right Hright). }
       destruct (linked_chain_app_inv G left right x y
           Hleftne Hrightne Hchain)
         as (m & n & Hleftchain & Hrightchain & Hlink).
-      by eapply RO_join; eauto.
+      eapply RO_join; [by apply IHleft | done | by apply IHright].
   Qed.
 
   Lemma rcu_chain_order_complete G x y :
@@ -637,9 +634,8 @@ Module RcuObligations.
     intros (atoms & Hchain & Hbalance).
     apply (obligation_derivation_linked_order G atoms x y); last done.
     apply (proj2 (obligation_derivation_iff atom_kind_of atoms)).
-    split.
-    - by eapply linked_chain_nonempty.
-    - done.
+    split; last done.
+    by eapply linked_chain_nonempty.
   Qed.
 
   Lemma rcu_chain_order_join G x y z w :

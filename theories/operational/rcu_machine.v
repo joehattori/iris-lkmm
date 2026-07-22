@@ -181,9 +181,8 @@ Module RcuMachine.
     run P agents s1 actions s2 ->
     certificates_sound s2.
   Proof.
-    intros Hsound Hrun. induction Hrun.
-    - done.
-    - apply IHHrun. eapply certificates_sound_step; eauto.
+    intros Hsound Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply certificates_sound_step.
   Qed.
 
   Theorem operational_soundness P agents actions s :

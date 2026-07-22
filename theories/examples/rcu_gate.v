@@ -54,7 +54,7 @@ Module RcuGateExamples.
     certificates_sound s5.
   Proof.
     eapply operational_soundness.
-    exact one_reader_one_gp.
+    apply one_reader_one_gp.
   Qed.
 
   Definition permissive_relations : abstract_relations :=
@@ -87,8 +87,8 @@ Module RcuGateExamples.
     eapply covered_rscs_gp_chain with
       (cert := reader_cert) (cs := reader_cs).
     - eapply operational_event_integrity.
-      exact one_reader_one_gp.
-    - exact one_reader_certificate_covers_section.
+      apply one_reader_one_gp.
+    - apply one_reader_certificate_covers_section.
     - apply permissive_link.
   Qed.
 
@@ -124,8 +124,8 @@ Module RcuGateExamples.
       exists 2, 1. split; last lia.
       eapply RS_join with (y := l) (z := g2)
         (ng1 := 1) (nc1 := 1) (ng2 := 1) (nc2 := 0).
-      - eapply RS_gp_rscs with (u := u); eauto.
-      - exact Hlink2.
+      - eapply RS_gp_rscs with (u := u); done.
+      - done.
       - by apply RS_gp.
     Qed.
 
@@ -141,10 +141,8 @@ Module RcuGateExamples.
       rcu_chain_order G u g2.
     Proof.
       exists [AtomRscs u l; AtomGp g2]. split.
-      - eapply Linked_cons with (x := g2).
-        + done.
-        + by apply Linked_one.
-        + done.
+      - eapply Linked_cons with (x := g2); try done.
+        by apply Linked_one.
       - change (0 <= (0 : Z))%Z. lia.
     Qed.
 
@@ -152,7 +150,7 @@ Module RcuGateExamples.
       rcu_order G u g2.
     Proof.
       apply (proj2 (rcu_order_chain_equiv G u g2)).
-      exact rscs_first_is_an_obligation_chain.
+      apply rscs_first_is_an_obligation_chain.
     Qed.
   End RecursiveKernel.
 
@@ -183,7 +181,7 @@ Module RcuGateExamples.
     rcu_link (graph_of_raw link_raw) 0 2.
   Proof.
     apply (link_valid_sound _ link_witness).
-    exact incremental_link_witness_is_valid.
+    apply incremental_link_witness_is_valid.
   Qed.
 
   Definition empty_candidate : finite_candidate :=
@@ -214,8 +212,8 @@ Module RcuGateExamples.
       graph_of_raw (bs_raw s) = candidate_graph empty_candidate.
   Proof.
     apply consistent_candidate_is_incrementally_schedulable.
-    - exact empty_candidate_well_formed.
-    - exact empty_candidate_consistent.
+    - apply empty_candidate_well_formed.
+    - apply empty_candidate_consistent.
   Qed.
 
   Definition one_reader_candidate : finite_candidate :=
@@ -259,10 +257,10 @@ Module RcuGateExamples.
     consistent_program_candidate one_reader_program agents
       one_reader_candidate.
   Proof.
-    split; first exact one_reader_candidate_well_formed.
-    split; first exact one_reader_candidate_consistent.
+    split; first apply one_reader_candidate_well_formed.
+    split; first apply one_reader_candidate_consistent.
     exists [ALock 0; ABeginGp 1; ARead 0; AUnlock 0; AFinishGp 1], s5.
-    split; [exact one_reader_one_gp | exact one_reader_candidate_matches_machine].
+    split; [apply one_reader_one_gp | apply one_reader_candidate_matches_machine].
   Qed.
 
   Example one_reader_candidate_has_completed_coupled_run :
@@ -272,7 +270,7 @@ Module RcuGateExamples.
       bs_raw s.(coupled_builder) = candidate_raw one_reader_candidate.
   Proof.
     apply consistent_program_candidate_is_schedulable.
-    exact one_reader_program_candidate.
+    apply one_reader_program_candidate.
   Qed.
 
 End RcuGateExamples.

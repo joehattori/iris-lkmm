@@ -99,9 +99,9 @@ Module RcuBuilder.
   Lemma raw_run_trans r1 r2 r3 :
     raw_run r1 r2 -> raw_run r2 r3 -> raw_run r1 r3.
   Proof.
-    intros H12 H23. induction H12.
+    intros H12 H23. induction H12 as [r | a b c Hstep Hrun IH].
     - done.
-    - econstructor; eauto.
+    - econstructor; [done | by apply IH].
   Qed.
 
   Lemma lookup_label_fresh ev evs e :
@@ -122,62 +122,33 @@ Module RcuBuilder.
   Lemma raw_step_graph_le r r' :
     raw_step r r' -> graph_le (graph_of_raw r) (graph_of_raw r').
   Proof.
-    intros Hstep. inversion Hstep; subst; constructor; simpl.
-    - intros e Hin. by right.
-    - intros e [Hin Hlab]. split; first by right.
-      change (lookup_label (ev :: raw_events r) e = LSyncRcu).
-      rewrite lookup_label_fresh; first done.
-      by eapply old_id_neq_fresh.
-    - intros e [Hin Hlab]. split; first by right.
-      change (lookup_label (ev :: raw_events r) e = LRead \/
-        lookup_label (ev :: raw_events r) e = LWrite).
-      rewrite lookup_label_fresh; first done.
-      by eapply old_id_neq_fresh.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
-    - firstorder.
+    intros Hstep. destruct Hstep.
+    - constructor; simpl.
+      + intros old Hold. by right.
+      + intros old [Hin Hlabel]. split; first by right.
+        change (lookup_label (ev :: r.(raw_events)) old = LSyncRcu).
+        rewrite lookup_label_fresh; first done.
+        by eapply old_id_neq_fresh.
+      + intros old [Hin Hlabel]. split; first by right.
+        change (lookup_label (ev :: r.(raw_events)) old = LRead \/
+          lookup_label (ev :: r.(raw_events)) old = LWrite).
+        rewrite lookup_label_fresh; first done.
+        by eapply old_id_neq_fresh.
+      + unfold rel_included, edge_rel. intros x y Hxy. done.
+      + unfold rel_included, edge_rel. intros x y Hxy. done.
+      + unfold rel_included, edge_rel. intros x y Hxy. done.
+      + unfold rel_included, edge_rel. intros x y Hxy. done.
+      + intros cs Hcs. done.
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption].
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption].
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption].
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption].
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption].
   Qed.
 
   Lemma raw_run_graph_le r r' :
@@ -227,9 +198,9 @@ Module RcuBuilder.
   Proof.
     intros GH (Hpo & Hhb & Hpb & Hprop & Hlast).
     repeat split.
-    - by eapply optional_mono; eauto using graph_le_po.
-    - by eapply rtc_mono; eauto using graph_le_hb.
-    - by eapply rtc_mono; eauto using graph_le_pb.
+    - eapply optional_mono; [by eapply graph_le_po | done].
+    - eapply rtc_mono; [by eapply graph_le_hb | done].
+    - eapply rtc_mono; [by eapply graph_le_pb | done].
     - by eapply graph_le_prop.
     - by eapply graph_le_po.
   Qed.
@@ -290,7 +261,7 @@ Module RcuBuilder.
     split.
     - intros x y. split; [contradiction | by intros H; exfalso; eapply empty_raw_has_no_rb].
     - split.
-      + intros e Hfalse. exact Hfalse.
+      + intros e Hfalse. done.
       + intros k Hin. inversion Hin.
   Qed.
 
@@ -307,13 +278,13 @@ Module RcuBuilder.
       + intros x y. symmetry. by apply Hdelta.
       + split.
         * intros e [Hold | Hnew].
-          -- exact (Hsafe e Hold).
-          -- exact (Hlocal e Hnew).
+          -- by apply (Hsafe e).
+          -- by apply (Hlocal e).
         * intros k Hin. eapply link_valid_mono.
           -- by eapply raw_step_graph_le.
           -- by apply Hlinks.
-    - split; first exact Hexact.
-      split; first exact Hsafe.
+    - split; first done.
+      split; first done.
       intros k' [-> | Hin]; [done | by apply Hlinks].
   Qed.
 

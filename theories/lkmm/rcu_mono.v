@@ -22,7 +22,7 @@ Module RcuMono.
   }.
 
   Lemma graph_le_refl G : graph_le G G.
-  Proof. constructor; firstorder. Qed.
+  Proof. constructor; try unfold rel_included; intros; done. Qed.
 
   Lemma graph_le_trans G H K :
     graph_le G H -> graph_le H K -> graph_le G K.
@@ -60,7 +60,8 @@ Module RcuMono.
     rel_included (rcu_rscsi G) (rcu_rscsi H).
   Proof.
     intros GH u l (cs & Hcs & Hu & Hl).
-    exists cs. repeat split; eauto using graph_le_sections.
+    exists cs. split; first by eapply graph_le_sections.
+    split; done.
   Qed.
 
   Lemma rcu_link_mono G H :
@@ -69,9 +70,9 @@ Module RcuMono.
   Proof.
     intros GH x y (a & b & c & d & Hpo & Hhb & Hpb & Hprop & Hlast).
     exists a, b, c, d. repeat split.
-    - by eapply optional_mono; eauto using graph_le_po.
-    - by eapply rtc_mono; eauto using graph_le_hb.
-    - by eapply rtc_mono; eauto using graph_le_pb.
+    - eapply optional_mono; [by eapply graph_le_po | done].
+    - eapply rtc_mono; [by eapply graph_le_hb | done].
+    - eapply rtc_mono; [by eapply graph_le_pb | done].
     - by eapply graph_le_prop.
     - by eapply graph_le_po.
   Qed.
@@ -103,7 +104,7 @@ Module RcuMono.
       + done.
       + by eapply rcu_link_mono.
       + by eapply graph_le_gp.
-    - eapply RO_join; [done | | done].
+    - eapply RO_join; try done.
       by eapply rcu_link_mono.
   Qed.
 
@@ -115,7 +116,7 @@ Module RcuMono.
     exists a, b. repeat split.
     - by eapply graph_le_po.
     - by eapply rcu_order_mono.
-    - by eapply optional_mono; eauto using graph_le_po.
+    - eapply optional_mono; [by eapply graph_le_po | done].
   Qed.
 
   Lemma rb_mono G H :
@@ -129,9 +130,9 @@ Module RcuMono.
     - split.
       + by eapply rcu_fence_mono.
       + split.
-        * by eapply rtc_mono; eauto using graph_le_hb.
+        * eapply rtc_mono; [by eapply graph_le_hb | done].
         * split.
-          -- by eapply rtc_mono; eauto using graph_le_pb.
+          -- eapply rtc_mono; [by eapply graph_le_pb | done].
           -- split; [done | by eapply graph_le_marked].
   Qed.
 

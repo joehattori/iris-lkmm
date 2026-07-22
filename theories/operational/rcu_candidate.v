@@ -178,10 +178,9 @@ Module RcuCandidate.
       destruct (classic (rb (graph_of_raw old) x y)) as [Hold | Hnot].
       + left. by apply Hexact.
       + right. by split.
-    - intros [Hseen | (Hnew & _)].
-      + eapply rb_mono; first exact Hle.
-        by apply Hexact.
-      + done.
+    - intros [Hseen | (Hnew & _)]; last done.
+      eapply rb_mono; first done.
+      by apply Hexact.
   Qed.
 
   Lemma rb_difference_locally_safe old new final :
@@ -191,16 +190,16 @@ Module RcuCandidate.
   Proof.
     intros Hsuffix Hconsistent e (Hnew & _).
     apply (Hconsistent e).
-    eapply rb_mono; last exact Hnew.
+    eapply rb_mono; last done.
     by eapply raw_run_graph_le.
   Qed.
 
   Lemma builder_run_trans s1 s2 s3 :
     builder_run s1 s2 -> builder_run s2 s3 -> builder_run s1 s3.
   Proof.
-    intros H12 H23. induction H12.
-    - done.
-    - econstructor; eauto.
+    intros H12 H23. induction H12 as
+      [s | a b c Hstep Hrun IH]; first done.
+    econstructor; [done | by apply IH].
   Qed.
 
   Lemma lift_safe_raw_schedule r final s :
@@ -219,27 +218,26 @@ Module RcuCandidate.
       [r | r r' final Hstep Hsuffix IH];
       intros s Hraw Hinv Hconsistent.
     - exists s. split; first constructor.
-      split; [exact Hraw | exact Hinv].
+      split; done.
     - destruct s as [current links seen]. simpl in Hraw. subst current.
       pose (delta := rb_difference r r').
       pose (next := BuilderState r' links
         (fun x y => seen x y \/ delta x y)).
       assert (Hbuilder : builder_step
           (BuilderState r links seen) next).
-      { unfold next. apply BuilderStepRaw.
-        - exact Hstep.
+      { unfold next. apply BuilderStepRaw; first done.
         - unfold delta. apply rb_difference_exact.
           + by apply raw_step_graph_le.
           + by destruct Hinv as (Hexact & _).
         - unfold delta. by eapply rb_difference_locally_safe.
       }
       assert (Hnext : builder_invariant next).
-      { eapply builder_step_preserves_invariant; eauto. }
+      { by eapply builder_step_preserves_invariant. }
       destruct (IH next eq_refl Hnext Hconsistent)
         as (s' & Hrest & Hfinal & Hinvariant).
       exists s'. split.
       + by econstructor.
-      + split; [exact Hfinal | exact Hinvariant].
+      + split; done.
   Qed.
 
   (** Finite scheduling completeness for the RCU graph kernel.  The only
@@ -282,8 +280,8 @@ Module RcuCandidate.
     { by rewrite Hraw. }
     destruct (commit_ready_link s k Hvalid') as (s' & Hstep & Hin).
     exists k, s'. repeat split; try done.
-    eapply builder_run_trans; first exact Hrun.
-    econstructor; [exact Hstep | constructor].
+    eapply builder_run_trans; first done.
+    econstructor; [done | constructor].
   Qed.
 
 End RcuCandidate.

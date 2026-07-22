@@ -82,9 +82,9 @@ Module RcuCoupled.
     coupled_run P agents s2 as2 s3 ->
     coupled_run P agents s1 (as1 ++ as2) s3.
   Proof.
-    intros H12 H23. induction H12; simpl.
-    - done.
-    - econstructor; eauto.
+    intros H12 H23. induction H12 as
+      [s | a b c act actions Hstep Hrun IH]; simpl; first done.
+    econstructor; [done | by apply IH].
   Qed.
 
   Lemma coupled_run_machine_projection P agents s actions s' :
@@ -95,9 +95,8 @@ Module RcuCoupled.
     intros Hrun. induction Hrun.
     - constructor.
     - destruct H as [m1 m2 b1 a Hmachine | m1 b1 b2 Hbuilder];
-        simpl in *.
-      + econstructor; eauto.
-      + done.
+        simpl in *; last done.
+      econstructor; done.
   Qed.
 
   Lemma coupled_run_builder_projection P agents s actions s' :
@@ -107,9 +106,8 @@ Module RcuCoupled.
     intros Hrun. induction Hrun.
     - constructor.
     - destruct H as [m1 m2 b1 a Hmachine | m1 b1 b2 Hbuilder];
-        simpl in *.
-      + done.
-      + econstructor; eauto.
+        simpl in *; first done.
+      econstructor; done.
   Qed.
 
   Lemma lift_machine_run P agents m actions m' b :
@@ -119,9 +117,8 @@ Module RcuCoupled.
   Proof.
     intros Hrun. induction Hrun; simpl.
     - constructor.
-    - econstructor.
-      + by apply CoupledStepMachine.
-      + done.
+    - econstructor; last done.
+      by apply CoupledStepMachine.
   Qed.
 
   Lemma lift_builder_run P agents m b b' :
@@ -176,7 +173,7 @@ Module RcuCoupled.
       actions s Hrun) as Hmachine.
     change (RcuMachine.run P agents initial_state
       (machine_actions actions) s.(coupled_machine)) in Hmachine.
-    eapply completed_run_certificate_snapshot_clear; eauto.
+    eapply completed_run_certificate_snapshot_clear; done.
   Qed.
 
   Definition consistent_program_candidate (P : program)

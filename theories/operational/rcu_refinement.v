@@ -47,20 +47,20 @@ Module RcuRefinement.
     inversion Hstep; subst; simpl.
     - split.
       + intros a' l Hin. apply generated_has_cons.
-        exact (Hstacks a' l Hin).
+        by apply (Hstacks a' l).
       + split.
         * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
           split; by apply generated_has_cons.
         * intros cert Hin. apply generated_has_cons.
-          exact (Hcerts cert Hin).
+          by apply (Hcerts cert).
     - split.
       + intros a' l Hin. apply generated_has_cons.
-        exact (Hstacks a' l Hin).
+        by apply (Hstacks a' l).
       + split.
         * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
           split; by apply generated_has_cons.
         * intros cert Hin. apply generated_has_cons.
-          exact (Hcerts cert Hin).
+          by apply (Hcerts cert).
     - split.
       + intros a' l Hin.
         unfold lock_emit, update in Hin. simpl in Hin.
@@ -69,14 +69,14 @@ Module RcuRefinement.
           simpl in Hin.
           destruct Hin as [Heql | Hin].
           -- subst l. unfold lock_emit. simpl. exists a. by left.
-          -- apply generated_has_cons. exact (Hstacks a l Hin).
+          -- apply generated_has_cons. by apply (Hstacks a l).
         * simpl in Hin.
-          apply generated_has_cons. exact (Hstacks a' l Hin).
+          apply generated_has_cons. by apply (Hstacks a' l).
       + split.
         * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
           split; by apply generated_has_cons.
         * intros cert Hin. apply generated_has_cons.
-          exact (Hcerts cert Hin).
+          by apply (Hcerts cert).
     - split.
       + intros a' l' Hin.
         unfold unlock_emit, update in Hin. simpl in Hin.
@@ -85,7 +85,7 @@ Module RcuRefinement.
           apply generated_has_cons.
           apply Hstacks with a. rewrite H0. by right.
         * simpl in Hin. apply generated_has_cons.
-          exact (Hstacks a' l' Hin).
+          by apply (Hstacks a' l').
       + split.
         * intros cs Hin.
           unfold unlock_emit in Hin. simpl in Hin.
@@ -97,12 +97,12 @@ Module RcuRefinement.
           -- destruct (Hsections cs Hin) as [Hlock Hunlock].
              split; by apply generated_has_cons.
         * intros cert Hin. apply generated_has_cons.
-          exact (Hcerts cert Hin).
-    - unfold begin_gp. simpl. split; first exact Hstacks.
-      split; [exact Hsections | exact Hcerts].
+          by apply (Hcerts cert).
+    - unfold begin_gp. simpl. split; first done.
+      split; done.
     - split.
       + intros a' l Hin. apply generated_has_cons.
-        exact (Hstacks a' l Hin).
+        by apply (Hstacks a' l).
       + split.
         * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
           split; by apply generated_has_cons.
@@ -110,7 +110,7 @@ Module RcuRefinement.
           unfold finish_gp in Hin. simpl in Hin.
           destruct Hin as [Hnew | Hin].
           -- subst cert. unfold finish_gp. simpl. exists a. by left.
-          -- apply generated_has_cons. exact (Hcerts cert Hin).
+          -- apply generated_has_cons. by apply (Hcerts cert).
   Qed.
 
   Lemma event_integrity_initial :
@@ -128,9 +128,8 @@ Module RcuRefinement.
     run P agents s1 actions s2 ->
     event_integrity s2.
   Proof.
-    intros Hwf Hrun. induction Hrun.
-    - done.
-    - apply IHHrun. by eapply event_integrity_step.
+    intros Hwf Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply event_integrity_step.
   Qed.
 
   Theorem operational_event_integrity P agents actions s :
@@ -177,7 +176,7 @@ Module RcuRefinement.
     in_graph (graph_of_state rels s) e.
   Proof.
     intros (a & Hin). simpl. apply in_map_iff.
-    exists (GeneratedEvent e a lab). split; [done | done].
+    exists (GeneratedEvent e a lab). split; done.
   Qed.
 
   Lemma certificate_gp_atom_valid rels s cert :
@@ -187,8 +186,8 @@ Module RcuRefinement.
   Proof.
     intros (_ & _ & Hcerts) Hin. simpl. split.
     - apply generated_has_in_graph with LSyncRcu.
-      exact (Hcerts cert Hin).
-    - apply generated_has_sync_label. exact (Hcerts cert Hin).
+      by apply (Hcerts cert).
+    - apply generated_has_sync_label. by apply (Hcerts cert).
   Qed.
 
   Lemma closed_section_atom_valid rels s cs :
@@ -214,10 +213,9 @@ Module RcuRefinement.
   Proof.
     intros Hsound Hcert Hl.
     destruct (Hsound cert Hcert l Hl) as (cs & Hcs & Hlock).
-    exists cs. split.
-    - unfold certificate_covers. repeat split; try done.
-      by rewrite Hlock.
-    - done.
+    exists cs. split; last done.
+    unfold certificate_covers. repeat split; try done.
+    by rewrite Hlock.
   Qed.
 
   Theorem completed_run_snapshot_resolves P agents actions s cert l :
@@ -228,8 +226,8 @@ Module RcuRefinement.
       certificate_covers s cert cs /\ cs.(cs_lock) = l.
   Proof.
     intros Hrun Hcert Hl.
-    eapply sound_certificate_resolves; [|done|done].
-    exact (operational_soundness P agents actions s Hrun).
+    eapply sound_certificate_resolves; try done.
+    by apply (operational_soundness P agents actions s Hrun).
   Qed.
 
   Lemma covered_rscs_gp_chain rels s cert cs :
@@ -242,10 +240,9 @@ Module RcuRefinement.
     intros Hwf (Hcert & Hcs & _) Hlink.
     exists [AtomRscs cs.(cs_unlock) cs.(cs_lock);
       AtomGp cert.(gc_event)]. split.
-    - eapply Linked_cons with (x := cert.(gc_event)).
+    - eapply Linked_cons with (x := cert.(gc_event)); last done.
       + by apply closed_section_atom_valid.
       + apply Linked_one. by apply certificate_gp_atom_valid.
-      + done.
     - change (0 <= (0 : Z))%Z. lia.
   Qed.
 
@@ -259,10 +256,9 @@ Module RcuRefinement.
     intros Hwf (Hcert & Hcs & _) Hlink.
     exists [AtomGp cert.(gc_event);
       AtomRscs cs.(cs_unlock) cs.(cs_lock)]. split.
-    - eapply Linked_cons with (x := cs.(cs_unlock)).
+    - eapply Linked_cons with (x := cs.(cs_unlock)); last done.
       + by apply certificate_gp_atom_valid.
       + apply Linked_one. by apply closed_section_atom_valid.
-      + done.
     - change (0 <= (0 : Z))%Z. lia.
   Qed.
 
@@ -288,8 +284,8 @@ Module RcuRefinement.
     pose proof (operational_event_integrity P agents actions s Hrun) as Hwf.
     destruct (completed_run_snapshot_resolves P agents actions s cert l
         Hrun Hcert Hl) as (cs & Hcovers & Hlock).
-    exists cs. split; first exact Hcovers.
-    split; first exact Hlock.
+    exists cs. split; first done.
+    split; first done.
     split.
     - by apply certificate_gp_atom_valid.
     - split.
