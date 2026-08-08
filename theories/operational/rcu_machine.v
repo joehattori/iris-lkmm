@@ -72,44 +72,64 @@ Module RcuMachine.
       all_closed cert.(gc_snapshot) s.(closed_sections).
 
   Definition ordinary_emit (s : state) (a : agent) (lab : label) : state :=
-    State (S s.(next_id))
-      (update s.(pc) a (S (s.(pc) a)))
-      s.(open_stack) s.(pending_gp)
-      (GeneratedEvent s.(next_id) a lab :: s.(generated))
-      s.(closed_sections) s.(gp_certificates).
+    {|
+      next_id := S s.(next_id);
+      pc := update s.(pc) a (S (s.(pc) a));
+      open_stack := s.(open_stack);
+      pending_gp := s.(pending_gp);
+      generated := GeneratedEvent s.(next_id) a lab :: s.(generated);
+      closed_sections := s.(closed_sections);
+      gp_certificates := s.(gp_certificates)
+    |}.
 
   Definition lock_emit (s : state) (a : agent) : state :=
-    State (S s.(next_id))
-      (update s.(pc) a (S (s.(pc) a)))
-      (update s.(open_stack) a (s.(next_id) :: s.(open_stack) a))
-      s.(pending_gp)
-      (GeneratedEvent s.(next_id) a LRcuLock :: s.(generated))
-      s.(closed_sections) s.(gp_certificates).
+    {|
+      next_id := S s.(next_id);
+      pc := update s.(pc) a (S (s.(pc) a));
+      open_stack :=
+        update s.(open_stack) a (s.(next_id) :: s.(open_stack) a);
+      pending_gp := s.(pending_gp);
+      generated := GeneratedEvent s.(next_id) a LRcuLock :: s.(generated);
+      closed_sections := s.(closed_sections);
+      gp_certificates := s.(gp_certificates)
+    |}.
 
   Definition unlock_emit (s : state) (a : agent)
       (l : event_id) (rest : list event_id) : state :=
-    State (S s.(next_id))
-      (update s.(pc) a (S (s.(pc) a)))
-      (update s.(open_stack) a rest)
-      s.(pending_gp)
-      (GeneratedEvent s.(next_id) a LRcuUnlock :: s.(generated))
-      (CriticalSection l s.(next_id) :: s.(closed_sections))
-      s.(gp_certificates).
+    {|
+      next_id := S s.(next_id);
+      pc := update s.(pc) a (S (s.(pc) a));
+      open_stack := update s.(open_stack) a rest;
+      pending_gp := s.(pending_gp);
+      generated := GeneratedEvent s.(next_id) a LRcuUnlock :: s.(generated);
+      closed_sections :=
+        CriticalSection l s.(next_id) :: s.(closed_sections);
+      gp_certificates := s.(gp_certificates)
+    |}.
 
   Definition begin_gp (agents : list agent) (s : state) (a : agent) : state :=
-    State s.(next_id) s.(pc) s.(open_stack)
-      (update s.(pending_gp) a (Some (snapshot agents s)))
-      s.(generated) s.(closed_sections) s.(gp_certificates).
+    {|
+      next_id := s.(next_id);
+      pc := s.(pc);
+      open_stack := s.(open_stack);
+      pending_gp := update s.(pending_gp) a (Some (snapshot agents s));
+      generated := s.(generated);
+      closed_sections := s.(closed_sections);
+      gp_certificates := s.(gp_certificates)
+    |}.
 
   Definition finish_gp (s : state) (a : agent)
       (snap : list event_id) : state :=
-    State (S s.(next_id))
-      (update s.(pc) a (S (s.(pc) a)))
-      s.(open_stack)
-      (update s.(pending_gp) a None)
-      (GeneratedEvent s.(next_id) a LSyncRcu :: s.(generated))
-      s.(closed_sections)
-      (GpCertificate s.(next_id) snap :: s.(gp_certificates)).
+    {|
+      next_id := S s.(next_id);
+      pc := update s.(pc) a (S (s.(pc) a));
+      open_stack := s.(open_stack);
+      pending_gp := update s.(pending_gp) a None;
+      generated := GeneratedEvent s.(next_id) a LSyncRcu :: s.(generated);
+      closed_sections := s.(closed_sections);
+      gp_certificates :=
+        GpCertificate s.(next_id) snap :: s.(gp_certificates)
+    |}.
 
   Inductive action :=
   | ARead (a : agent)
@@ -153,7 +173,15 @@ Module RcuMachine.
       run P agents s1 (a :: actions) s3.
 
   Definition initial_state : state :=
-    State 0 (fun _ => 0) (fun _ => []) (fun _ => None) [] [] [].
+    {|
+      next_id := 0;
+      pc := fun _ => 0;
+      open_stack := fun _ => [];
+      pending_gp := fun _ => None;
+      generated := [];
+      closed_sections := [];
+      gp_certificates := []
+    |}.
 
   Lemma all_closed_mono locks closed cs :
     all_closed locks closed ->
