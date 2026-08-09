@@ -38,42 +38,47 @@ Module RcuBuilder.
     raw_hb : list edge;
     raw_prop : list edge;
     raw_pb : list edge;
-    raw_sections : list critical_section
+    raw_critical_sections : list critical_section
   }.
 
   Definition graph_of_raw (r : raw_graph) : graph :=
-    Graph (map le_id r.(raw_events)) (lookup_label r.(raw_events))
-      (edge_rel r.(raw_po)) (edge_rel r.(raw_hb))
-      (edge_rel r.(raw_prop)) (edge_rel r.(raw_pb))
-      r.(raw_sections).
+    {|
+      events := map le_id r.(raw_events);
+      label_of := lookup_label r.(raw_events);
+      po := edge_rel r.(raw_po);
+      hb := edge_rel r.(raw_hb);
+      prop := edge_rel r.(raw_prop);
+      pb := edge_rel r.(raw_pb);
+      critical_sections := r.(raw_critical_sections)
+    |}.
 
   Definition empty_raw : raw_graph :=
     RawGraph [] [] [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (ev :: r.(raw_events)) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) r.(raw_sections).
+      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
 
   Definition add_po (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) (e :: r.(raw_po)) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) r.(raw_sections).
+      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
 
   Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_po) (e :: r.(raw_hb))
-      r.(raw_prop) r.(raw_pb) r.(raw_sections).
+      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
 
   Definition add_prop (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      (e :: r.(raw_prop)) r.(raw_pb) r.(raw_sections).
+      (e :: r.(raw_prop)) r.(raw_pb) r.(raw_critical_sections).
 
   Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) (e :: r.(raw_pb)) r.(raw_sections).
+      r.(raw_prop) (e :: r.(raw_pb)) r.(raw_critical_sections).
 
   Definition add_section (r : raw_graph)
       (cs : critical_section) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) (cs :: r.(raw_sections)).
+      r.(raw_prop) r.(raw_pb) (cs :: r.(raw_critical_sections)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
@@ -159,7 +164,14 @@ Module RcuBuilder.
     - eapply graph_le_trans; [by eapply raw_step_graph_le | done].
   Qed.
 
-  Record link_commitment := LinkCommitment {
+  (** An [rcu_link_commitment] makes the existential decomposition of one
+      [rcu_link] explicit.  It records the source and target together with
+      the four intermediate events witnessing
+      [po? ; hb* ; pb* ; prop ; po].  The record contains only event IDs;
+      [rcu_link_commitment_valid] states that the recorded path is present in
+      a particular graph.  Once valid, the commitment remains valid as the
+      graph grows. *)
+  Record rcu_link_commitment := RcuLinkCommitment {
     lc_source : event_id;
     lc_optional_po : event_id;
     lc_after_hb : event_id;
@@ -168,15 +180,16 @@ Module RcuBuilder.
     lc_target : event_id
   }.
 
-  Definition link_valid (G : graph) (k : link_commitment) : Prop :=
+  Definition rcu_link_commitment_valid (G : graph) (k : rcu_link_commitment) : Prop :=
     optional G.(po) k.(lc_source) k.(lc_optional_po) /\
     rtc G.(hb) k.(lc_optional_po) k.(lc_after_hb) /\
     rtc G.(pb) k.(lc_after_hb) k.(lc_after_pb) /\
     G.(prop) k.(lc_after_pb) k.(lc_after_prop) /\
     G.(po) k.(lc_after_prop) k.(lc_target).
 
-  Lemma link_valid_sound G k :
-    link_valid G k -> rcu_link G k.(lc_source) k.(lc_target).
+  Lemma rcu_link_commitment_sound G k :
+    rcu_link_commitment_valid G k ->
+    rcu_link G k.(lc_source) k.(lc_target).
   Proof.
     intros (Hpo & Hhb & Hpb & Hprop & Hlast).
     exists k.(lc_optional_po), k.(lc_after_hb),
@@ -184,17 +197,19 @@ Module RcuBuilder.
     done.
   Qed.
 
-  Lemma link_valid_complete G x y :
+  Lemma rcu_link_commitment_complete G x y :
     rcu_link G x y ->
-    exists k, k.(lc_source) = x /\ k.(lc_target) = y /\ link_valid G k.
+    exists k, k.(lc_source) = x /\ k.(lc_target) = y /\
+      rcu_link_commitment_valid G k.
   Proof.
     intros (a & b & c & d & Hpo & Hhb & Hpb & Hprop & Hlast).
-    exists (LinkCommitment x a b c d y). simpl.
+    exists (RcuLinkCommitment x a b c d y). simpl.
     repeat split; done.
   Qed.
 
-  Lemma link_valid_mono G H k :
-    graph_le G H -> link_valid G k -> link_valid H k.
+  Lemma rcu_link_commitment_valid_mono G H k :
+    graph_le G H -> rcu_link_commitment_valid G k ->
+    rcu_link_commitment_valid H k.
   Proof.
     intros GH (Hpo & Hhb & Hpb & Hprop & Hlast).
     repeat split.
@@ -207,14 +222,12 @@ Module RcuBuilder.
 
   Record builder_state := BuilderState {
     bs_raw : raw_graph;
-    bs_links : list link_commitment;
+    bs_rcu_links : list rcu_link_commitment;
     bs_seen_rb : relation
   }.
 
-  Definition rb_delta_exact (old new : raw_graph)
-      (seen delta : relation) : Prop :=
-    forall x y,
-      rb (graph_of_raw new) x y <-> seen x y \/ delta x y.
+  Definition rb_delta_exact (old new : raw_graph) (seen delta : relation) : Prop :=
+    forall x y, rb (graph_of_raw new) x y <-> seen x y \/ delta x y.
 
   Definition locally_safe (delta : relation) : Prop :=
     forall e, ~ delta e e.
@@ -227,8 +240,8 @@ Module RcuBuilder.
       builder_step
         (BuilderState r links seen)
         (BuilderState r' links (fun x y => seen x y \/ delta x y))
-  | BuilderStepLink r links seen k :
-      link_valid (graph_of_raw r) k ->
+  | BuilderStepRcuLink r links seen k :
+      rcu_link_commitment_valid (graph_of_raw r) k ->
       builder_step
         (BuilderState r links seen)
         (BuilderState r (k :: links) seen).
@@ -241,11 +254,9 @@ Module RcuBuilder.
       builder_run s1 s3.
 
   Definition builder_invariant (s : builder_state) : Prop :=
-    (forall x y, s.(bs_seen_rb) x y <->
-      rb (graph_of_raw s.(bs_raw)) x y) /\
+    (forall x y, s.(bs_seen_rb) x y <-> rb (graph_of_raw s.(bs_raw)) x y) /\
     (forall e, ~ s.(bs_seen_rb) e e) /\
-    (forall k, In k s.(bs_links) ->
-      link_valid (graph_of_raw s.(bs_raw)) k).
+    (forall k, In k s.(bs_rcu_links) -> rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k).
 
   Definition initial_builder : builder_state :=
     BuilderState empty_raw [] (fun _ _ => False).
@@ -280,7 +291,7 @@ Module RcuBuilder.
         * intros e [Hold | Hnew].
           -- by apply (Hsafe e).
           -- by apply (Hlocal e).
-        * intros k Hin. eapply link_valid_mono.
+        * intros k Hin. eapply rcu_link_commitment_valid_mono.
           -- by eapply raw_step_graph_le.
           -- by apply Hlinks.
     - split; first done.
@@ -308,22 +319,22 @@ Module RcuBuilder.
     apply (Hsafe e). by apply Hexact.
   Qed.
 
-  Theorem committed_links_are_sound s k :
+  Theorem committed_rcu_links_are_sound s k :
     builder_run initial_builder s ->
-    In k s.(bs_links) ->
+    In k s.(bs_rcu_links) ->
     rcu_link (graph_of_raw s.(bs_raw))
       k.(lc_source) k.(lc_target).
   Proof.
     intros Hrun Hin.
-    apply link_valid_sound.
+    apply rcu_link_commitment_sound.
     pose proof (builder_run_preserves_invariant _ _ initial_builder_invariant
       Hrun) as (_ & _ & Hlinks).
     by apply Hlinks.
   Qed.
 
-  Theorem commit_ready_link s k :
-    link_valid (graph_of_raw s.(bs_raw)) k ->
-    exists s', builder_step s s' /\ In k s'.(bs_links).
+  Theorem commit_ready_rcu_link s k :
+    rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k ->
+    exists s', builder_step s s' /\ In k s'.(bs_rcu_links).
   Proof.
     destruct s as [r links seen]. simpl.
     intros Hvalid. exists (BuilderState r (k :: links) seen).

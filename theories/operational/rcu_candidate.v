@@ -263,22 +263,23 @@ Module RcuCandidate.
 
   (** Any link present in a scheduled candidate has an explicit witness that
       can be committed by one further local step. *)
-  Theorem scheduled_candidate_link_can_be_committed C s x y :
+  Theorem scheduled_candidate_rcu_link_can_be_committed C s x y :
     builder_run initial_builder s ->
     s.(bs_raw) = candidate_raw C ->
     rcu_link (candidate_graph C) x y ->
     exists k s',
       builder_run initial_builder s' /\
-      In k s'.(bs_links) /\
+      In k s'.(bs_rcu_links) /\
       k.(lc_source) = x /\
       k.(lc_target) = y.
   Proof.
     intros Hrun Hraw Hlink.
-    destruct (link_valid_complete (candidate_graph C) x y Hlink)
+    destruct (rcu_link_commitment_complete (candidate_graph C) x y Hlink)
       as (k & Hsource & Htarget & Hvalid).
-    assert (Hvalid' : link_valid (graph_of_raw s.(bs_raw)) k).
+    assert (Hvalid' :
+      rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k).
     { by rewrite Hraw. }
-    destruct (commit_ready_link s k Hvalid') as (s' & Hstep & Hin).
+    destruct (commit_ready_rcu_link s k Hvalid') as (s' & Hstep & Hin).
     exists k, s'. repeat split; try done.
     eapply builder_run_trans; first done.
     econstructor; [done | constructor].

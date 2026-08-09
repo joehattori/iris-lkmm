@@ -19,10 +19,9 @@ Module RcuCoupled.
   Definition project_generated (ev : generated_event) : labeled_event :=
     LabeledEvent ev.(ge_id) ev.(ge_label).
 
-  Definition machine_matches_raw (m : RcuMachine.state)
-      (r : raw_graph) : Prop :=
+  Definition machine_matches_raw (m : RcuMachine.state) (r : raw_graph) : Prop :=
     r.(raw_events) = map project_generated m.(generated) /\
-    r.(raw_sections) = m.(closed_sections).
+    r.(raw_critical_sections) = m.(closed_sections).
 
   Record coupled_state := CoupledState {
     coupled_machine : RcuMachine.state;
@@ -64,15 +63,13 @@ Module RcuCoupled.
     CoupledState initial_state initial_builder.
 
   Definition coupled_complete (s : coupled_state) : Prop :=
-    machine_matches_raw s.(coupled_machine)
-      s.(coupled_builder).(bs_raw).
+    machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw).
 
   (** The program-graph predicate for the minimal gate language.  The memory
       relations remain the independently committed abstract graph layer; this
       predicate states exactly that its events and RCU matching came from a
       run of [P]. *)
-  Definition minimal_program_graph (P : program) (agents : list agent)
-      (r : raw_graph) : Prop :=
+  Definition minimal_program_graph (P : program) (agents : list agent) (r : raw_graph) : Prop :=
     exists actions m,
       RcuMachine.run P agents initial_state actions m /\
       machine_matches_raw m r.
@@ -138,8 +135,7 @@ Module RcuCoupled.
     coupled_run P agents initial_coupled actions s ->
     coupled_complete s ->
     minimal_program_graph P agents s.(coupled_builder).(bs_raw) /\
-    rcu_consistent
-      (graph_of_raw s.(coupled_builder).(bs_raw)) /\
+    rcu_consistent (graph_of_raw s.(coupled_builder).(bs_raw)) /\
     certificates_sound s.(coupled_machine) /\
     event_integrity s.(coupled_machine) /\
     machine_stack_safe s.(coupled_machine).
@@ -150,19 +146,15 @@ Module RcuCoupled.
       initial_coupled actions (CoupledState m b) Hrun) as Hmachine.
     pose proof (coupled_run_builder_projection P agents
       initial_coupled actions (CoupledState m b) Hrun) as Hbuilder.
+    split; first by exists (machine_actions actions), m.
+    split; first by eapply completed_builder_run_rb_irreflexive.
+    split; first by eapply RcuMachine.operational_soundness.
     split.
-    - exists (machine_actions actions), m. done.
-    - split.
-      + by eapply completed_builder_run_rb_irreflexive.
-      + split.
-        * by eapply RcuMachine.operational_soundness.
-        * split.
-          -- by eapply operational_event_integrity.
-          -- by eapply machine_run_stack_safe.
+    - by eapply operational_event_integrity.
+    - by eapply machine_run_stack_safe.
   Qed.
 
-  Theorem coupled_completed_certificate_snapshot_clear
-      P agents actions s cert :
+  Theorem coupled_completed_certificate_snapshot_clear P agents actions s cert :
     coupled_run P agents initial_coupled actions s ->
     In cert s.(coupled_machine).(gp_certificates) ->
     lock_set cert.(gc_snapshot) ##

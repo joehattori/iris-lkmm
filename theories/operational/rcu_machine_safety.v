@@ -14,7 +14,7 @@ Module RcuMachineSafety.
     (forall a b l, In l (stacks a) -> In l (stacks b) -> a = b).
 
   Definition stacks_below (s : state) : Prop :=
-    forall a l, In l (s.(open_stack) a) -> l < s.(next_id).
+    forall a l, In l (s.(open_rscs_stack) a) -> l < s.(next_id).
 
   Definition sections_below (s : state) : Prop :=
     forall cs, In cs s.(closed_sections) ->
@@ -22,19 +22,19 @@ Module RcuMachineSafety.
 
   Definition sections_disjoint_from_stacks (s : state) : Prop :=
     forall a l cs,
-      In l (s.(open_stack) a) ->
+      In l (s.(open_rscs_stack) a) ->
       In cs s.(closed_sections) ->
       cs.(cs_lock) <> l.
 
   Definition machine_stack_safe (s : state) : Prop :=
     stacks_below s /\
     sections_below s /\
-    stack_unique s.(open_stack) /\
+    stack_unique s.(open_rscs_stack) /\
     sections_disjoint_from_stacks s.
 
   Lemma stack_fresh_below s :
     stacks_below s ->
-    forall a, ~ In s.(next_id) (s.(open_stack) a).
+    forall a, ~ In s.(next_id) (s.(open_rscs_stack) a).
   Proof.
     intros Hbelow a Hin.
     pose proof (Hbelow a s.(next_id) Hin). lia.
@@ -157,8 +157,8 @@ Module RcuMachineSafety.
     - unfold ordinary_emit. simpl. intros a' l Hin.
       eapply Nat.lt_trans; [by eapply Hbelow | apply Nat.lt_succ_diag_r].
     - unfold lock_emit. simpl. intros a' l Hin.
-      change (In l (update s.(open_stack) a
-        (s.(next_id) :: s.(open_stack) a) a')) in Hin.
+      change (In l (update s.(open_rscs_stack) a
+        (s.(next_id) :: s.(open_rscs_stack) a) a')) in Hin.
       destruct (Nat.eq_dec a a') as [Heq | Hneq].
       + subst a'. rewrite update_eq in Hin. destruct Hin as [-> | Hin].
         * apply Nat.lt_succ_diag_r.
@@ -166,7 +166,7 @@ Module RcuMachineSafety.
       + rewrite update_neq in Hin; last done.
         eapply Nat.lt_trans; [by eapply Hbelow | apply Nat.lt_succ_diag_r].
     - unfold unlock_emit. simpl. intros a' l' Hin.
-      change (In l' (update s.(open_stack) a rest a')) in Hin.
+      change (In l' (update s.(open_rscs_stack) a rest a')) in Hin.
       destruct (Nat.eq_dec a a') as [Heq | Hneq].
       + subst a'. rewrite update_eq in Hin. eapply Nat.lt_trans.
         * apply Hbelow with a. rewrite H0. by right.
@@ -215,9 +215,9 @@ Module RcuMachineSafety.
 
   Lemma stack_unique_step P agents s act s' :
     stacks_below s ->
-    stack_unique s.(open_stack) ->
+    stack_unique s.(open_rscs_stack) ->
     RcuMachine.step P agents s act s' ->
-    stack_unique s'.(open_stack).
+    stack_unique s'.(open_rscs_stack).
   Proof.
     intros Hbelow Hunique Hstep. inversion Hstep; subst; simpl; try done.
     - apply stack_unique_push; first done.
@@ -228,7 +228,7 @@ Module RcuMachineSafety.
   Lemma sections_disjoint_step P agents s act s' :
     stacks_below s ->
     sections_below s ->
-    stack_unique s.(open_stack) ->
+    stack_unique s.(open_rscs_stack) ->
     sections_disjoint_from_stacks s ->
     RcuMachine.step P agents s act s' ->
     sections_disjoint_from_stacks s'.
@@ -236,11 +236,11 @@ Module RcuMachineSafety.
     intros Hstacks Hsections Hunique Hdisjoint Hstep.
     inversion Hstep; subst; simpl; try done.
     - unfold sections_disjoint_from_stacks, lock_emit. simpl.
-      eapply (@pushed_sections_disjoint s.(open_stack)
+      eapply (@pushed_sections_disjoint s.(open_rscs_stack)
         s.(closed_sections) s.(next_id) a); last done.
       intros cs Hcs. by destruct (Hsections cs Hcs).
     - unfold sections_disjoint_from_stacks, unlock_emit. simpl.
-      eapply (@popped_sections_disjoint s.(open_stack)
+      eapply (@popped_sections_disjoint s.(open_rscs_stack)
         s.(closed_sections) a l rest s.(next_id)); done.
   Qed.
 

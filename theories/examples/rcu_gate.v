@@ -33,21 +33,20 @@ Module RcuGateExamples.
       [ALock 0; ABeginGp 1; ARead 0; AUnlock 0; AFinishGp 1] s5.
   Proof.
     eapply Run_cons with (s2 := s1).
-    - unfold s0, s1. apply Step_lock. vm_compute. reflexivity.
-    - eapply Run_cons with (s2 := s2).
-      + unfold s1, s2. apply Step_begin_gp; vm_compute; reflexivity.
-      + eapply Run_cons with (s2 := s3).
-        * unfold s2, s3. apply Step_read. vm_compute. reflexivity.
-        * eapply Run_cons with (s2 := s4).
-          -- unfold s3, s4. eapply Step_unlock; vm_compute; reflexivity.
-          -- eapply Run_cons with (s2 := s5).
-             ++ unfold s4, s5.
-                eapply Step_finish_gp;
-                  [vm_compute; reflexivity | vm_compute; reflexivity |].
-                unfold all_closed, lock_closed. simpl.
-                intros l [<- | []].
-                exists (CriticalSection 0 2). split; [by left | done].
-             ++ apply Run_nil.
+    { unfold s0, s1. apply Step_lock. vm_compute. reflexivity. }
+    eapply Run_cons with (s2 := s2).
+    { unfold s1, s2. apply Step_begin_gp; vm_compute; reflexivity. }
+    eapply Run_cons with (s2 := s3).
+    { unfold s2, s3. apply Step_read. vm_compute. reflexivity. }
+    eapply Run_cons with (s2 := s4).
+    { unfold s3, s4. eapply Step_unlock; vm_compute; reflexivity. }
+    eapply Run_cons with (s2 := s5).
+      - unfold s4, s5.
+        eapply Step_finish_gp; [vm_compute; reflexivity | vm_compute; reflexivity |].
+        unfold all_closed, lock_closed. simpl.
+        intros l [<- | []].
+        exists (CriticalSection 0 2). split; [by left | done].
+      - apply Run_nil.
   Qed.
 
   Example one_reader_certificate_is_sound :
@@ -77,7 +76,7 @@ Module RcuGateExamples.
     certificate_covers s5 reader_cert reader_cs.
   Proof.
     vm_compute.
-    split; [by left |].
+    split; first by left.
     split; by left.
   Qed.
 
@@ -161,13 +160,13 @@ Module RcuGateExamples.
        LabeledEvent 2 LRead]
       [(1, 2)] [] [(0, 1)] [] [].
 
-  Definition link_witness : link_commitment :=
-    LinkCommitment 0 0 0 0 1 2.
+  Definition rcu_link_witness : rcu_link_commitment :=
+    RcuLinkCommitment 0 0 0 0 1 2.
 
   (** The commitment records the five pieces of the upstream link in order:
       optional po, hb closure, pb closure, prop, and final po. *)
   Example incremental_link_witness_is_valid :
-    link_valid (graph_of_raw link_raw) link_witness.
+    rcu_link_commitment_valid (graph_of_raw link_raw) rcu_link_witness.
   Proof.
     repeat split.
     - by left.
@@ -180,7 +179,7 @@ Module RcuGateExamples.
   Example incremental_link_witness_denotes_rcu_link :
     rcu_link (graph_of_raw link_raw) 0 2.
   Proof.
-    apply (link_valid_sound _ link_witness).
+    apply (rcu_link_commitment_sound _ rcu_link_witness).
     apply incremental_link_witness_is_valid.
   Qed.
 

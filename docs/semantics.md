@@ -86,12 +86,13 @@ and matched-section lists.  A raw mutation adds exactly one of:
 - one `po`, `hb`, `prop`, or `pb` edge; or
 - one matched critical section.
 
-A `link_commitment` records all four intermediate events witnessing
-`po? ; hb* ; pb* ; prop ; po`.  `link_valid_sound` proves that a valid
-commitment denotes `rcu_link`; `link_valid_complete` proves that every
-`rcu_link` has such a record; and `commit_ready_link` permits the commitment
-only after all of its component paths are present.  Graph monotonicity proves
-that an already committed link remains valid as later facts are added.
+A `rcu_link_commitment` records all four intermediate events witnessing
+`po? ; hb* ; pb* ; prop ; po`.  `rcu_link_commitment_sound` proves that a
+valid commitment denotes `rcu_link`; `rcu_link_commitment_complete` proves
+that every `rcu_link` has such a record; and `commit_ready_rcu_link` permits
+the commitment only after all of its component paths are present.  Graph
+monotonicity proves that an already committed link remains valid as later
+facts are added.
 
 For a raw mutation, the builder also supplies an `rb` delta satisfying:
 

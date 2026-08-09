@@ -16,13 +16,13 @@ feasibility gate.  Upstream line numbers refer to Linux v6.18 at commit
 | `linux-kernel.cat:171` | `irreflexive rb` | `rcu_consistent` | Direct predicate. |
 
 The operational graph layer does not redefine these relations.
-`link_commitment` stores the four intermediate event identifiers of the
-existing `rcu_link` decomposition, and `link_valid_sound`/
-`link_valid_complete` prove correspondence in both directions.  The builder's
-`bs_seen_rb` monitor is proved extensionally equal to the existing `rb` at
-every reachable state; `completed_builder_run_rb_irreflexive` therefore
-establishes the same `rcu_consistent` predicate rather than a separate
-operational approximation.
+`rcu_link_commitment` stores the four intermediate event identifiers of the
+existing `rcu_link` decomposition, and `rcu_link_commitment_sound`/
+`rcu_link_commitment_complete` prove correspondence in both directions.  The
+builder's `bs_seen_rb` monitor is proved extensionally equal to the existing
+`rb` at every reachable state; `completed_builder_run_rb_irreflexive`
+therefore establishes the same `rcu_consistent` predicate rather than a
+separate operational approximation.
 
 `rcu_segment` is an early proof-oriented certificate that retains CAT's
 recursive composition structure.  The independent formulation is

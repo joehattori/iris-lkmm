@@ -9,16 +9,16 @@ Module RcuGhostGateExamples.
   Section lifecycle.
     Context `{!rcuG Σ}.
 
-    Definition reader0_open : gmap reader_id unit :=
+    Definition reader0_open : gmap rscs_id unit :=
       <[0 := tt]> ∅.
 
-    Definition reader0_snapshot : gset reader_id :=
+    Definition reader0_snapshot : gset rscs_id :=
       dom reader0_open.
 
     Definition gp7_pending_map : gmap gp_id gp_status :=
       <[7 := GpPending reader0_snapshot 0]> ∅.
 
-    Definition reader0_closed : gmap reader_id unit :=
+    Definition reader0_closed : gmap rscs_id unit :=
       delete 0 reader0_open.
 
     Definition gp7_done_map : gmap gp_id gp_status :=

@@ -18,8 +18,7 @@ Module RcuMachineGhost.
         P agents actions s cert γ gps epoch gid start :
       RcuMachine.run P agents initial_state actions s ->
       In cert s.(gp_certificates) ->
-      rcu_auth γ
-          (open_map_from_locks (snapshot agents s)) gps epoch ∗
+      rcu_auth γ (open_map_from_locks (snapshot agents s)) gps epoch ∗
         gp_pending γ gid (lock_set cert.(gc_snapshot)) start ==∗
       rcu_auth γ
           (open_map_from_locks (snapshot agents s))

@@ -32,7 +32,13 @@ Module RcuMachine.
   Record state := State {
     next_id : event_id;
     pc : agent -> nat;
-    open_stack : agent -> list event_id;
+    open_rscs_stack : agent -> list event_id;
+    (** [None] means that this agent has not begun its current
+        [synchronize_rcu].  [Some snap] means that it has begun and must wait
+        for [snap]; in particular, [Some []] is a pending grace period whose
+        empty snapshot permits immediate completion.  The option is necessary
+        because [begin_gp] does not advance the program counter, so the PC
+        cannot distinguish [None] from [Some []]. *)
     pending_gp : agent -> option (list event_id);
     generated : list generated_event;
     closed_sections : list critical_section;
@@ -52,19 +58,16 @@ Module RcuMachine.
     intros Hneq. unfold update. destruct (Nat.eq_dec k k'); congruence.
   Qed.
 
-  Definition current (P : program) (s : state) (a : agent)
-      (i : instruction) : Prop :=
+  Definition current (P : program) (s : state) (a : agent) (i : instruction) : Prop :=
     nth_error (P a) (s.(pc) a) = Some i.
 
   Definition snapshot (agents : list agent) (s : state) : list event_id :=
-    flat_map s.(open_stack) agents.
+    flat_map s.(open_rscs_stack) agents.
 
-  Definition lock_closed (closed : list critical_section)
-      (l : event_id) : Prop :=
+  Definition lock_closed (closed : list critical_section) (l : event_id) : Prop :=
     exists cs, In cs closed /\ cs.(cs_lock) = l.
 
-  Definition all_closed (locks : list event_id)
-      (closed : list critical_section) : Prop :=
+  Definition all_closed (locks : list event_id) (closed : list critical_section) : Prop :=
     forall l, In l locks -> lock_closed closed l.
 
   Definition certificates_sound (s : state) : Prop :=
@@ -75,7 +78,7 @@ Module RcuMachine.
     {|
       next_id := S s.(next_id);
       pc := update s.(pc) a (S (s.(pc) a));
-      open_stack := s.(open_stack);
+      open_rscs_stack := s.(open_rscs_stack);
       pending_gp := s.(pending_gp);
       generated := GeneratedEvent s.(next_id) a lab :: s.(generated);
       closed_sections := s.(closed_sections);
@@ -86,8 +89,8 @@ Module RcuMachine.
     {|
       next_id := S s.(next_id);
       pc := update s.(pc) a (S (s.(pc) a));
-      open_stack :=
-        update s.(open_stack) a (s.(next_id) :: s.(open_stack) a);
+      open_rscs_stack :=
+        update s.(open_rscs_stack) a (s.(next_id) :: s.(open_rscs_stack) a);
       pending_gp := s.(pending_gp);
       generated := GeneratedEvent s.(next_id) a LRcuLock :: s.(generated);
       closed_sections := s.(closed_sections);
@@ -99,11 +102,10 @@ Module RcuMachine.
     {|
       next_id := S s.(next_id);
       pc := update s.(pc) a (S (s.(pc) a));
-      open_stack := update s.(open_stack) a rest;
+      open_rscs_stack := update s.(open_rscs_stack) a rest;
       pending_gp := s.(pending_gp);
       generated := GeneratedEvent s.(next_id) a LRcuUnlock :: s.(generated);
-      closed_sections :=
-        CriticalSection l s.(next_id) :: s.(closed_sections);
+      closed_sections := CriticalSection l s.(next_id) :: s.(closed_sections);
       gp_certificates := s.(gp_certificates)
     |}.
 
@@ -111,19 +113,18 @@ Module RcuMachine.
     {|
       next_id := s.(next_id);
       pc := s.(pc);
-      open_stack := s.(open_stack);
+      open_rscs_stack := s.(open_rscs_stack);
       pending_gp := update s.(pending_gp) a (Some (snapshot agents s));
       generated := s.(generated);
       closed_sections := s.(closed_sections);
       gp_certificates := s.(gp_certificates)
     |}.
 
-  Definition finish_gp (s : state) (a : agent)
-      (snap : list event_id) : state :=
+  Definition finish_gp (s : state) (a : agent) (snap : list event_id) : state :=
     {|
       next_id := S s.(next_id);
       pc := update s.(pc) a (S (s.(pc) a));
-      open_stack := s.(open_stack);
+      open_rscs_stack := s.(open_rscs_stack);
       pending_gp := update s.(pending_gp) a None;
       generated := GeneratedEvent s.(next_id) a LSyncRcu :: s.(generated);
       closed_sections := s.(closed_sections);
@@ -152,7 +153,7 @@ Module RcuMachine.
       step P agents s (ALock a) (lock_emit s a)
   | Step_unlock s a l rest :
       current P s a IRcuUnlock ->
-      s.(open_stack) a = l :: rest ->
+      s.(open_rscs_stack) a = l :: rest ->
       step P agents s (AUnlock a) (unlock_emit s a l rest)
   | Step_begin_gp s a :
       current P s a ISynchronizeRcu ->
@@ -176,7 +177,7 @@ Module RcuMachine.
     {|
       next_id := 0;
       pc := fun _ => 0;
-      open_stack := fun _ => [];
+      open_rscs_stack := fun _ => [];
       pending_gp := fun _ => None;
       generated := [];
       closed_sections := [];

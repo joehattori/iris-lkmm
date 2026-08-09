@@ -372,11 +372,16 @@ Module RcuObligations.
 
   (** A finite, nonempty sequence of valid atoms whose adjacent endpoints are
       connected by [rcu_link]. *)
-  Inductive linked_chain (G : graph) :
-      list rcu_atom -> event_id -> event_id -> Prop :=
+  Inductive linked_chain (G : graph) : list rcu_atom -> event_id -> event_id -> Prop :=
   | Linked_one a :
       atom_valid G a ->
       linked_chain G [a] (atom_start a) (atom_end a)
+  (** [Linked_cons a atoms x y] prepends the atom [a] to the existing tail
+      [atoms].  In the premise [linked_chain G atoms x y], [x] is the start
+      of that tail (and hence the junction point), while [y] is both the
+      tail's end and the resulting chain's end.  The [rcu_link] premise
+      connects [atom_end a] to [x], so the resulting chain starts at
+      [atom_start a] and ends at [y]. *)
   | Linked_cons a atoms x y :
       atom_valid G a ->
       linked_chain G atoms x y ->

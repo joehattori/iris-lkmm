@@ -16,7 +16,7 @@ Module RcuRefinement.
     exists a, In (GeneratedEvent e a lab) evs.
 
   Definition stacks_generated (s : state) : Prop :=
-    forall a l, In l (s.(open_stack) a) ->
+    forall a l, In l (s.(open_rscs_stack) a) ->
       generated_has s.(generated) l LRcuLock.
 
   Definition sections_generated (s : state) : Prop :=

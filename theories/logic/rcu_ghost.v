@@ -14,21 +14,20 @@ From iris.proofmode Require Import proofmode.
     current open-reader domain. *)
 Module RcuGhost.
 
-  Definition reader_id := nat.
+  Definition rscs_id := nat.
   Definition gp_id := nat.
 
   Inductive gp_status :=
-  | GpPending (snapshot : gset reader_id) (start_epoch : nat)
-  | GpDone (snapshot : gset reader_id)
-      (start_epoch finish_epoch : nat).
+  | GpPending (snapshot : gset rscs_id) (start_epoch : nat)
+  | GpDone (snapshot : gset rscs_id) (start_epoch finish_epoch : nat).
 
   Definition rcuΣ : gFunctors :=
-    #[ ghost_mapΣ reader_id unit;
+    #[ ghost_mapΣ rscs_id unit;
        ghost_mapΣ gp_id gp_status;
        mono_natΣ ].
 
   Class rcuG Σ := RcuG {
-    #[local] rcu_open_G :: ghost_mapG Σ reader_id unit;
+    #[local] rcu_open_G :: ghost_mapG Σ rscs_id unit;
     #[local] rcu_gp_G :: ghost_mapG Σ gp_id gp_status;
     #[local] rcu_epoch_G :: mono_natG Σ
   }.
@@ -45,22 +44,21 @@ Module RcuGhost.
   Section definitions.
     Context `{!rcuG Σ}.
 
-    Definition rcu_auth (γ : rcu_names)
-        (open : gmap reader_id unit)
+    Definition rcu_auth (γ : rcu_names) (open : gmap rscs_id unit)
         (gps : gmap gp_id gp_status) (epoch : nat) : iProp Σ :=
       ghost_map_auth γ.(rg_open_name) 1 open ∗
       ghost_map_auth γ.(rg_gp_name) 1 gps ∗
       mono_nat_auth_own γ.(rg_epoch_name) 1 epoch.
 
-    Definition reader_token (γ : rcu_names) (rid : reader_id) : iProp Σ :=
+    Definition reader_token (γ : rcu_names) (rid : rscs_id) : iProp Σ :=
       rid ↪[γ.(rg_open_name)] tt.
 
     Definition gp_pending (γ : rcu_names) (gid : gp_id)
-        (snapshot : gset reader_id) (start : nat) : iProp Σ :=
+        (snapshot : gset rscs_id) (start : nat) : iProp Σ :=
       gid ↪[γ.(rg_gp_name)] GpPending snapshot start.
 
     Definition gp_done (γ : rcu_names) (gid : gp_id)
-        (snapshot : gset reader_id) (start finish : nat) : iProp Σ :=
+        (snapshot : gset rscs_id) (start finish : nat) : iProp Σ :=
       gid ↪[γ.(rg_gp_name)]□ GpDone snapshot start finish ∗
       mono_nat_lb_own γ.(rg_epoch_name) finish.
   End definitions.
@@ -76,7 +74,7 @@ Module RcuGhost.
     Lemma rcu_ghost_alloc :
       ⊢ |==> ∃ γ, rcu_auth γ ∅ ∅ 0.
     Proof.
-      iMod (ghost_map_alloc_empty (K:=reader_id) (V:=unit))
+      iMod (ghost_map_alloc_empty (K:=rscs_id) (V:=unit))
         as (γopen) "Hopen".
       iMod (ghost_map_alloc_empty (K:=gp_id) (V:=gp_status))
         as (γgp) "Hgp".
@@ -92,8 +90,7 @@ Module RcuGhost.
         reader_token γ rid.
     Proof.
       iIntros (Hfresh) "(Hopen & Hgps & Hepoch)".
-      iMod (ghost_map_insert rid tt with "Hopen") as "[Hopen Hreader]";
-        first done.
+      iMod (ghost_map_insert rid tt with "Hopen") as "[Hopen Hreader]"; first done.
       iModIntro. rewrite /rcu_auth /reader_token. iFrame.
     Qed.
 
@@ -109,8 +106,7 @@ Module RcuGhost.
     Lemma rcu_gp_begin γ open gps epoch gid :
       gps !! gid = None ->
       rcu_auth γ open gps epoch ==∗
-        rcu_auth γ open
-          (<[gid := GpPending (dom open) epoch]> gps) epoch ∗
+        rcu_auth γ open (<[gid := GpPending (dom open) epoch]> gps) epoch ∗
         gp_pending γ gid (dom open) epoch.
     Proof.
       iIntros (Hfresh) "(Hopen & Hgps & Hepoch)".
@@ -122,8 +118,7 @@ Module RcuGhost.
     Lemma rcu_gp_finish γ open gps epoch gid snapshot start :
       snapshot ## dom open ->
       rcu_auth γ open gps epoch ∗ gp_pending γ gid snapshot start ==∗
-        rcu_auth γ open
-          (<[gid := GpDone snapshot start (S epoch)]> gps) (S epoch) ∗
+        rcu_auth γ open (<[gid := GpDone snapshot start (S epoch)]> gps) (S epoch) ∗
         gp_done γ gid snapshot start (S epoch).
     Proof.
       iIntros (Hclear) "((Hopen & Hgps & Hepoch) & Hpending)".
