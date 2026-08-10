@@ -1,6 +1,7 @@
 -Q theories iris_lkmm
 
 theories/lkmm/prelude.v
+theories/lkmm/events.v
 theories/lkmm/rcu_graph.v
 theories/lkmm/rcu_mono.v
 theories/lkmm/rcu_obligations.v

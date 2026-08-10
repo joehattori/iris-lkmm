@@ -1,8 +1,39 @@
-# Feasibility-kernel CAT mapping
+# LKMM source mapping
 
-This is the manual mapping for the normal-RCU subset exercised by the
-feasibility gate.  Upstream line numbers refer to Linux v6.18 at commit
+This is the manual mapping for the selected LKMM fragment.  Upstream line
+numbers refer to Linux v6.18 at commit
 `7d0a66e4bb9081d75c82ec4957c50034cb0ea449`.
+
+## Canonical event vocabulary
+
+`theories/lkmm/events.v` defines the syntactic event vocabulary.  It does not
+yet define an execution graph or any graph relation.  In particular, the
+capitalized semantic Bell sets `Acquire`, `Release`, `Mb`, `Noreturn`, and
+`FailedRMW` are deferred because their definitions inspect event direction
+and, for failed RMWs, the future `rmw` relation.
+
+| Upstream source | Definition | Rocq definition | Treatment |
+| --- | --- | --- | --- |
+| `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. RMW marking is orthogonal to read/write direction because successful operations will be represented by paired read and write events. |
+| `linux-kernel.bell:25-37` | barrier annotations | `barrier_kind`, `LBarrier` | Includes only `MB`, `rmb`, `wmb`, `rcu-lock`, `rcu-unlock`, and `sync-rcu`, as selected by the project scope. |
+| `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | deferred | Requires the execution graph and `rmw` relation; no event-only approximation is introduced. |
+| `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
+| `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
+| `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The future `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
+| `linux-kernel.def:47-50` | `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu` | `BarrierRcuLock`, `BarrierRcuUnlock`, `BarrierSyncRcu` | Direct normal-RCU barrier constructors. `synchronize_rcu_expedited` has the same upstream tag but remains outside the selected language. |
+| `linux-kernel.def:66-70` | examples of non-returning atomic RMW operations | `AccessNoreturn` | Records the syntactic annotation only; its read-only semantic filtering is deferred. |
+
+Initial writes are represented explicitly by `EInitWrite`.  Locations are
+abstract natural-number identifiers and values are mathematical integers;
+machine-word overflow is not modeled at this layer.  Plain accesses, compiler
+`barrier`, before/after-atomic barriers, lock operations, and SRCU have no
+constructors.  Address, data, and control dependencies are graph relations,
+not event labels, and will be introduced with the execution graph.
+
+The existing feasibility kernel retains its five-label graph vocabulary until
+the later RCU compatibility-view commit.
+
+## Feasibility-kernel RCU mapping
 
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |

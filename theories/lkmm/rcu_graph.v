@@ -1,14 +1,13 @@
 From Stdlib Require Import Arith Lia List Relations.Relation_Operators.
 From stdpp Require Import base tactics.
+From iris_lkmm.lkmm Require Import prelude.
 Import ListNotations.
 
 (** The finite, normal-RCU-only graph kernel used by the feasibility gate.
     The memory-model relations are parameters of the graph on purpose: this
     file studies the RCU recursion without yet transcribing the rest of LKMM. *)
 Module RcuGraph.
-
-  Definition event_id := nat.
-  Definition relation := event_id -> event_id -> Prop.
+  Export LkmmPrelude.
 
   Inductive label :=
   | LRead | LWrite | LRcuLock | LRcuUnlock | LSyncRcu.
