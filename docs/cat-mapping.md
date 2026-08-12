@@ -33,6 +33,20 @@ not event labels, and will be introduced with the execution graph.
 The existing feasibility kernel retains its five-label graph vocabulary until
 the later RCU compatibility-view commit.
 
+## Canonical event structures and program order
+
+`theories/lkmm/execution.v` represents a finite execution's events as a map
+from event identifiers to canonical events.  Its `po` relation is a herd
+execution-structure relation rather than a definition transcribed from
+`linux-kernel.cat`: two events are in `po` exactly when they belong to the
+same agent and their local indices are strictly increasing.  Indices need not
+be contiguous, and initial writes are excluded because they have no agent or
+local index.  `event_structure_wf` ensures that an agent-local position
+identifies at most one event.
+
+The feasibility kernel continues to accept an abstract `RcuGraph.po`; the
+later RCU compatibility view will connect it to this canonical relation.
+
 ## Feasibility-kernel RCU mapping
 
 | Upstream source | Definition | Rocq definition | Treatment |
