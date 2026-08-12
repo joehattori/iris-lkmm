@@ -47,6 +47,16 @@ identifies at most one event.
 The feasibility kernel continues to accept an abstract `RcuGraph.po`; the
 later RCU compatibility view will connect it to this canonical relation.
 
+## Reads-from candidates
+
+`theories/lkmm/memory_relations.v` represents `rf` as a finite set of event-ID
+edges and exposes it through a relational view.  Like `po`, `rf` is supplied
+by the herd candidate execution rather than defined in `linux-kernel.cat`.
+The predicate `rf_wf` requires every edge to connect a write to a read at the
+same location and value, and requires every read to have exactly one source.
+Initial writes are ordinary `rf` sources; uniqueness of initial writes and
+their placement in coherence order are deferred to the coherence layer.
+
 ## Feasibility-kernel RCU mapping
 
 | Upstream source | Definition | Rocq definition | Treatment |
