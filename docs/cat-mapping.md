@@ -55,7 +55,25 @@ by the herd candidate execution rather than defined in `linux-kernel.cat`.
 The predicate `rf_wf` requires every edge to connect a write to a read at the
 same location and value, and requires every read to have exactly one source.
 Initial writes are ordinary `rf` sources; uniqueness of initial writes and
-their placement in coherence order are deferred to the coherence layer.
+their placement in coherence order are enforced by `co_wf` below.
+
+## Coherence-order candidates
+
+`theories/lkmm/memory_relations.v` represents `co` as a finite set of
+event-ID edges and exposes it through a relational view.  The set contains
+the complete transitive order, not only immediate-successor edges.  Like
+`rf`, `co` is supplied by the herd candidate execution and consumed by
+the LKMM CAT model.
+
+The predicate `co_wf` requires `co` to be a strict total order on the
+writes to each location, with no edges between locations.  Every location
+used by a memory event has exactly one initial write, and that initial write
+precedes every other write to the location.  These are candidate-graph
+well-formedness conditions rather than LKMM consistency axioms.
+
+The Linux v6.18 constraint `acyclic (po-loc | rf | co | fr)` at
+`linux-kernel.cat:70` remains deferred until `fr` and the base coherence
+predicate are introduced.
 
 ## Feasibility-kernel RCU mapping
 
