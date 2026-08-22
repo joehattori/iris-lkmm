@@ -29,12 +29,11 @@ Module LkmmMemoryRelations.
     rel_seq (rel_inverse (rf rf_edges)) (co co_edges).
 
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
-    exists write_event read_event loc val,
+    exists write_event read_event val,
       lookup_event E write = Some write_event /\
       lookup_event E read = Some read_event /\
       is_write write_event /\ is_read read_event /\
-      location_of write_event = Some loc /\
-      location_of read_event = Some loc /\
+      same_location E write read /\
       value_of write_event = Some val /\
       value_of read_event = Some val.
 
@@ -71,26 +70,22 @@ Module LkmmMemoryRelations.
   Proof.
     intros Hwf Hrf.
     destruct (rf_wf_edge E edges write read Hwf Hrf)
-      as (write_event & read_event & loc & val &
+      as (write_event & read_event & val &
         Hwrite & Hread & Hwrite_kind & Hread_kind &
-        Hwrite_loc & Hread_loc & Hwrite_val & Hread_val).
+        Hsame_loc & Hwrite_val & Hread_val).
     split; eapply lookup_event_in; eauto.
   Qed.
 
   Lemma rf_wf_same_location E edges write read :
     rf_wf E edges -> rf edges write read ->
-    exists write_event read_event loc,
-      lookup_event E write = Some write_event /\
-      lookup_event E read = Some read_event /\
-      location_of write_event = Some loc /\
-      location_of read_event = Some loc.
+    same_location E write read.
   Proof.
     intros Hwf Hrf.
     destruct (rf_wf_edge E edges write read Hwf Hrf)
-      as (write_event & read_event & loc & val &
+      as (write_event & read_event & val &
         Hwrite & Hread & Hwrite_kind & Hread_kind &
-        Hwrite_loc & Hread_loc & Hwrite_val & Hread_val).
-    exists write_event, read_event, loc. done.
+        Hsame_loc & Hwrite_val & Hread_val).
+    exact Hsame_loc.
   Qed.
 
   Lemma rf_wf_same_value E edges write read :
@@ -103,15 +98,14 @@ Module LkmmMemoryRelations.
   Proof.
     intros Hwf Hrf.
     destruct (rf_wf_edge E edges write read Hwf Hrf)
-      as (write_event & read_event & loc & val &
+      as (write_event & read_event & val &
         Hwrite & Hread & Hwrite_kind & Hread_kind &
-        Hwrite_loc & Hread_loc & Hwrite_val & Hread_val).
+        Hsame_loc & Hwrite_val & Hread_val).
     exists write_event, read_event, val. done.
   Qed.
 
   Definition location_used (E : event_structure) (loc : location) : Prop :=
-    exists eid ev,
-      lookup_event E eid = Some ev /\ location_of ev = Some loc.
+    exists eid, event_attribute location_of E eid = Some loc.
 
   Definition initial_write_at (E : event_structure)
       (loc : location) (write : event_id) : Prop :=
@@ -129,20 +123,18 @@ Module LkmmMemoryRelations.
 
   Definition co_edge_wf (E : event_structure)
       (write1 write2 : event_id) : Prop :=
-    exists write_event1 write_event2 loc,
+    exists write_event1 write_event2,
       lookup_event E write1 = Some write_event1 /\
       lookup_event E write2 = Some write_event2 /\
       is_write write_event1 /\ is_write write_event2 /\
-      location_of write_event1 = Some loc /\
-      location_of write_event2 = Some loc.
+      same_location E write1 write2.
 
   Definition fr_edge_wf (E : event_structure) (read write : event_id) : Prop :=
-    exists read_event write_event loc,
+    exists read_event write_event,
       lookup_event E read = Some read_event /\
       lookup_event E write = Some write_event /\
       is_read read_event /\ is_write write_event /\
-      location_of read_event = Some loc /\
-      location_of write_event = Some loc.
+      same_location E read write.
 
   Definition co_irreflexive (edges : edge_set) : Prop :=
     forall write, ~ co edges write write.
@@ -153,12 +145,11 @@ Module LkmmMemoryRelations.
       co edges write1 write3.
 
   Definition co_total (E : event_structure) (edges : edge_set) : Prop :=
-    forall write1 write2 write_event1 write_event2 loc,
+    forall write1 write2 write_event1 write_event2,
       lookup_event E write1 = Some write_event1 ->
       lookup_event E write2 = Some write_event2 ->
       is_write write_event1 -> is_write write_event2 ->
-      location_of write_event1 = Some loc ->
-      location_of write_event2 = Some loc ->
+      same_location E write1 write2 ->
       write1 <> write2 ->
       co edges write1 write2 \/ co edges write2 write1.
 
@@ -167,7 +158,7 @@ Module LkmmMemoryRelations.
       initial_write_at E loc initial ->
       lookup_event E write = Some write_event ->
       is_write write_event ->
-      location_of write_event = Some loc ->
+      same_location E initial write ->
       initial <> write ->
       co edges initial write.
 
@@ -215,20 +206,21 @@ Module LkmmMemoryRelations.
   Proof.
     intros Hwf Hco.
     destruct (co_wf_edge E edges write1 write2 Hwf Hco)
-      as (write_event1 & write_event2 & loc &
-        Hwrite1 & Hwrite2 & Hkind1 & Hkind2 & Hloc1 & Hloc2).
+      as (write_event1 & write_event2 &
+        Hwrite1 & Hwrite2 & Hkind1 & Hkind2 & Hsame_loc).
     split; eapply lookup_event_in; eauto.
   Qed.
 
   Lemma co_wf_same_location E edges write1 write2 :
     co_wf E edges -> co edges write1 write2 ->
-    exists write_event1 write_event2 loc,
-      lookup_event E write1 = Some write_event1 /\
-      lookup_event E write2 = Some write_event2 /\
-      is_write write_event1 /\ is_write write_event2 /\
-      location_of write_event1 = Some loc /\
-      location_of write_event2 = Some loc.
-  Proof. intros Hwf Hco. by eapply co_wf_edge. Qed.
+    same_location E write1 write2.
+  Proof.
+    intros Hwf Hco.
+    destruct (co_wf_edge E edges write1 write2 Hwf Hco)
+      as (write_event1 & write_event2 &
+        Hwrite1 & Hwrite2 & Hkind1 & Hkind2 & Hsame_loc).
+    exact Hsame_loc.
+  Qed.
 
   Lemma fr_wf_edge E rf_edges co_edges read write :
     rf_wf E rf_edges -> co_wf E co_edges ->
@@ -239,18 +231,18 @@ Module LkmmMemoryRelations.
     destruct Hfr as (source & Hrf & Hco).
     unfold rel_inverse in Hrf.
     destruct (rf_wf_edge E rf_edges source read Hrf_wf Hrf)
-      as (source_event & read_event & loc & val &
+      as (source_event & read_event & val &
         Hsource & Hread & Hsource_kind & Hread_kind &
-        Hsource_loc & Hread_loc & Hsource_val & Hread_val).
+        Hsource_read_loc & Hsource_val & Hread_val).
     destruct (co_wf_edge E co_edges source write Hco_wf Hco)
-      as (source_event' & write_event & loc' &
+      as (source_event' & write_event &
         Hsource' & Hwrite & Hsource_kind' & Hwrite_kind &
-        Hsource_loc' & Hwrite_loc).
-    assert (source_event = source_event') as Hevent by congruence.
-    subst source_event'.
-    assert (loc = loc') as Hloc by congruence.
-    subst loc'.
-    exists read_event, write_event, loc. done.
+        Hsource_write_loc).
+    exists read_event, write_event.
+    repeat split; try done.
+    eapply same_location_transitive.
+    - by apply same_location_symmetric.
+    - exact Hsource_write_loc.
   Qed.
 
   Lemma fr_wf_endpoints E rf_edges co_edges read write :
@@ -261,9 +253,8 @@ Module LkmmMemoryRelations.
     intros Hrf_wf Hco_wf Hfr.
     destruct (fr_wf_edge E rf_edges co_edges read write
       Hrf_wf Hco_wf Hfr)
-      as (read_event & write_event & loc &
-        Hread & Hwrite & Hread_kind & Hwrite_kind &
-        Hread_loc & Hwrite_loc).
+      as (read_event & write_event &
+        Hread & Hwrite & Hread_kind & Hwrite_kind & Hsame_loc).
     split; eapply lookup_event_in; eauto.
   Qed.
 
@@ -278,28 +269,22 @@ Module LkmmMemoryRelations.
     intros Hrf_wf Hco_wf Hfr.
     destruct (fr_wf_edge E rf_edges co_edges read write
       Hrf_wf Hco_wf Hfr)
-      as (read_event & write_event & loc &
-        Hread & Hwrite & Hread_kind & Hwrite_kind &
-        Hread_loc & Hwrite_loc).
+      as (read_event & write_event &
+        Hread & Hwrite & Hread_kind & Hwrite_kind & Hsame_loc).
     exists read_event, write_event. done.
   Qed.
 
   Lemma fr_wf_same_location E rf_edges co_edges read write :
     rf_wf E rf_edges -> co_wf E co_edges ->
     fr rf_edges co_edges read write ->
-    exists read_event write_event loc,
-      lookup_event E read = Some read_event /\
-      lookup_event E write = Some write_event /\
-      location_of read_event = Some loc /\
-      location_of write_event = Some loc.
+    same_location E read write.
   Proof.
     intros Hrf_wf Hco_wf Hfr.
     destruct (fr_wf_edge E rf_edges co_edges read write
       Hrf_wf Hco_wf Hfr)
-      as (read_event & write_event & loc &
-        Hread & Hwrite & Hread_kind & Hwrite_kind &
-        Hread_loc & Hwrite_loc).
-    exists read_event, write_event, loc. done.
+      as (read_event & write_event &
+        Hread & Hwrite & Hread_kind & Hwrite_kind & Hsame_loc).
+    exact Hsame_loc.
   Qed.
 
   Module ReadsFromTests.
@@ -318,8 +303,9 @@ Module LkmmMemoryRelations.
       - intros write read Hrf.
         unfold rf, edge_relation, sample_rf in Hrf.
         assert (write = 0 /\ read = 1) as [-> ->] by set_solver.
-        exists init_write, once_read, 0, 0%Z.
-        repeat split; reflexivity.
+        exists init_write, once_read, 0%Z.
+        repeat split; try reflexivity.
+        exists 0. split; reflexivity.
       - split.
         + intros write1 write2 read Hrf1 Hrf2.
           unfold rf, edge_relation, sample_rf in Hrf1, Hrf2.
@@ -392,25 +378,29 @@ Module LkmmMemoryRelations.
           (write1 = 0 /\ write2 = 2) \/
           (write1 = 1 /\ write2 = 2)) as
             [(-> & ->) | [(-> & ->) | (-> & ->)]] by set_solver.
-        + exists init_write, first_write, 0.
-          repeat split; reflexivity.
-        + exists init_write, second_write, 0.
-          repeat split; reflexivity.
-        + exists first_write, second_write, 0.
-          repeat split; reflexivity.
+        + exists init_write, first_write.
+          repeat split; try reflexivity.
+          exists 0. split; reflexivity.
+        + exists init_write, second_write.
+          repeat split; try reflexivity.
+          exists 0. split; reflexivity.
+        + exists first_write, second_write.
+          repeat split; try reflexivity.
+          exists 0. split; reflexivity.
       - intros write Hco.
         unfold co, edge_relation, sample_co in Hco. set_solver.
       - intros write1 write2 write3 Hco12 Hco23.
         unfold co, edge_relation, sample_co in Hco12, Hco23.
         unfold co, edge_relation, sample_co. set_solver.
-      - intros write1 write2 write_event1 write_event2 loc
-          Hlookup1 Hlookup2 Hkind1 Hkind2 Hloc1 Hloc2 Hneq.
+      - intros write1 write2 write_event1 write_event2
+          Hlookup1 Hlookup2 Hkind1 Hkind2 Hsame_loc Hneq.
         destruct (sample_lookup_cases write1 write_event1 Hlookup1)
           as [(-> & ->) | [(-> & ->) | (-> & ->)]];
         destruct (sample_lookup_cases write2 write_event2 Hlookup2)
           as [(-> & ->) | [(-> & ->) | (-> & ->)]];
         unfold co, edge_relation, sample_co; set_solver.
-      - intros loc (eid & ev & Hlookup & Hloc).
+      - intros loc (eid & Hloc).
+        apply event_attribute_Some in Hloc as (ev & Hlookup & Hloc).
         destruct (sample_lookup_cases eid ev Hlookup)
           as [(-> & ->) | [(-> & ->) | (-> & ->)]];
         simpl in Hloc; assert (loc = 0) as -> by congruence;
@@ -423,7 +413,7 @@ Module LkmmMemoryRelations.
           as [(-> & Hevent2) | [(-> & Hevent2) | (-> & Hevent2)]];
         try discriminate; done.
       - intros initial write loc write_event
-          (val & Hinitial) Hwrite Hkind Hloc Hneq.
+          (val & Hinitial) Hwrite Hkind Hsame_loc Hneq.
         destruct (sample_lookup_cases initial (EInitWrite loc val) Hinitial)
           as [(-> & Hevent) | [(-> & Hevent) | (-> & Hevent)]];
           try discriminate.
@@ -458,7 +448,7 @@ Module LkmmMemoryRelations.
       pose proof (co_wf_initial_exists missing_initial_events
         (∅ : edge_set) Hwf) as Hexists.
       assert (location_used missing_initial_events 0) as Hused.
-      { exists 1, first_write. split; reflexivity. }
+      { exists 1. reflexivity. }
       destruct (Hexists 0 Hused) as (initial & val & Hlookup).
       unfold lookup_event, missing_initial_events in Hlookup.
       apply lookup_singleton_Some in Hlookup as [Heid Hevent].
@@ -498,7 +488,7 @@ Module LkmmMemoryRelations.
         - exists 0%Z. reflexivity.
         - reflexivity.
         - reflexivity.
-        - reflexivity.
+        - exists 0. split; reflexivity.
         - lia. }
       unfold co, edge_relation, late_initial_co in Hco. set_solver.
     Qed.

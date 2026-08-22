@@ -1,5 +1,5 @@
 From Stdlib Require Import ZArith.
-From stdpp Require Import fin_map_dom gmap tactics.
+From stdpp Require Import fin_map_dom gmap option tactics.
 From iris_lkmm.lkmm Require Import prelude events.
 
 (** Raw finite event structures for the relational LKMM model.
@@ -9,6 +9,7 @@ From iris_lkmm.lkmm Require Import prelude events.
     states may contain partial structures without carrying proof fields. *)
 Module LkmmExecution.
   Export LkmmPrelude LkmmEvents.
+  Open Scope stdpp_scope.
 
   Definition event_structure := gmap event_id event.
 
@@ -32,6 +33,25 @@ Module LkmmExecution.
       lookup_event E eid2 = Some (EAgent agent index label2) ->
       eid1 = eid2.
 
+  (** Compose event lookup with any partial event projection. *)
+  Definition event_attribute {A} (project : event -> option A)
+      (E : event_structure) (eid : event_id) : option A :=
+    lookup_event E eid ≫= project.
+
+  (** Two identifiers have the same attribute when both projections are
+      defined and return the same value. *)
+  Definition same_attribute {A} (project : event -> option A) (E : event_structure) : relation :=
+    fun eid1 eid2 =>
+      exists value,
+        event_attribute project E eid1 = Some value /\
+        event_attribute project E eid2 = Some value.
+
+  Definition same_location (E : event_structure) : relation :=
+    same_attribute location_of E.
+
+  Definition same_agent (E : event_structure) : relation :=
+    same_attribute agent_of E.
+
   (** Program order is the full strict order between generated events of one
       agent.  Local indices need not be contiguous.  Initial writes are
       excluded because they have no agent-local position. *)
@@ -41,6 +61,9 @@ Module LkmmExecution.
         lookup_event E eid1 = Some (EAgent agent index1 label1) /\
         lookup_event E eid2 = Some (EAgent agent index2 label2) /\
         index1 < index2.
+
+  Definition po_loc (E : event_structure) : relation :=
+    rel_intersection (po E) (same_location E).
 
   Lemma in_event_structure_lookup_iff E eid :
     in_event_structure E eid <-> exists ev, lookup_event E eid = Some ev.
@@ -68,6 +91,68 @@ Module LkmmExecution.
     destruct (lookup_event E eid) as [ev |] eqn:Hlookup; last done.
     exfalso. apply Hnot. by eapply lookup_event_in.
   Qed.
+
+  Lemma event_attribute_Some {A} (project : event -> option A) E eid (value : A) :
+    event_attribute project E eid = Some value <->
+    exists ev,
+      lookup_event E eid = Some ev /\ project ev = Some value.
+  Proof. apply bind_Some. Qed.
+
+  Lemma same_attribute_endpoints {A} (project : event -> option A) E eid1 eid2 :
+    same_attribute project E eid1 eid2 ->
+    in_event_structure E eid1 /\ in_event_structure E eid2.
+  Proof.
+    intros (value & Hattribute1 & Hattribute2).
+    apply event_attribute_Some in Hattribute1
+      as (event1 & Hlookup1 & Hproject1).
+    apply event_attribute_Some in Hattribute2
+      as (event2 & Hlookup2 & Hproject2).
+    split; eapply lookup_event_in; eauto.
+  Qed.
+
+  Lemma same_attribute_symmetric {A} (project : event -> option A) E eid1 eid2 :
+    same_attribute project E eid1 eid2 ->
+    same_attribute project E eid2 eid1.
+  Proof. intros (value & Hattribute1 & Hattribute2). by exists value. Qed.
+
+  Lemma same_attribute_transitive {A} (project : event -> option A) E eid1 eid2 eid3 :
+    same_attribute project E eid1 eid2 ->
+    same_attribute project E eid2 eid3 ->
+    same_attribute project E eid1 eid3.
+  Proof.
+    intros (value12 & Hattribute1 & Hattribute2)
+      (value23 & Hattribute2' & Hattribute3).
+    assert (value12 = value23) as -> by congruence.
+    by exists value23.
+  Qed.
+
+  Lemma same_location_endpoints E eid1 eid2 :
+    same_location E eid1 eid2 ->
+    in_event_structure E eid1 /\ in_event_structure E eid2.
+  Proof. apply same_attribute_endpoints. Qed.
+
+  Lemma same_location_symmetric E eid1 eid2 :
+    same_location E eid1 eid2 -> same_location E eid2 eid1.
+  Proof. apply same_attribute_symmetric. Qed.
+
+  Lemma same_location_transitive E eid1 eid2 eid3 :
+    same_location E eid1 eid2 -> same_location E eid2 eid3 ->
+    same_location E eid1 eid3.
+  Proof. apply same_attribute_transitive. Qed.
+
+  Lemma same_agent_endpoints E eid1 eid2 :
+    same_agent E eid1 eid2 ->
+    in_event_structure E eid1 /\ in_event_structure E eid2.
+  Proof. apply same_attribute_endpoints. Qed.
+
+  Lemma same_agent_symmetric E eid1 eid2 :
+    same_agent E eid1 eid2 -> same_agent E eid2 eid1.
+  Proof. apply same_attribute_symmetric. Qed.
+
+  Lemma same_agent_transitive E eid1 eid2 eid3 :
+    same_agent E eid1 eid2 -> same_agent E eid2 eid3 ->
+    same_agent E eid1 eid3.
+  Proof. apply same_attribute_transitive. Qed.
 
   Lemma event_structure_wf_agent_position_injective E :
     event_structure_wf E ->
@@ -106,16 +191,12 @@ Module LkmmExecution.
 
   Lemma po_same_agent E eid1 eid2 :
     po E eid1 eid2 ->
-    exists ev1 ev2 agent,
-      lookup_event E eid1 = Some ev1 /\
-      lookup_event E eid2 = Some ev2 /\
-      agent_of ev1 = Some agent /\ agent_of ev2 = Some agent.
+    same_agent E eid1 eid2.
   Proof.
     intros (agent & index1 & index2 & label1 & label2 &
       Hlookup1 & Hlookup2 & Hlt).
-    exists (EAgent agent index1 label1),
-      (EAgent agent index2 label2), agent.
-    done.
+    exists agent. unfold event_attribute.
+    rewrite Hlookup1, Hlookup2. done.
   Qed.
 
   Lemma po_irreflexive E eid :
@@ -139,16 +220,55 @@ Module LkmmExecution.
     repeat split; try done. lia.
   Qed.
 
+  Lemma po_loc_po E eid1 eid2 :
+    po_loc E eid1 eid2 -> po E eid1 eid2.
+  Proof. intros [Hpo _]. exact Hpo. Qed.
+
+  Lemma po_loc_same_location E eid1 eid2 :
+    po_loc E eid1 eid2 -> same_location E eid1 eid2.
+  Proof. intros [_ Hloc]. exact Hloc. Qed.
+
+  Lemma po_loc_endpoints E eid1 eid2 :
+    po_loc E eid1 eid2 ->
+    in_event_structure E eid1 /\ in_event_structure E eid2.
+  Proof. intros [Hpo _]. by eapply po_endpoints. Qed.
+
+  Lemma po_loc_same_agent E eid1 eid2 :
+    po_loc E eid1 eid2 ->
+    same_agent E eid1 eid2.
+  Proof. intros [Hpo _]. by eapply po_same_agent. Qed.
+
+  Lemma po_loc_irreflexive E eid :
+    ~ po_loc E eid eid.
+  Proof. intros [Hpo _]. by eapply po_irreflexive. Qed.
+
+  Lemma po_loc_transitive E eid1 eid2 eid3 :
+    po_loc E eid1 eid2 -> po_loc E eid2 eid3 -> po_loc E eid1 eid3.
+  Proof.
+    intros [Hpo12 Hloc12] [Hpo23 Hloc23]. split.
+    - by eapply po_transitive.
+    - by eapply same_location_transitive.
+  Qed.
+
   Lemma po_total_same_agent E :
     event_structure_wf E ->
-    forall eid1 eid2 agent index1 index2 label1 label2,
-      lookup_event E eid1 = Some (EAgent agent index1 label1) ->
-      lookup_event E eid2 = Some (EAgent agent index2 label2) ->
+    forall eid1 eid2,
+      same_agent E eid1 eid2 ->
       eid1 <> eid2 ->
       po E eid1 eid2 \/ po E eid2 eid1.
   Proof.
-    intros Hwf eid1 eid2 agent index1 index2 label1 label2
-      Hlookup1 Hlookup2 Hneq.
+    intros Hwf eid1 eid2 (agent & Hagent1 & Hagent2) Hneq.
+    apply event_attribute_Some in Hagent1
+      as (event1 & Hlookup1 & Hagent1).
+    apply event_attribute_Some in Hagent2
+      as (event2 & Hlookup2 & Hagent2).
+    destruct event1 as [loc1 val1 | agent1 index1 label1];
+      first discriminate Hagent1.
+    destruct event2 as [loc2 val2 | agent2 index2 label2];
+      first discriminate Hagent2.
+    simpl in Hagent1, Hagent2.
+    assert (agent1 = agent) as -> by congruence.
+    assert (agent2 = agent) as -> by congruence.
     destruct (Nat.lt_trichotomy index1 index2) as [Hlt | [Heq | Hlt]].
     - left. exists agent, index1, index2, label1, label2. done.
     - exfalso. apply Hneq. subst index2. by eapply Hwf.
@@ -181,6 +301,10 @@ Module LkmmExecution.
       EAgent 0 2 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
     Definition other_agent_write : event :=
       EAgent 1 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition other_location_write : event :=
+      EAgent 0 2 (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
+    Definition mb_at_two : event :=
+      EAgent 0 2 (LBarrier BarrierMb).
 
     Definition sample_structure : event_structure :=
       <[1 := once_read]> ({[0 := init_write]} : event_structure).
@@ -270,6 +394,10 @@ Module LkmmExecution.
     Definition same_agent_structure : event_structure :=
       <[2 := once_write_at_two]> ({[1 := once_read]} : event_structure).
 
+    Example same_agent_structure_has_same_agent :
+      same_agent same_agent_structure 1 2.
+    Proof. exists 0. split; reflexivity. Qed.
+
     Example same_agent_indices_are_in_program_order :
       po same_agent_structure 1 2.
     Proof.
@@ -279,8 +407,41 @@ Module LkmmExecution.
       repeat split; try reflexivity. lia.
     Qed.
 
+    Example same_agent_same_location_is_in_po_loc :
+      po_loc same_agent_structure 1 2.
+    Proof.
+      split.
+      - apply same_agent_indices_are_in_program_order.
+      - exists 0. split; reflexivity.
+    Qed.
+
+    Definition different_location_structure : event_structure :=
+      <[2 := other_location_write]> ({[1 := once_read]} : event_structure).
+
+    Example same_agent_different_location_is_not_in_po_loc :
+      po different_location_structure 1 2 /\
+      ~ po_loc different_location_structure 1 2.
+    Proof.
+      split.
+      - exists 0, 0, 2,
+          (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
+          (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
+        repeat split; try reflexivity. lia.
+      - intros [_ (loc & Hloc1 & Hloc2)].
+        change (Some 0 = Some loc) in Hloc1.
+        change (Some 1 = Some loc) in Hloc2. congruence.
+    Qed.
+
     Definition cross_agent_structure : event_structure :=
       <[2 := other_agent_write]> ({[1 := once_read]} : event_structure).
+
+    Example cross_agent_structure_has_different_agents :
+      ~ same_agent cross_agent_structure 1 2.
+    Proof.
+      intros (agent & Hagent1 & Hagent2).
+      change (Some 0 = Some agent) in Hagent1.
+      change (Some 1 = Some agent) in Hagent2. congruence.
+    Qed.
 
     Example different_agents_are_not_in_program_order :
       ~ po cross_agent_structure 1 2.
@@ -306,12 +467,37 @@ Module LkmmExecution.
         + lia.
     Qed.
 
+    Example different_agents_are_not_in_po_loc :
+      ~ po_loc cross_agent_structure 1 2.
+    Proof.
+      intros Hpo_loc. apply different_agents_are_not_in_program_order.
+      by eapply po_loc_po.
+    Qed.
+
+    Definition barrier_structure : event_structure :=
+      <[2 := mb_at_two]> ({[1 := once_read]} : event_structure).
+
+    Example barrier_is_not_in_po_loc :
+      ~ po_loc barrier_structure 1 2.
+    Proof.
+      intros [_ (loc & Hloc1 & Hloc2)].
+      change (None = Some loc) in Hloc2. discriminate Hloc2.
+    Qed.
+
     Example initial_write_is_not_in_program_order :
       ~ po sample_structure 0 1 /\ ~ po sample_structure 1 0.
     Proof.
       split.
       - eapply initial_write_not_po_source. reflexivity.
       - eapply initial_write_not_po_target. reflexivity.
+    Qed.
+
+    Example initial_write_is_not_in_po_loc :
+      ~ po_loc sample_structure 0 1 /\ ~ po_loc sample_structure 1 0.
+    Proof.
+      destruct initial_write_is_not_in_program_order as [Hsource Htarget].
+      split; intros Hpo_loc; [apply Hsource | apply Htarget];
+        by eapply po_loc_po.
     Qed.
   End EventStructureTests.
 

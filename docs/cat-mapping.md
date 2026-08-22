@@ -44,6 +44,16 @@ be contiguous, and initial writes are excluded because they have no agent or
 local index.  `event_structure_wf` ensures that an agent-local position
 identifies at most one event.
 
+The same file defines `event_attribute` by composing event lookup with an
+option-valued event projection, and lifts it to the binary `same_attribute`
+relation.  The canonical `same_location` and `same_agent` relations specialize
+this construction with `location_of` and `agent_of`.  It then defines `po_loc`
+as `po & same_location`.  Consequently barriers are excluded because they
+have no location, while initial writes are excluded by `po`.  The `rf`, `co`,
+and `fr` edge well-formedness predicates in
+`theories/lkmm/memory_relations.v` reuse `same_location`, as do coherence
+totality, initial-write ordering, and the `location_used` projection.
+
 The feasibility kernel continues to accept an abstract `RcuGraph.po`; the
 later RCU compatibility view will connect it to this canonical relation.
 
@@ -81,8 +91,8 @@ Under `rf_wf` and `co_wf`, every `fr` edge runs from a read to a write at the
 same location.
 
 The Linux v6.18 constraint `acyclic (po-loc | rf | co | fr)` at
-`linux-kernel.cat:70` remains deferred until `po-loc` and the base coherence
-predicate are introduced.
+`linux-kernel.cat:70` remains deferred until the base coherence predicate is
+introduced.
 
 ## Feasibility-kernel RCU mapping
 
