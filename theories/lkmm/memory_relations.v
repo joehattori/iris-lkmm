@@ -23,6 +23,11 @@ Module LkmmMemoryRelations.
       rather than only its immediate-successor edges. *)
   Definition co (edges : edge_set) : relation := edge_relation edges.
 
+  (** From-read is derived from reads-from and coherence order: a read is
+      before every write that is coherence-later than its source write. *)
+  Definition fr (rf_edges co_edges : edge_set) : relation :=
+    rel_seq (rel_inverse (rf rf_edges)) (co co_edges).
+
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
     exists write_event read_event loc val,
       lookup_event E write = Some write_event /\
@@ -131,6 +136,14 @@ Module LkmmMemoryRelations.
       location_of write_event1 = Some loc /\
       location_of write_event2 = Some loc.
 
+  Definition fr_edge_wf (E : event_structure) (read write : event_id) : Prop :=
+    exists read_event write_event loc,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      is_read read_event /\ is_write write_event /\
+      location_of read_event = Some loc /\
+      location_of write_event = Some loc.
+
   Definition co_irreflexive (edges : edge_set) : Prop :=
     forall write, ~ co edges write write.
 
@@ -149,8 +162,7 @@ Module LkmmMemoryRelations.
       write1 <> write2 ->
       co edges write1 write2 \/ co edges write2 write1.
 
-  Definition co_initial_first (E : event_structure)
-      (edges : edge_set) : Prop :=
+  Definition co_initial_first (E : event_structure) (edges : edge_set) : Prop :=
     forall initial write loc write_event,
       initial_write_at E loc initial ->
       lookup_event E write = Some write_event ->
@@ -160,14 +172,13 @@ Module LkmmMemoryRelations.
       co edges initial write.
 
   Definition co_wf (E : event_structure) (edges : edge_set) : Prop :=
-    (forall write1 write2, co edges write1 write2 ->
-      co_edge_wf E write1 write2) /\
-    co_irreflexive edges /\
-    co_transitive edges /\
-    co_total E edges /\
-    initial_writes_exist E /\
-    initial_writes_unique E /\
-    co_initial_first E edges.
+    (forall write1 write2, co edges write1 write2 -> co_edge_wf E write1 write2) /\
+      co_irreflexive edges /\
+      co_transitive edges /\
+      co_total E edges /\
+      initial_writes_exist E /\
+      initial_writes_unique E /\
+      co_initial_first E edges.
 
   Lemma co_wf_edge E edges write1 write2 :
     co_wf E edges -> co edges write1 write2 ->
@@ -218,6 +229,78 @@ Module LkmmMemoryRelations.
       location_of write_event1 = Some loc /\
       location_of write_event2 = Some loc.
   Proof. intros Hwf Hco. by eapply co_wf_edge. Qed.
+
+  Lemma fr_wf_edge E rf_edges co_edges read write :
+    rf_wf E rf_edges -> co_wf E co_edges ->
+    fr rf_edges co_edges read write -> fr_edge_wf E read write.
+  Proof.
+    intros Hrf_wf Hco_wf Hfr.
+    unfold fr, rel_seq in Hfr.
+    destruct Hfr as (source & Hrf & Hco).
+    unfold rel_inverse in Hrf.
+    destruct (rf_wf_edge E rf_edges source read Hrf_wf Hrf)
+      as (source_event & read_event & loc & val &
+        Hsource & Hread & Hsource_kind & Hread_kind &
+        Hsource_loc & Hread_loc & Hsource_val & Hread_val).
+    destruct (co_wf_edge E co_edges source write Hco_wf Hco)
+      as (source_event' & write_event & loc' &
+        Hsource' & Hwrite & Hsource_kind' & Hwrite_kind &
+        Hsource_loc' & Hwrite_loc).
+    assert (source_event = source_event') as Hevent by congruence.
+    subst source_event'.
+    assert (loc = loc') as Hloc by congruence.
+    subst loc'.
+    exists read_event, write_event, loc. done.
+  Qed.
+
+  Lemma fr_wf_endpoints E rf_edges co_edges read write :
+    rf_wf E rf_edges -> co_wf E co_edges ->
+    fr rf_edges co_edges read write ->
+    in_event_structure E read /\ in_event_structure E write.
+  Proof.
+    intros Hrf_wf Hco_wf Hfr.
+    destruct (fr_wf_edge E rf_edges co_edges read write
+      Hrf_wf Hco_wf Hfr)
+      as (read_event & write_event & loc &
+        Hread & Hwrite & Hread_kind & Hwrite_kind &
+        Hread_loc & Hwrite_loc).
+    split; eapply lookup_event_in; eauto.
+  Qed.
+
+  Lemma fr_wf_kinds E rf_edges co_edges read write :
+    rf_wf E rf_edges -> co_wf E co_edges ->
+    fr rf_edges co_edges read write ->
+    exists read_event write_event,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      is_read read_event /\ is_write write_event.
+  Proof.
+    intros Hrf_wf Hco_wf Hfr.
+    destruct (fr_wf_edge E rf_edges co_edges read write
+      Hrf_wf Hco_wf Hfr)
+      as (read_event & write_event & loc &
+        Hread & Hwrite & Hread_kind & Hwrite_kind &
+        Hread_loc & Hwrite_loc).
+    exists read_event, write_event. done.
+  Qed.
+
+  Lemma fr_wf_same_location E rf_edges co_edges read write :
+    rf_wf E rf_edges -> co_wf E co_edges ->
+    fr rf_edges co_edges read write ->
+    exists read_event write_event loc,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      location_of read_event = Some loc /\
+      location_of write_event = Some loc.
+  Proof.
+    intros Hrf_wf Hco_wf Hfr.
+    destruct (fr_wf_edge E rf_edges co_edges read write
+      Hrf_wf Hco_wf Hfr)
+      as (read_event & write_event & loc &
+        Hread & Hwrite & Hread_kind & Hwrite_kind &
+        Hread_loc & Hwrite_loc).
+    exists read_event, write_event, loc. done.
+  Qed.
 
   Module ReadsFromTests.
     Definition init_write : event := EInitWrite 0 0%Z.
@@ -420,5 +503,47 @@ Module LkmmMemoryRelations.
       unfold co, edge_relation, late_initial_co in Hco. set_solver.
     Qed.
   End CoherenceOrderTests.
+
+  Module FromReadTests.
+    (** Writes [0], [1], and [2] form a coherence chain.  Read [3] reads
+        from [0], while read [4] reads from [1]. *)
+    Definition sample_rf : edge_set := {[(0, 3); (1, 4)]}.
+    Definition sample_co : edge_set := {[(0, 1); (0, 2); (1, 2)]}.
+
+    Example read_is_fr_before_next_write :
+      fr sample_rf sample_co 3 1.
+    Proof.
+      unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+        sample_rf, sample_co. set_solver.
+    Qed.
+
+    Example read_is_fr_before_indirect_later_write :
+      fr sample_rf sample_co 3 2.
+    Proof.
+      unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+        sample_rf, sample_co. set_solver.
+    Qed.
+
+    Example read_from_middle_is_fr_before_later_write :
+      fr sample_rf sample_co 4 2.
+    Proof.
+      unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+        sample_rf, sample_co. set_solver.
+    Qed.
+
+    Example read_is_not_fr_before_source_write :
+      ~ fr sample_rf sample_co 3 0.
+    Proof.
+      unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+        sample_rf, sample_co. set_solver.
+    Qed.
+
+    Example read_is_not_fr_before_coherence_earlier_write :
+      ~ fr sample_rf sample_co 4 0.
+    Proof.
+      unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+        sample_rf, sample_co. set_solver.
+    Qed.
+  End FromReadTests.
 
 End LkmmMemoryRelations.

@@ -71,8 +71,17 @@ used by a memory event has exactly one initial write, and that initial write
 precedes every other write to the location.  These are candidate-graph
 well-formedness conditions rather than LKMM consistency axioms.
 
+## From-read relation
+
+`theories/lkmm/memory_relations.v` defines `fr` as the derived relation
+`rf^-1 ; co`.  Thus a read is `fr`-before exactly those writes that are
+coherence-later than the write it reads from.  It is not an independent
+candidate choice and has no separate edge set or well-formedness predicate.
+Under `rf_wf` and `co_wf`, every `fr` edge runs from a read to a write at the
+same location.
+
 The Linux v6.18 constraint `acyclic (po-loc | rf | co | fr)` at
-`linux-kernel.cat:70` remains deferred until `fr` and the base coherence
+`linux-kernel.cat:70` remains deferred until `po-loc` and the base coherence
 predicate are introduced.
 
 ## Feasibility-kernel RCU mapping
