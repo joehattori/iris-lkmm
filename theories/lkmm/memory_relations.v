@@ -23,6 +23,11 @@ Module LkmmMemoryRelations.
       rather than only its immediate-successor edges. *)
   Definition co (edges : edge_set) : relation := edge_relation edges.
 
+  (** Read-modify-write pairing is supplied by the candidate execution.
+      Successful operations contribute a marked read-to-write edge; failed
+      conditional operations contribute only their marked read event. *)
+  Definition rmw (edges : edge_set) : relation := edge_relation edges.
+
   (** From-read is derived from reads-from and coherence order: a read is
       before every write that is coherence-later than its source write. *)
   Definition fr (rf_edges co_edges : edge_set) : relation :=
@@ -111,6 +116,140 @@ Module LkmmMemoryRelations.
         Hwrite & Hread & Hwrite_kind & Hread_kind &
         Hsame_loc & Hwrite_val & Hread_val).
     exists write_event, read_event, val. done.
+  Qed.
+
+  Definition rmw_edge_wf (E : event_structure)
+      (read write : event_id) : Prop :=
+    exists read_event write_event,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      is_read read_event /\ is_write write_event /\
+      is_rmw_marked read_event /\ is_rmw_marked write_event /\
+      po E read write /\
+      same_location E read write /\
+      same_attribute access_mode_of E read write.
+
+  Definition rmw_functional (edges : edge_set) : Prop :=
+    forall read write1 write2,
+      rmw edges read write1 -> rmw edges read write2 -> write1 = write2.
+
+  Definition rmw_injective (edges : edge_set) : Prop :=
+    forall read1 read2 write,
+      rmw edges read1 write -> rmw edges read2 write -> read1 = read2.
+
+  (** Every marked write is the write half of a successful RMW.  Marked
+      reads are intentionally not total because a failed conditional RMW
+      has no write half. *)
+  Definition rmw_write_total (E : event_structure) (edges : edge_set) : Prop :=
+    forall write write_event,
+      lookup_event E write = Some write_event ->
+      is_write write_event -> is_rmw_marked write_event ->
+      exists read, rmw edges read write.
+
+  Definition rmw_wf (E : event_structure) (edges : edge_set) : Prop :=
+    (forall read write, rmw edges read write -> rmw_edge_wf E read write) /\
+    rmw_functional edges /\
+    rmw_injective edges /\
+    rmw_write_total E edges.
+
+  Lemma rmw_wf_edge E edges read write :
+    rmw_wf E edges -> rmw edges read write -> rmw_edge_wf E read write.
+  Proof. intros (Hedges & _ & _ & _) Hrmw. by eapply Hedges. Qed.
+
+  Lemma rmw_wf_functional E edges :
+    rmw_wf E edges -> rmw_functional edges.
+  Proof. intros (_ & Hfunctional & _ & _). exact Hfunctional. Qed.
+
+  Lemma rmw_wf_injective E edges :
+    rmw_wf E edges -> rmw_injective edges.
+  Proof. intros (_ & _ & Hinjective & _). exact Hinjective. Qed.
+
+  Lemma rmw_wf_write_total E edges :
+    rmw_wf E edges -> rmw_write_total E edges.
+  Proof. intros (_ & _ & _ & Htotal). exact Htotal. Qed.
+
+  Lemma rmw_wf_endpoints E edges read write :
+    rmw_wf E edges -> rmw edges read write ->
+    in_event_structure E read /\ in_event_structure E write.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    by eapply po_endpoints.
+  Qed.
+
+  Lemma rmw_wf_kinds E edges read write :
+    rmw_wf E edges -> rmw edges read write ->
+    exists read_event write_event,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      is_read read_event /\ is_write write_event.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    exists read_event, write_event. done.
+  Qed.
+
+  Lemma rmw_wf_marked E edges read write :
+    rmw_wf E edges -> rmw edges read write ->
+    exists read_event write_event,
+      lookup_event E read = Some read_event /\
+      lookup_event E write = Some write_event /\
+      is_rmw_marked read_event /\ is_rmw_marked write_event.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    exists read_event, write_event. done.
+  Qed.
+
+  Lemma rmw_wf_po E edges read write :
+    rmw_wf E edges -> rmw edges read write -> po E read write.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    exact Hpo.
+  Qed.
+
+  Lemma rmw_wf_same_agent E edges read write :
+    rmw_wf E edges -> rmw edges read write -> same_agent E read write.
+  Proof.
+    intros Hwf Hrmw. apply po_same_agent.
+    by eapply rmw_wf_po.
+  Qed.
+
+  Lemma rmw_wf_same_location E edges read write :
+    rmw_wf E edges -> rmw edges read write ->
+    same_location E read write.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    exact Hsame_loc.
+  Qed.
+
+  Lemma rmw_wf_same_mode E edges read write :
+    rmw_wf E edges -> rmw edges read write ->
+    same_attribute access_mode_of E read write.
+  Proof.
+    intros Hwf Hrmw.
+    destruct (rmw_wf_edge E edges read write Hwf Hrmw)
+      as (read_event & write_event & Hread & Hwrite &
+        Hread_kind & Hwrite_kind & Hread_marked & Hwrite_marked &
+        Hpo & Hsame_loc & Hsame_mode).
+    exact Hsame_mode.
   Qed.
 
   Definition location_used (E : event_structure) (loc : location) : Prop :=
@@ -346,6 +485,262 @@ Module LkmmMemoryRelations.
       lia.
     Qed.
   End ReadsFromTests.
+
+  Module ReadModifyWriteTests.
+    Definition marked_read : event :=
+      EAgent 0 0 (LMemory AccessRead AccessMb RmwMarked 0 7%Z).
+    Definition marked_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessMb RmwMarked 0 8%Z).
+
+    Definition sample_events : event_structure :=
+      <[1 := marked_write]> ({[0 := marked_read]} : event_structure).
+
+    Definition sample_rmw : edge_set := {[(0, 1)]}.
+
+    Local Lemma sample_lookup_cases eid ev :
+      lookup_event sample_events eid = Some ev ->
+      (eid = 0 /\ ev = marked_read) \/
+      (eid = 1 /\ ev = marked_write).
+    Proof.
+      intros Hlookup.
+      unfold lookup_event, sample_events in Hlookup.
+      apply lookup_insert_Some in Hlookup.
+      destruct Hlookup as [[-> Hevent] | [Hne Hlookup]].
+      - right. naive_solver.
+      - apply lookup_singleton_Some in Hlookup.
+        left. naive_solver.
+    Qed.
+
+    Local Lemma singleton_rmw_edge read write :
+      rmw ({[(read, write)]} : edge_set) read write.
+    Proof. unfold rmw, edge_relation. set_solver. Qed.
+
+    Example successful_rmw_is_well_formed :
+      rmw_wf sample_events sample_rmw.
+    Proof.
+      repeat split.
+      - intros read write Hrmw.
+        unfold rmw, edge_relation, sample_rmw in Hrmw.
+        assert (read = 0 /\ write = 1) as [-> ->] by set_solver.
+        exists marked_read, marked_write.
+        repeat split; try reflexivity.
+        + exists 0, 0, 1,
+            (LMemory AccessRead AccessMb RmwMarked 0 7%Z),
+            (LMemory AccessWrite AccessMb RmwMarked 0 8%Z).
+          repeat split; try reflexivity. lia.
+        + exists 0. split; reflexivity.
+        + exists AccessMb. split; reflexivity.
+      - intros read write1 write2 Hrmw1 Hrmw2.
+        unfold rmw, edge_relation, sample_rmw in Hrmw1, Hrmw2.
+        set_solver.
+      - intros read1 read2 write Hrmw1 Hrmw2.
+        unfold rmw, edge_relation, sample_rmw in Hrmw1, Hrmw2.
+        set_solver.
+      - intros write write_event Hlookup Hwrite Hmarked.
+        destruct (sample_lookup_cases write write_event Hlookup)
+          as [(-> & ->) | (-> & ->)].
+        + discriminate Hwrite.
+        + exists 0. unfold rmw, edge_relation, sample_rmw. set_solver.
+    Qed.
+
+    Definition failed_events : event_structure :=
+      ({[0 := marked_read]} : event_structure).
+
+    Example failed_rmw_read_may_be_unpaired :
+      rmw_wf failed_events (∅ : edge_set).
+    Proof.
+      repeat split.
+      - intros read write Hrmw.
+        unfold rmw, edge_relation in Hrmw. set_solver.
+      - intros read write1 write2 Hrmw1 Hrmw2.
+        unfold rmw, edge_relation in Hrmw1. set_solver.
+      - intros read1 read2 write Hrmw1 Hrmw2.
+        unfold rmw, edge_relation in Hrmw1. set_solver.
+      - intros write write_event Hlookup Hwrite Hmarked.
+        unfold lookup_event, failed_events in Hlookup.
+        apply lookup_singleton_Some in Hlookup as [Hwrite_id Hevent].
+        subst write. subst write_event.
+        discriminate Hwrite.
+    Qed.
+
+    Definition write_only_events : event_structure :=
+      ({[1 := marked_write]} : event_structure).
+
+    Example marked_write_must_be_paired :
+      ~ rmw_wf write_only_events (∅ : edge_set).
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_write_total write_only_events
+        (∅ : edge_set) Hwf) as Htotal.
+      destruct (Htotal 1 marked_write) as (read & Hrmw).
+      - reflexivity.
+      - reflexivity.
+      - reflexivity.
+      - unfold rmw, edge_relation in Hrmw. set_solver.
+    Qed.
+
+    Example reversed_kinds_are_not_well_formed :
+      ~ rmw_wf sample_events ({[(1, 0)]} : edge_set).
+    Proof.
+      intros Hwf.
+      destruct (rmw_wf_kinds sample_events ({[(1, 0)]} : edge_set)
+        1 0 Hwf (singleton_rmw_edge 1 0))
+        as (read_event & write_event & Hread & Hwrite &
+          Hread_kind & Hwrite_kind).
+      assert (read_event = marked_write) as ->.
+      { change (Some marked_write = Some read_event) in Hread. congruence. }
+      discriminate Hread_kind.
+    Qed.
+
+    Definition unmarked_read : event :=
+      EAgent 0 0 (LMemory AccessRead AccessMb NotRmw 0 7%Z).
+    Definition unmarked_source_events : event_structure :=
+      <[1 := marked_write]> ({[0 := unmarked_read]} : event_structure).
+
+    Example unmarked_read_is_not_a_valid_rmw_source :
+      ~ rmw_wf unmarked_source_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      destruct (rmw_wf_marked unmarked_source_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (read_event & write_event & Hread & Hwrite &
+          Hread_marked & Hwrite_marked).
+      assert (read_event = unmarked_read) as ->.
+      { change (Some unmarked_read = Some read_event) in Hread. congruence. }
+      discriminate Hread_marked.
+    Qed.
+
+    Definition unmarked_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessMb NotRmw 0 8%Z).
+    Definition unmarked_target_events : event_structure :=
+      <[1 := unmarked_write]> ({[0 := marked_read]} : event_structure).
+
+    Example unmarked_write_is_not_a_valid_rmw_target :
+      ~ rmw_wf unmarked_target_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      destruct (rmw_wf_marked unmarked_target_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (read_event & write_event & Hread & Hwrite &
+          Hread_marked & Hwrite_marked).
+      assert (write_event = unmarked_write) as ->.
+      { change (Some unmarked_write = Some write_event) in Hwrite. congruence. }
+      discriminate Hwrite_marked.
+    Qed.
+
+    Definition other_location_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessMb RmwMarked 1 8%Z).
+    Definition different_location_events : event_structure :=
+      <[1 := other_location_write]> ({[0 := marked_read]} : event_structure).
+
+    Example different_locations_are_not_well_formed :
+      ~ rmw_wf different_location_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_same_location different_location_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (loc & Hread_loc & Hwrite_loc).
+      change (Some 0 = Some loc) in Hread_loc.
+      change (Some 1 = Some loc) in Hwrite_loc.
+      congruence.
+    Qed.
+
+    Definition other_mode_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 8%Z).
+    Definition different_mode_events : event_structure :=
+      <[1 := other_mode_write]> ({[0 := marked_read]} : event_structure).
+
+    Example different_modes_are_not_well_formed :
+      ~ rmw_wf different_mode_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_same_mode different_mode_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (mode & Hread_mode & Hwrite_mode).
+      change (Some AccessMb = Some mode) in Hread_mode.
+      change (Some AccessOnce = Some mode) in Hwrite_mode.
+      congruence.
+    Qed.
+
+    Definition other_agent_write : event :=
+      EAgent 1 1 (LMemory AccessWrite AccessMb RmwMarked 0 8%Z).
+    Definition different_agent_events : event_structure :=
+      <[1 := other_agent_write]> ({[0 := marked_read]} : event_structure).
+
+    Example different_agents_are_not_well_formed :
+      ~ rmw_wf different_agent_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_po different_agent_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (agent & index1 & index2 & label1 & label2 &
+          Hread & Hwrite & Hlt).
+      change (Some marked_read = Some (EAgent agent index1 label1)) in Hread.
+      change (Some other_agent_write = Some (EAgent agent index2 label2)) in Hwrite.
+      unfold marked_read, other_agent_write in Hread, Hwrite.
+      congruence.
+    Qed.
+
+    Definition late_read : event :=
+      EAgent 0 2 (LMemory AccessRead AccessMb RmwMarked 0 7%Z).
+    Definition reversed_po_events : event_structure :=
+      <[1 := marked_write]> ({[0 := late_read]} : event_structure).
+
+    Example reversed_program_order_is_not_well_formed :
+      ~ rmw_wf reversed_po_events ({[(0, 1)]} : edge_set).
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_po reversed_po_events
+        ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
+        as (agent & index1 & index2 & label1 & label2 &
+          Hread & Hwrite & Hlt).
+      change (Some late_read = Some (EAgent agent index1 label1)) in Hread.
+      change (Some marked_write = Some (EAgent agent index2 label2)) in Hwrite.
+      unfold late_read in Hread. unfold marked_write in Hwrite.
+      assert (index1 = 2) as -> by congruence.
+      assert (index2 = 1) as -> by congruence.
+      lia.
+    Qed.
+
+    Definition second_write : event :=
+      EAgent 0 2 (LMemory AccessWrite AccessMb RmwMarked 0 9%Z).
+    Definition two_write_events : event_structure :=
+      <[2 := second_write]> sample_events.
+    Definition one_read_two_writes : edge_set := {[(0, 1); (0, 2)]}.
+
+    Example one_read_cannot_pair_with_two_writes :
+      ~ rmw_wf two_write_events one_read_two_writes.
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_functional two_write_events
+        one_read_two_writes Hwf) as Hfunctional.
+      assert (1 = 2) as Heq.
+      { eapply Hfunctional with (read := 0);
+          unfold rmw, edge_relation, one_read_two_writes; set_solver. }
+      lia.
+    Qed.
+
+    Definition second_read : event :=
+      EAgent 0 1 (LMemory AccessRead AccessMb RmwMarked 0 7%Z).
+    Definition late_write : event :=
+      EAgent 0 2 (LMemory AccessWrite AccessMb RmwMarked 0 8%Z).
+    Definition two_read_events : event_structure :=
+      <[2 := second_read]>
+        (<[1 := late_write]> ({[0 := marked_read]} : event_structure)).
+    Definition two_reads_one_write : edge_set := {[(0, 1); (2, 1)]}.
+
+    Example one_write_cannot_pair_with_two_reads :
+      ~ rmw_wf two_read_events two_reads_one_write.
+    Proof.
+      intros Hwf.
+      pose proof (rmw_wf_injective two_read_events
+        two_reads_one_write Hwf) as Hinjective.
+      assert (0 = 2) as Heq.
+      { eapply Hinjective with (write := 1);
+          unfold rmw, edge_relation, two_reads_one_write; set_solver. }
+      lia.
+    Qed.
+  End ReadModifyWriteTests.
 
   Module CoherenceOrderTests.
     Definition init_write : event := EInitWrite 0 0%Z.

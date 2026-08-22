@@ -6,8 +6,8 @@ From iris_lkmm.lkmm Require Import prelude.
 
     Access modes and RMW marking are syntactic annotations from
     [linux-kernel.bell].  The semantic [Acquire], [Release], [Mb],
-    [Noreturn], and [FailedRMW] sets depend on the future [rmw] relation and
-    are deliberately not defined here. *)
+    [Noreturn], and [FailedRMW] sets depend on execution relations, including
+    [rmw], and are deliberately not defined in this event-vocabulary layer. *)
 Module LkmmEvents.
   Import LkmmPrelude.
 
@@ -28,7 +28,7 @@ Module LkmmEvents.
   | AccessMb.
 
   (** [RmwMarked] records the syntactic RMW classification.  A successful
-      RMW will later consist of marked read and write events connected by an
+      RMW consists of marked read and write events connected by an
       [rmw] edge.  A failed conditional RMW has only the marked read event. *)
   Inductive rmw_mark :=
   | NotRmw
@@ -135,8 +135,7 @@ Module LkmmEvents.
 
   Local Definition event_label_encode (label : event_label) : event_label_repr :=
     match label with
-    | LMemory kind mode mark loc val =>
-        inl (kind, (mode, (mark, (loc, val))))
+    | LMemory kind mode mark loc val => inl (kind, (mode, (mark, (loc, val))))
     | LBarrier barrier => inr barrier
     end.
 
@@ -228,13 +227,14 @@ Module LkmmEvents.
     end.
 
   Definition is_initial (ev : event) : Prop :=
-    match ev with EInitWrite _ _ => True | _ => False end.
+    match ev with
+    | EInitWrite _ _ => True
+    | _ => False
+    end.
 
-  Definition is_read (ev : event) : Prop :=
-    access_kind_of ev = Some AccessRead.
+  Definition is_read (ev : event) : Prop := access_kind_of ev = Some AccessRead.
 
-  Definition is_write (ev : event) : Prop :=
-    access_kind_of ev = Some AccessWrite.
+  Definition is_write (ev : event) : Prop := access_kind_of ev = Some AccessWrite.
 
   Definition is_memory (ev : event) : Prop :=
     match ev with
@@ -248,17 +248,13 @@ Module LkmmEvents.
     | _ => False
     end.
 
-  Definition is_rmw_marked (ev : event) : Prop :=
-    rmw_mark_of ev = Some RmwMarked.
+  Definition is_rmw_marked (ev : event) : Prop := rmw_mark_of ev = Some RmwMarked.
 
-  Definition is_rcu_lock (ev : event) : Prop :=
-    barrier_kind_of ev = Some BarrierRcuLock.
+  Definition is_rcu_lock (ev : event) : Prop := barrier_kind_of ev = Some BarrierRcuLock.
 
-  Definition is_rcu_unlock (ev : event) : Prop :=
-    barrier_kind_of ev = Some BarrierRcuUnlock.
+  Definition is_rcu_unlock (ev : event) : Prop := barrier_kind_of ev = Some BarrierRcuUnlock.
 
-  Definition is_sync_rcu (ev : event) : Prop :=
-    barrier_kind_of ev = Some BarrierSyncRcu.
+  Definition is_sync_rcu (ev : event) : Prop := barrier_kind_of ev = Some BarrierSyncRcu.
 
   Module EventTests.
     Definition init_write : event := EInitWrite 0 0%Z.
@@ -271,30 +267,29 @@ Module LkmmEvents.
 
     Example init_write_classification :
       is_initial init_write /\ is_write init_write /\ is_memory init_write /\ ~ is_read init_write.
-    Proof. repeat split; done. Qed.
+    Proof. done. Qed.
 
     Example once_read_observers :
       access_mode_of once_read = Some AccessOnce /\
-      location_of once_read = Some 1 /\ value_of once_read = Some 7%Z.
+      location_of once_read = Some 1 /\
+      value_of once_read = Some 7%Z.
     Proof. done. Qed.
 
     Example rmw_annotations_are_syntactic :
       is_rmw_marked rmw_read /\ is_read rmw_read /\ is_rmw_marked rmw_write /\ is_write rmw_write.
     Proof. done. Qed.
 
-    (** A lone marked read is a valid event value.  Whether it is a failed
-        conditional RMW is determined only after an [rmw] relation exists. *)
+    (** A lone marked read is a valid event value.  The execution's [rmw]
+        relation determines whether it is a failed conditional RMW. *)
     Example lone_rmw_read_is_representable : is_rmw_marked rmw_read.
     Proof. done. Qed.
 
     Example rcu_barriers_are_distinct :
-      is_rcu_lock rcu_lock /\ is_rcu_unlock rcu_unlock /\
-      is_sync_rcu sync_rcu.
+      is_rcu_lock rcu_lock /\ is_rcu_unlock rcu_unlock /\ is_sync_rcu sync_rcu.
     Proof. done. Qed.
 
     Definition event_set_smoke : gset event :=
-      {[init_write; once_read; rmw_read; rmw_write;
-        rcu_lock; rcu_unlock; sync_rcu]}.
+      {[init_write; once_read; rmw_read; rmw_write; rcu_lock; rcu_unlock; sync_rcu]}.
 
     Example once_read_in_event_set : once_read ∈ event_set_smoke.
     Proof. set_solver. Qed.

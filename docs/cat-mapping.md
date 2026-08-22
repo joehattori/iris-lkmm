@@ -6,20 +6,19 @@ numbers refer to Linux v6.18 at commit
 
 ## Canonical event vocabulary
 
-`theories/lkmm/events.v` defines the syntactic event vocabulary.  It does not
-yet define an execution graph or any graph relation.  In particular, the
-capitalized semantic Bell sets `Acquire`, `Release`, `Mb`, `Noreturn`, and
-`FailedRMW` are deferred because their definitions inspect event direction
-and, for failed RMWs, the future `rmw` relation.
+`theories/lkmm/events.v` defines only the syntactic event vocabulary; execution
+relations are kept in the graph layers.  The capitalized semantic Bell sets
+`Acquire`, `Release`, `Mb`, `Noreturn`, and `FailedRMW` remain deferred because
+their definitions combine syntactic classifications with execution relations.
 
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |
 | `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. RMW marking is orthogonal to read/write direction because successful operations will be represented by paired read and write events. |
 | `linux-kernel.bell:25-37` | barrier annotations | `barrier_kind`, `LBarrier` | Includes only `MB`, `rmb`, `wmb`, `rcu-lock`, `rcu-unlock`, and `sync-rcu`, as selected by the project scope. |
-| `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | deferred | Requires the execution graph and `rmw` relation; no event-only approximation is introduced. |
+| `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | deferred | The required `rmw` relation is now available, but the semantic-set layer remains separate; no event-only approximation is introduced. |
 | `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
 | `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
-| `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The future `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
+| `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
 | `linux-kernel.def:47-50` | `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu` | `BarrierRcuLock`, `BarrierRcuUnlock`, `BarrierSyncRcu` | Direct normal-RCU barrier constructors. `synchronize_rcu_expedited` has the same upstream tag but remains outside the selected language. |
 | `linux-kernel.def:66-70` | examples of non-returning atomic RMW operations | `AccessNoreturn` | Records the syntactic annotation only; its read-only semantic filtering is deferred. |
 
@@ -98,6 +97,28 @@ transcribes the Linux v6.18 constraint at `linux-kernel.cat:69-70` as
 separate from `event_structure_wf`, `rf_wf`, and `co_wf`: those predicates
 establish that the candidate relations have the required shape, while
 `coherence` rejects cycles through the otherwise well-formed relations.
+
+## Read-modify-write candidates
+
+`theories/lkmm/memory_relations.v` represents `rmw` as a finite set of
+read-to-write event-ID edges supplied by the candidate execution.  Every
+well-formed edge connects marked accesses from one successful RMW operation:
+the read is `po`-before the write, and both endpoints have the same location
+and syntactic access mode.  The `po` premise also ensures that the endpoints
+belong to the same agent.
+
+The predicate `rmw_wf` makes this pairing functional and injective, and
+requires every marked write to have a read partner.  It deliberately does not
+require every marked read to have a write partner, so a lone marked read can
+represent a failed conditional RMW.  The event vocabulary does not retain the
+operation or operand needed to validate the written value, nor does it
+distinguish conditional from unconditional RMW syntax; those checks belong to
+the later LKMM-Core program-graph correspondence.
+
+The semantic Bell sets based on `domain(rmw)` and `range(rmw)` remain deferred.
+The separate Linux v6.18 atomicity constraint at `linux-kernel.cat:73`,
+`empty rmw & (fre ; coe) as atomic`, also remains deferred until the internal
+and external communication relations are added.
 
 ## Feasibility-kernel RCU mapping
 
