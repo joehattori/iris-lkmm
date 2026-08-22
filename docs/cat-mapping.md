@@ -90,9 +90,14 @@ candidate choice and has no separate edge set or well-formedness predicate.
 Under `rf_wf` and `co_wf`, every `fr` edge runs from a read to a write at the
 same location.
 
-The Linux v6.18 constraint `acyclic (po-loc | rf | co | fr)` at
-`linux-kernel.cat:70` remains deferred until the base coherence predicate is
-introduced.
+## Base coherence
+
+`theories/lkmm/memory_relations.v` defines `com` as `rf | co | fr` and
+transcribes the Linux v6.18 constraint at `linux-kernel.cat:69-70` as
+`coherence = acyclic (po-loc | com)`.  This consistency predicate remains
+separate from `event_structure_wf`, `rf_wf`, and `co_wf`: those predicates
+establish that the candidate relations have the required shape, while
+`coherence` rejects cycles through the otherwise well-formed relations.
 
 ## Feasibility-kernel RCU mapping
 

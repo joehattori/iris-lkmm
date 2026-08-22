@@ -1,4 +1,4 @@
-From Stdlib Require Import ZArith.
+From Stdlib Require Import Relations.Relation_Operators ZArith.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import execution.
 
@@ -27,6 +27,15 @@ Module LkmmMemoryRelations.
       before every write that is coherence-later than its source write. *)
   Definition fr (rf_edges co_edges : edge_set) : relation :=
     rel_seq (rel_inverse (rf rf_edges)) (co co_edges).
+
+  (** Linux v6.18: [com = rf | co | fr]. *)
+  Definition com (rf_edges co_edges : edge_set) : relation :=
+    rel_union (rf rf_edges) (rel_union (co co_edges) (fr rf_edges co_edges)).
+
+  (** Linux v6.18: [acyclic (po-loc | com) as coherence].  Candidate
+      well-formedness remains separate from this consistency constraint. *)
+  Definition coherence (E : event_structure) (rf_edges co_edges : edge_set) : Prop :=
+    rel_acyclic (rel_union (po_loc E) (com rf_edges co_edges)).
 
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
     exists write_event read_event val,
@@ -535,5 +544,57 @@ Module LkmmMemoryRelations.
         sample_rf, sample_co. set_solver.
     Qed.
   End FromReadTests.
+
+  Module BaseCoherenceTests.
+    Definition first_write : event :=
+      EAgent 0 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition second_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
+
+    Definition sample_events : event_structure :=
+      <[2 := second_write]> ({[1 := first_write]} : event_structure).
+
+    Example empty_execution_is_coherent :
+      coherence empty_event_structure (∅ : edge_set) (∅ : edge_set).
+    Proof.
+      unfold coherence, rel_acyclic, rel_irreflexive.
+      intros eid Hcycle.
+      induction Hcycle as [source target Hedge |
+        source middle target Hleft IHleft Hright IHright].
+      - destruct Hedge as [Hpo_loc | Hcom].
+        + destruct Hpo_loc as [Hpo Hsame_loc].
+          destruct Hpo as (agent & index1 & index2 & label1 & label2 &
+            Hlookup1 & Hlookup2 & Hlt).
+          unfold lookup_event, empty_event_structure in Hlookup1.
+          discriminate Hlookup1.
+        + unfold com, rel_union in Hcom.
+          destruct Hcom as [Hrf | [Hco | Hfr]].
+          * unfold rf, edge_relation in Hrf. set_solver.
+          * unfold co, edge_relation in Hco. set_solver.
+          * unfold fr, rel_seq in Hfr.
+            destruct Hfr as (write & Hrf & Hco).
+            unfold rel_inverse, rf, edge_relation in Hrf. set_solver.
+      - exact IHleft.
+    Qed.
+
+    Definition reversed_co : edge_set := {[(2, 1)]}.
+
+    Example reversed_co_creates_a_coherence_cycle :
+      ~ coherence sample_events (∅ : edge_set) reversed_co.
+    Proof.
+      intros Hcoherence.
+      unfold coherence, rel_acyclic, rel_irreflexive in Hcoherence.
+      apply (Hcoherence 1).
+      eapply t_trans with (y := 2).
+      - apply t_step. left. split.
+        + exists 0, 0, 1,
+            (LMemory AccessWrite AccessOnce NotRmw 0 1%Z),
+            (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
+          repeat split; try reflexivity. lia.
+        + exists 0. split; reflexivity.
+      - apply t_step. right. unfold com, rel_union. right. left.
+        unfold co, edge_relation, reversed_co. set_solver.
+    Qed.
+  End BaseCoherenceTests.
 
 End LkmmMemoryRelations.
