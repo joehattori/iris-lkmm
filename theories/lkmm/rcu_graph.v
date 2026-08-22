@@ -1,4 +1,4 @@
-From Stdlib Require Import Arith Lia List Relations.Relation_Operators.
+From Stdlib Require Import Arith Lia List.
 From stdpp Require Import base tactics.
 From iris_lkmm.lkmm Require Import prelude.
 Import ListNotations.
@@ -29,12 +29,6 @@ Module RcuGraph.
 
   Definition in_graph (G : graph) (e : event_id) : Prop :=
     In e G.(events).
-
-  Definition optional (r : relation) : relation :=
-    fun x y => x = y \/ r x y.
-
-  Definition rtc (r : relation) : relation :=
-    clos_refl_trans event_id r.
 
   Definition is_gp (G : graph) (e : event_id) : Prop :=
     in_graph G e /\ G.(label_of) e = LSyncRcu.

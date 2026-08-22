@@ -1,13 +1,9 @@
-From Stdlib Require Import Relations.Relation_Operators.
 From stdpp Require Import base tactics.
 From iris_lkmm.lkmm Require Import rcu_graph.
 
 (** Monotonicity of the normal-RCU kernel under finite graph extension. *)
 Module RcuMono.
   Import RcuGraph.
-
-  Definition rel_included (r1 r2 : relation) : Prop :=
-    forall x y, r1 x y -> r2 x y.
 
   Record graph_le (G H : graph) : Prop := GraphLe {
     graph_le_events : forall e, in_graph G e -> in_graph H e;
@@ -38,21 +34,6 @@ Module RcuMono.
     - intros x y Hxy. apply HPR. by apply GPR.
     - intros x y Hxy. apply HPB. by apply GPB.
     - intros cs Hcs. apply HCS. by apply GCS.
-  Qed.
-
-  Lemma optional_mono r1 r2 :
-    rel_included r1 r2 ->
-    rel_included (optional r1) (optional r2).
-  Proof. intros Hr x y [-> | H]; [by left | right; by apply Hr]. Qed.
-
-  Lemma rtc_mono r1 r2 :
-    rel_included r1 r2 ->
-    rel_included (rtc r1) (rtc r2).
-  Proof.
-    intros Hr x y Hxy. induction Hxy.
-    - apply rt_step. by apply Hr.
-    - apply rt_refl.
-    - by eapply rt_trans.
   Qed.
 
   Lemma rcu_rscsi_mono G H :
