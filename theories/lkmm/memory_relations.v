@@ -98,6 +98,11 @@ Module LkmmMemoryRelations.
   Definition coherence (E : event_structure) (rf_edges co_edges : edge_set) : Prop :=
     rel_acyclic (rel_union (po_loc E) (com rf_edges co_edges)).
 
+  (** Linux v6.18: [empty (rmw & (fre ; coe)) as atomic]. *)
+  Definition atomicity (E : event_structure) (rmw_edges rf_edges co_edges : edge_set) : Prop :=
+    rel_is_empty
+      (rel_intersection (rmw rmw_edges) (rel_seq (fre E rf_edges co_edges) (coe E co_edges))).
+
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
     exists write_event read_event val,
       lookup_event E write = Some write_event /\
@@ -108,8 +113,7 @@ Module LkmmMemoryRelations.
       value_of read_event = Some val.
 
   Definition rf_functional (edges : edge_set) : Prop :=
-    forall write1 write2 read,
-      rf edges write1 read -> rf edges write2 read -> write1 = write2.
+    forall write1 write2 read, rf edges write1 read -> rf edges write2 read -> write1 = write2.
 
   Definition rf_total (E : event_structure) (edges : edge_set) : Prop :=
     forall read read_event,
@@ -581,6 +585,15 @@ Module LkmmMemoryRelations.
       {[0 := marked_read; 1 := late_write; 2 := second_read]}.
     Definition two_reads_one_write : edge_set := {[(0, 1); (2, 1)]}.
 
+    Definition intervening_write : event := EAgent 1 0 (LMemory AccessWrite AccessMb NotRmw 0 9%Z).
+    Definition atomicity_events : event_structure :=
+      {[0 := marked_read;
+        1 := marked_write;
+        2 := intervening_write;
+        3 := EInitWrite 0 7%Z]}.
+    Definition atomicity_rf : edge_set := {[(3, 0)]}.
+    Definition intervened_co : edge_set := {[(3, 2); (3, 1); (2, 1)]}.
+
     Local Lemma sample_lookup_cases eid ev :
       lookup_event sample_events eid = Some ev ->
       (eid = 0 /\ ev = marked_read) \/
@@ -752,6 +765,27 @@ Module LkmmMemoryRelations.
         { eapply Hinjective with (write := 1);
             unfold rmw, edge_relation, two_reads_one_write; set_solver. }
         lia.
+    Qed.
+
+    Example intervening_external_write_violates_atomicity :
+      ~ atomicity atomicity_events sample_rmw atomicity_rf intervened_co.
+    Proof.
+      unfold atomicity, rel_is_empty.
+      intros Hatomic. apply (Hatomic 0 1). split.
+      - unfold rmw, edge_relation, sample_rmw. set_solver.
+      - exists 2. split.
+        + split.
+          * unfold fr, rel_seq, rel_inverse, rf, co, edge_relation,
+              atomicity_rf, intervened_co.
+            exists 3. split; set_solver.
+          * intros (agent & Hread_agent & Hwrite_agent).
+            change (Some 0 = Some agent) in Hread_agent.
+            change (Some 1 = Some agent) in Hwrite_agent. congruence.
+        + split.
+          * unfold co, edge_relation, intervened_co. set_solver.
+          * intros (agent & Hwrite1_agent & Hwrite2_agent).
+            change (Some 1 = Some agent) in Hwrite1_agent.
+            change (Some 0 = Some agent) in Hwrite2_agent. congruence.
     Qed.
   End ReadModifyWriteTests.
 

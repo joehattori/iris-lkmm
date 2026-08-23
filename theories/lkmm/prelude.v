@@ -9,6 +9,8 @@ Module LkmmPrelude.
 
   Definition rel_empty : relation := fun _ _ => False.
 
+  Definition rel_is_empty (r : relation) : Prop := forall x y, ~ r x y.
+
   Definition rel_id : relation := eq.
 
   Definition rel_union (r1 r2 : relation) : relation := fun x y => r1 x y \/ r2 x y.

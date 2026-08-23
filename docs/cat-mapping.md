@@ -105,7 +105,7 @@ already-derived `fr`; it does not depend on whether the intermediate `rf`
 source is internal or external.  These six relations have no independent edge
 sets or well-formedness predicates.
 
-## Base coherence
+## Base consistency constraints
 
 `theories/lkmm/memory_relations.v` defines `com` as `rf | co | fr` and
 transcribes the Linux v6.18 constraint at `linux-kernel.cat:69-70` as
@@ -113,6 +113,10 @@ transcribes the Linux v6.18 constraint at `linux-kernel.cat:69-70` as
 separate from `event_structure_wf`, `rf_wf`, and `co_wf`: those predicates
 establish that the candidate relations have the required shape, while
 `coherence` rejects cycles through the otherwise well-formed relations.
+
+The same file transcribes the constraint at `linux-kernel.cat:73`,
+`empty (rmw & (fre ; coe)) as atomic`, as the `atomicity` predicate.  It remains
+separate from candidate well-formedness.
 
 ## Read-modify-write candidates
 
@@ -132,9 +136,9 @@ distinguish conditional from unconditional RMW syntax; those checks belong to
 the later LKMM-Core program-graph correspondence.
 
 The semantic Bell sets based on `domain(rmw)` and `range(rmw)` remain deferred.
-The separate Linux v6.18 atomicity constraint at `linux-kernel.cat:73`,
-`empty rmw & (fre ; coe) as atomic`, remains deferred; its `fre` and `coe`
-ingredients are now available.
+The separate `atomicity` consistency predicate rejects an `rmw` edge when its
+read-to-write endpoints are also related by `fre ; coe`; it is not folded into
+`rmw_wf`.
 
 ## Feasibility-kernel RCU mapping
 
