@@ -8,7 +8,6 @@ Module RcuMono.
   Record graph_le (G H : graph) : Prop := GraphLe {
     graph_le_events : forall e, in_graph G e -> in_graph H e;
     graph_le_gp : forall e, is_gp G e -> is_gp H e;
-    graph_le_marked : forall e, marked G e -> marked H e;
     graph_le_po : rel_included G.(po) H.(po);
     graph_le_hb : rel_included G.(hb) H.(hb);
     graph_le_prop : rel_included G.(prop) H.(prop);
@@ -23,12 +22,11 @@ Module RcuMono.
   Lemma graph_le_trans G H K :
     graph_le G H -> graph_le H K -> graph_le G K.
   Proof.
-    intros [GE GGP GM GPO GHB GPR GPB GCS]
-      [HE HGP HM HPO HHB HPR HPB HCS].
+    intros [GE GGP GPO GHB GPR GPB GCS]
+      [HE HGP HPO HHB HPR HPB HCS].
     constructor.
     - intros e He. apply HE. by apply GE.
     - intros e He. apply HGP. by apply GGP.
-    - intros e He. apply HM. by apply GM.
     - intros x y Hxy. apply HPO. by apply GPO.
     - intros x y Hxy. apply HHB. by apply GHB.
     - intros x y Hxy. apply HPR. by apply GPR.
@@ -114,7 +112,7 @@ Module RcuMono.
         * eapply rtc_mono; [by eapply graph_le_hb | done].
         * split.
           -- eapply rtc_mono; [by eapply graph_le_pb | done].
-          -- split; [done | by eapply graph_le_marked].
+          -- split; [done | by eapply graph_le_events].
   Qed.
 
 End RcuMono.

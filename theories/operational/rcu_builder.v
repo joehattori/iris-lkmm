@@ -132,11 +132,6 @@ Module RcuBuilder.
         change (lookup_label (ev :: r.(raw_events)) old = LSyncRcu).
         rewrite lookup_label_fresh; first done.
         by eapply old_id_neq_fresh.
-      + intros old [Hin Hlabel]. split; first by right.
-        change (lookup_label (ev :: r.(raw_events)) old = LRead \/
-          lookup_label (ev :: r.(raw_events)) old = LWrite).
-        rewrite lookup_label_fresh; first done.
-        by eapply old_id_neq_fresh.
       + unfold rel_included, edge_rel. intros x y Hxy. done.
       + unfold rel_included, edge_rel. intros x y Hxy. done.
       + unfold rel_included, edge_rel. intros x y Hxy. done.

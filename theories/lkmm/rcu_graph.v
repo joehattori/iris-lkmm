@@ -143,9 +143,9 @@ Module RcuGraph.
     fun x y => exists a b,
       G.(po) x a /\ rcu_order G a b /\ optional G.(po) b y.
 
-  Definition marked (G : graph) (e : event_id) : Prop :=
-    in_graph G e /\
-    (G.(label_of) e = LRead \/ G.(label_of) e = LWrite).
+  (** Plain accesses are outside the feasibility kernel, so every represented
+      event belongs to upstream [Marked]. *)
+  Definition marked (G : graph) (e : event_id) : Prop := in_graph G e.
 
   (** Linux v6.18: [rb = prop ; rcu-fence ; hb* ; pb* ; [Marked]]. *)
   Definition rb (G : graph) : relation :=

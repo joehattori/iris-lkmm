@@ -150,7 +150,7 @@ read-to-write endpoints are also related by `fre ; coe`; it is not folded into
 | `linux-kernel.cat:144` | `po? ; hb* ; pb* ; prop ; po` | `rcu_link` | Direct relational decomposition using reflexive-transitive closures. |
 | `linux-kernel.cat:154-163` | recursive `rcu-order` | `rcu_order` | The six normal-RCU disjuncts are constructors. All SRCU disjuncts are excluded. |
 | `linux-kernel.cat:164` | `po ; rcu-order ; po?` | `rcu_fence` | Direct relational decomposition. |
-| `linux-kernel.cat:169` | `prop ; rcu-fence ; hb* ; pb* ; [Marked]` | `rb` | Direct relational decomposition. The prototype's `Marked` is restricted to its read/write labels. |
+| `linux-kernel.cat:169` | `prop ; rcu-fence ; hb* ; pb* ; [Marked]` | `rb` | Direct relational decomposition. Since plain accesses are excluded, every prototype graph event is `Marked`. |
 | `linux-kernel.cat:171` | `irreflexive rb` | `rcu_consistent` | Direct predicate. |
 
 The operational graph layer does not redefine these relations.
