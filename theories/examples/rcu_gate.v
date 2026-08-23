@@ -160,8 +160,7 @@ Module RcuGateExamples.
        LabeledEvent 2 LRead]
       [(1, 2)] [] [(0, 1)] [] [].
 
-  Definition rcu_link_witness : rcu_link_commitment :=
-    RcuLinkCommitment 0 0 0 0 1 2.
+  Definition rcu_link_witness : rcu_link_commitment := RcuLinkCommitment 0 0 0 0 1 2.
 
   (** The commitment records the five pieces of the upstream link in order:
       optional po, hb closure, pb closure, prop, and final po. *)
@@ -183,8 +182,7 @@ Module RcuGateExamples.
     apply incremental_link_witness_is_valid.
   Qed.
 
-  Definition empty_candidate : finite_candidate :=
-    FiniteCandidate [] [] [] [] [] [].
+  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [].
 
   Example empty_candidate_well_formed :
     candidate_well_formed empty_candidate.

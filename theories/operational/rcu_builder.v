@@ -29,8 +29,7 @@ Module RcuBuilder.
         else lookup_label evs' e
     end.
 
-  Definition edge_rel (edges : list edge) : relation :=
-    fun x y => In (x, y) edges.
+  Definition edge_rel (edges : list edge) : relation := fun x y => In (x, y) edges.
 
   Record raw_graph := RawGraph {
     raw_events : list labeled_event;
@@ -52,8 +51,7 @@ Module RcuBuilder.
       critical_sections := r.(raw_critical_sections)
     |}.
 
-  Definition empty_raw : raw_graph :=
-    RawGraph [] [] [] [] [] [].
+  Definition empty_raw : raw_graph := RawGraph [] [] [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (ev :: r.(raw_events)) r.(raw_po) r.(raw_hb)
@@ -229,8 +227,7 @@ Module RcuBuilder.
   Definition rb_delta_exact (old new : raw_graph) (seen delta : relation) : Prop :=
     forall x y, rb (graph_of_raw new) x y <-> seen x y \/ delta x y.
 
-  Definition locally_safe (delta : relation) : Prop :=
-    forall e, ~ delta e e.
+  Definition locally_safe (delta : relation) : Prop := forall e, ~ delta e e.
 
   Inductive builder_step : builder_state -> builder_state -> Prop :=
   | BuilderStepRaw r r' links seen delta :
@@ -258,8 +255,7 @@ Module RcuBuilder.
     (forall e, ~ s.(bs_seen_rb) e e) /\
     (forall k, In k s.(bs_rcu_links) -> rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k).
 
-  Definition initial_builder : builder_state :=
-    BuilderState empty_raw [] (fun _ _ => False).
+  Definition initial_builder : builder_state := BuilderState empty_raw [] (fun _ _ => False).
 
   Lemma empty_raw_has_no_rb x y :
     ~ rb (graph_of_raw empty_raw) x y.

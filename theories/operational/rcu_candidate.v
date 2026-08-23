@@ -86,8 +86,7 @@ Module RcuCandidate.
           (load_hb C.(fc_hb)
             (load_po C.(fc_po) (load_events C.(fc_events)))))).
 
-  Definition candidate_graph (C : finite_candidate) : graph :=
-    graph_of_raw (candidate_raw C).
+  Definition candidate_graph (C : finite_candidate) : graph := graph_of_raw (candidate_raw C).
 
   Lemma load_events_ids evs :
     map le_id (raw_events (load_events evs)) = map le_id evs.

@@ -11,44 +11,31 @@ Module LkmmPrelude.
 
   Definition rel_id : relation := eq.
 
-  Definition rel_union (r1 r2 : relation) : relation :=
-    fun x y => r1 x y \/ r2 x y.
+  Definition rel_union (r1 r2 : relation) : relation := fun x y => r1 x y \/ r2 x y.
 
-  Definition rel_intersection (r1 r2 : relation) : relation :=
-    fun x y => r1 x y /\ r2 x y.
+  Definition rel_intersection (r1 r2 : relation) : relation := fun x y => r1 x y /\ r2 x y.
 
-  Definition rel_difference (r1 r2 : relation) : relation :=
-    fun x y => r1 x y /\ ~ r2 x y.
+  Definition rel_difference (r1 r2 : relation) : relation := fun x y => r1 x y /\ ~ r2 x y.
 
-  Definition rel_inverse (r : relation) : relation :=
-    fun x y => r y x.
+  Definition rel_inverse (r : relation) : relation := fun x y => r y x.
 
-  Definition rel_seq (r1 r2 : relation) : relation :=
-    fun x z => exists y, r1 x y /\ r2 y z.
+  Definition rel_seq (r1 r2 : relation) : relation := fun x z => exists y, r1 x y /\ r2 y z.
 
-  Definition optional (r : relation) : relation :=
-    rel_union rel_id r.
+  Definition optional (r : relation) : relation := rel_union rel_id r.
 
-  Definition tc (r : relation) : relation :=
-    clos_trans event_id r.
+  Definition tc (r : relation) : relation := clos_trans event_id r.
 
-  Definition rtc (r : relation) : relation :=
-    clos_refl_trans event_id r.
+  Definition rtc (r : relation) : relation := clos_refl_trans event_id r.
 
-  Definition rel_domain (r : relation) (x : event_id) : Prop :=
-    exists y, r x y.
+  Definition rel_domain (r : relation) (x : event_id) : Prop := exists y, r x y.
 
-  Definition rel_range (r : relation) (y : event_id) : Prop :=
-    exists x, r x y.
+  Definition rel_range (r : relation) (y : event_id) : Prop := exists x, r x y.
 
-  Definition rel_included (r1 r2 : relation) : Prop :=
-    forall x y, r1 x y -> r2 x y.
+  Definition rel_included (r1 r2 : relation) : Prop := forall x y, r1 x y -> r2 x y.
 
-  Definition rel_irreflexive (r : relation) : Prop :=
-    forall x, ~ r x x.
+  Definition rel_irreflexive (r : relation) : Prop := forall x, ~ r x x.
 
-  Definition rel_acyclic (r : relation) : Prop :=
-    rel_irreflexive (tc r).
+  Definition rel_acyclic (r : relation) : Prop := rel_irreflexive (tc r).
 
   Lemma relation_union_l (r₁ r₂ : relation) (x y : event_id) :
     r₁ x y -> rel_union r₁ r₂ x y.

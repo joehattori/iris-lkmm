@@ -59,8 +59,7 @@ Module RcuCoupled.
     | CoupledBuilderAction :: actions' => machine_actions actions'
     end.
 
-  Definition initial_coupled : coupled_state :=
-    CoupledState initial_state initial_builder.
+  Definition initial_coupled : coupled_state := CoupledState initial_state initial_builder.
 
   Definition coupled_complete (s : coupled_state) : Prop :=
     machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw).

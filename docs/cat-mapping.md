@@ -89,6 +89,22 @@ candidate choice and has no separate edge set or well-formedness predicate.
 Under `rf_wf` and `co_wf`, every `fr` edge runs from a read to a write at the
 same location.
 
+## Internal and external communication
+
+`theories/lkmm/memory_relations.v` partitions each communication relation by
+its endpoints' agents.  The internal variants are `rfi = rf & same_agent`,
+`coi = co & same_agent`, and `fri = fr & same_agent`; the external variants
+subtract `same_agent` from the corresponding base relation.  Each pair is
+disjoint and exhaustively covers its base relation.
+
+This matches herd's same-CPU/different-CPU classification while remaining
+defined over the canonical event structure.  Initial writes have no program
+agent, so well-formed `rf` and `co` edges from an initial write are external.
+The `fri`/`fre` split examines the read and final-write endpoints of the
+already-derived `fr`; it does not depend on whether the intermediate `rf`
+source is internal or external.  These six relations have no independent edge
+sets or well-formedness predicates.
+
 ## Base coherence
 
 `theories/lkmm/memory_relations.v` defines `com` as `rf | co | fr` and
@@ -117,8 +133,8 @@ the later LKMM-Core program-graph correspondence.
 
 The semantic Bell sets based on `domain(rmw)` and `range(rmw)` remain deferred.
 The separate Linux v6.18 atomicity constraint at `linux-kernel.cat:73`,
-`empty rmw & (fre ; coe) as atomic`, also remains deferred until the internal
-and external communication relations are added.
+`empty rmw & (fre ; coe) as atomic`, remains deferred; its `fre` and `coe`
+ingredients are now available.
 
 ## Feasibility-kernel RCU mapping
 

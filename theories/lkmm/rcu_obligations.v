@@ -388,8 +388,7 @@ Module RcuObligations.
       rcu_link G (atom_end a) x ->
       linked_chain G (a :: atoms) (atom_start a) y.
 
-  Definition chain_balance : list rcu_atom -> Z :=
-    obligation_balance atom_kind_of.
+  Definition chain_balance : list rcu_atom -> Z := obligation_balance atom_kind_of.
 
   (** The independent chain/obligation semantics.  This definition mentions
       neither [rcu_order] nor an isomorphic recursive derivation. *)

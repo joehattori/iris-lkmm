@@ -290,8 +290,7 @@ Module RcuMachineSafety.
     apply machine_stack_safe_initial.
   Qed.
 
-  Definition lock_set (locks : list event_id) : gset event_id :=
-    list_to_set locks.
+  Definition lock_set (locks : list event_id) : gset event_id := list_to_set locks.
 
   Definition open_map_from_locks (locks : list event_id) :
       gmap event_id unit :=

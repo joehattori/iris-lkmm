@@ -27,11 +27,9 @@ Module RcuGraph.
     critical_sections : list critical_section
   }.
 
-  Definition in_graph (G : graph) (e : event_id) : Prop :=
-    In e G.(events).
+  Definition in_graph (G : graph) (e : event_id) : Prop := In e G.(events).
 
-  Definition is_gp (G : graph) (e : event_id) : Prop :=
-    in_graph G e /\ G.(label_of) e = LSyncRcu.
+  Definition is_gp (G : graph) (e : event_id) : Prop := in_graph G e /\ G.(label_of) e = LSyncRcu.
 
   (** [rcu-rscsi] is the inverse of the matching relation computed by the
       Bell file: it runs from the unlock back to its matching lock. *)
@@ -155,7 +153,6 @@ Module RcuGraph.
       G.(prop) x a /\ rcu_fence G a b /\
       rtc G.(hb) b c /\ rtc G.(pb) c d /\ d = y /\ marked G y.
 
-  Definition rcu_consistent (G : graph) : Prop :=
-    forall e, ~ rb G e e.
+  Definition rcu_consistent (G : graph) : Prop := forall e, ~ rb G e e.
 
 End RcuGraph.
