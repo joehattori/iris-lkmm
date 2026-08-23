@@ -28,6 +28,31 @@ Module LkmmMemoryRelations.
       conditional operations contribute only their marked read event. *)
   Definition rmw (edges : edge_set) : relation := edge_relation edges.
 
+  (** Linux v6.18 [linux-kernel.bell]: semantic event classes obtained by
+      filtering the syntactic access and barrier annotations. *)
+  Definition failed_rmw (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
+    event_attribute rmw_mark_of E eid = Some RmwMarked /\
+    ~ (rel_domain (rmw rmw_edges) eid \/ rel_range (rmw rmw_edges) eid).
+
+  Definition acquire (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
+    event_attribute access_mode_of E eid = Some AccessAcquire /\
+    event_attribute access_kind_of E eid <> Some AccessWrite /\
+    ~ failed_rmw E rmw_edges eid.
+
+  Definition release (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
+    event_attribute access_mode_of E eid = Some AccessRelease /\
+    event_attribute access_kind_of E eid <> Some AccessRead /\
+    ~ failed_rmw E rmw_edges eid.
+
+  Definition mb (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
+    (event_attribute access_mode_of E eid = Some AccessMb \/
+      event_attribute barrier_kind_of E eid = Some BarrierMb) /\
+    ~ failed_rmw E rmw_edges eid.
+
+  Definition noreturn (E : event_structure) (eid : event_id) : Prop :=
+    event_attribute access_mode_of E eid = Some AccessNoreturn /\
+    event_attribute access_kind_of E eid <> Some AccessWrite.
+
   (** From-read is derived from reads-from and coherence order: a read is
       before every write that is coherence-later than its source write. *)
   Definition fr (rf_edges co_edges : edge_set) : relation :=
@@ -491,6 +516,81 @@ Module LkmmMemoryRelations.
         Hread & Hwrite & Hread_kind & Hwrite_kind & Hsame_loc).
     exact Hsame_loc.
   Qed.
+
+  Module BellEventClassTests.
+    Definition acquire_read : event :=
+      EAgent 0 0 (LMemory AccessRead AccessAcquire RmwMarked 0 0%Z).
+    Definition acquire_write : event :=
+      EAgent 0 1 (LMemory AccessWrite AccessAcquire RmwMarked 0 1%Z).
+    Definition failed_acquire_read : event :=
+      EAgent 0 2 (LMemory AccessRead AccessAcquire RmwMarked 0 0%Z).
+    Definition release_read : event :=
+      EAgent 0 3 (LMemory AccessRead AccessRelease RmwMarked 0 1%Z).
+    Definition release_write : event :=
+      EAgent 0 4 (LMemory AccessWrite AccessRelease RmwMarked 0 2%Z).
+    Definition failed_release_write : event :=
+      EAgent 0 5 (LMemory AccessWrite AccessRelease RmwMarked 0 2%Z).
+    Definition mb_read : event := EAgent 0 6 (LMemory AccessRead AccessMb RmwMarked 0 2%Z).
+    Definition mb_write : event := EAgent 0 7 (LMemory AccessWrite AccessMb RmwMarked 0 3%Z).
+    Definition mb_barrier : event := EAgent 0 8 (LBarrier BarrierMb).
+    Definition failed_mb_read : event := EAgent 0 9 (LMemory AccessRead AccessMb RmwMarked 0 3%Z).
+    Definition failed_noreturn_read : event :=
+      EAgent 0 10 (LMemory AccessRead AccessNoreturn RmwMarked 0 3%Z).
+    Definition noreturn_write : event :=
+      EAgent 0 11 (LMemory AccessWrite AccessNoreturn RmwMarked 0 4%Z).
+
+    Definition sample_events : event_structure :=
+      {[0 := acquire_read;
+        1 := acquire_write;
+        2 := failed_acquire_read;
+        3 := release_read;
+        4 := release_write;
+        5 := failed_release_write;
+        6 := mb_read;
+        7 := mb_write;
+        8 := mb_barrier;
+        9 := failed_mb_read;
+        10 := failed_noreturn_read;
+        11 := noreturn_write]}.
+    Definition sample_rmw : edge_set := {[(0, 1); (3, 4); (6, 7)]}.
+
+    Example semantic_event_classification :
+      failed_rmw sample_events sample_rmw 2 /\
+      failed_rmw sample_events sample_rmw 5 /\
+      ~ (failed_rmw sample_events sample_rmw 0 \/
+          failed_rmw sample_events sample_rmw 1) /\
+      acquire sample_events sample_rmw 0 /\
+      ~ (acquire sample_events sample_rmw 1 \/
+          acquire sample_events sample_rmw 2) /\
+      release sample_events sample_rmw 4 /\
+      ~ (release sample_events sample_rmw 3 \/
+          release sample_events sample_rmw 5) /\
+      mb sample_events sample_rmw 6 /\
+      mb sample_events sample_rmw 8 /\
+      failed_rmw sample_events sample_rmw 9 /\
+      ~ mb sample_events sample_rmw 9 /\
+      failed_rmw sample_events sample_rmw 10 /\
+      noreturn sample_events 10 /\
+      ~ noreturn sample_events 11 /\
+      ~ (failed_rmw sample_events sample_rmw 99 \/
+          acquire sample_events sample_rmw 99 \/
+          release sample_events sample_rmw 99 \/
+          mb sample_events sample_rmw 99 \/
+          noreturn sample_events 99).
+    Proof.
+      repeat split;
+        unfold failed_rmw, acquire, release, mb, noreturn,
+          rel_domain, rel_range, rmw, edge_relation,
+          event_attribute, lookup_event, sample_events, sample_rmw,
+          acquire_read, acquire_write, failed_acquire_read,
+          release_read, release_write, failed_release_write,
+          mb_read, mb_write, mb_barrier, failed_mb_read,
+          failed_noreturn_read, noreturn_write;
+        simpl; try unfold failed_rmw;
+        unfold rel_domain, rel_range, rmw, edge_relation;
+        simpl; set_solver.
+    Qed.
+  End BellEventClassTests.
 
   Module ReadsFromTests.
     Definition init_write : event := EInitWrite 0 0%Z.

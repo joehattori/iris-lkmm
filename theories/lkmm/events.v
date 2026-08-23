@@ -7,7 +7,8 @@ From iris_lkmm.lkmm Require Import prelude.
     Access modes and RMW marking are syntactic annotations from
     [linux-kernel.bell].  The semantic [Acquire], [Release], [Mb],
     [Noreturn], and [FailedRMW] sets depend on execution relations, including
-    [rmw], and are deliberately not defined in this event-vocabulary layer. *)
+    [rmw], and are therefore defined in [memory_relations.v] rather than this
+    event-vocabulary layer. *)
 Module LkmmEvents.
   Import LkmmPrelude.
 
