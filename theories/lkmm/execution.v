@@ -31,10 +31,43 @@ Module LkmmExecution.
       lookup_event E eid2 = Some (EAgent agent index label2) ->
       eid1 = eid2.
 
+  Local Definition event_satisfies (predicate : event -> Prop)
+      (E : event_structure) (eid : event_id) : Prop :=
+    exists ev, lookup_event E eid = Some ev /\ predicate ev.
+
+  Definition event_is_read (E : event_structure) (eid : event_id) : Prop :=
+    event_satisfies is_read E eid.
+
+  Definition event_is_write (E : event_structure) (eid : event_id) : Prop :=
+    event_satisfies is_write E eid.
+
+  Definition event_is_memory (E : event_structure) (eid : event_id) : Prop :=
+    event_satisfies is_memory E eid.
+
   (** Compose event lookup with any partial event projection. *)
-  Definition event_attribute {A} (project : event -> option A)
+  Local Definition event_attribute {A} (project : event -> option A)
       (E : event_structure) (eid : event_id) : option A :=
     lookup_event E eid ≫= project.
+
+  Definition event_has_access_kind (E : event_structure) (eid : event_id)
+      (kind : access_kind) : Prop :=
+    event_attribute access_kind_of E eid = Some kind.
+
+  Definition event_has_access_mode (E : event_structure) (eid : event_id)
+      (mode : access_mode) : Prop :=
+    event_attribute access_mode_of E eid = Some mode.
+
+  Definition event_has_rmw_mark (E : event_structure) (eid : event_id)
+      (mark : rmw_mark) : Prop :=
+    event_attribute rmw_mark_of E eid = Some mark.
+
+  Definition event_has_barrier_kind (E : event_structure) (eid : event_id)
+      (kind : barrier_kind) : Prop :=
+    event_attribute barrier_kind_of E eid = Some kind.
+
+  Definition event_has_location (E : event_structure) (eid : event_id)
+      (loc : location) : Prop :=
+    event_attribute location_of E eid = Some loc.
 
   (** Two identifiers have the same attribute when both projections are
       defined and return the same value. *)
@@ -102,7 +135,7 @@ Module LkmmExecution.
     exfalso. apply Hnot. by eapply lookup_event_in.
   Qed.
 
-  Lemma event_attribute_Some {A} (project : event -> option A) E eid (value : A) :
+  Local Lemma event_attribute_Some {A} (project : event -> option A) E eid (value : A) :
     event_attribute project E eid = Some value <->
     exists ev,
       lookup_event E eid = Some ev /\ project ev = Some value.

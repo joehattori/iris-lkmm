@@ -17,6 +17,7 @@ can be filtered using the candidate `rmw` relation.
 | `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. RMW marking is orthogonal to read/write direction because successful operations will be represented by paired read and write events. |
 | `linux-kernel.bell:25-37` | barrier annotations | `barrier_kind`, `LBarrier` | Includes only `MB`, `rmb`, `wmb`, `rcu-lock`, `rcu-unlock`, and `sync-rcu`, as selected by the project scope. |
 | `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | `failed_rmw`, `acquire`, `release`, `mb`, `noreturn` | Direct execution-dependent unary predicates. `Mb` includes both MB-tagged memory accesses and full `MB` barriers before subtracting `FailedRMW`. |
+| `linux-kernel.bell:93-96` | `(data ; [~ Srcu-unlock] ; rfi)*` carrying into `addr`, `data`, and `ctrl` | `carry_dep`, `addr`, `data`, `ctrl` | The selected fragment has no SRCU events, so the filter is omitted and the closure uses `direct_data ; rfi`. |
 | `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
 | `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
 | `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
@@ -28,7 +29,8 @@ abstract natural-number identifiers and values are mathematical integers;
 machine-word overflow is not modeled at this layer.  Plain accesses, compiler
 `barrier`, before/after-atomic barriers, lock operations, and SRCU have no
 constructors.  Address, data, and control dependencies are graph relations,
-not event labels, and will be introduced with the execution graph.
+not event labels; `direct_addr`, `direct_data`, and `direct_ctrl` expose their
+finite provenance edge sets through relational views.
 
 The existing feasibility kernel retains its five-label graph vocabulary until
 the later RCU compatibility-view commit.
@@ -44,18 +46,34 @@ be contiguous, and initial writes are excluded because they have no agent or
 local index.  `event_structure_wf` ensures that an agent-local position
 identifies at most one event.
 
-The same file defines `event_attribute` by composing event lookup with an
-option-valued event projection, and lifts it to the binary `same_attribute`
-relation.  The canonical `same_location` and `same_agent` relations specialize
-this construction with `location_of` and `agent_of`.  It then defines `po_loc`
-as `po & same_location`.  Consequently barriers are excluded because they
-have no location, while initial writes are excluded by `po`.  The `rf`, `co`,
-and `fr` edge well-formedness predicates in
+The same file uses a local lookup-and-projection helper to define the public
+`event_has_access_kind`, `event_has_access_mode`, `event_has_rmw_mark`,
+`event_has_barrier_kind`, and `event_has_location` predicates, as well as the
+binary `same_attribute` relation.  The canonical `same_location` and
+`same_agent` relations specialize the latter with `location_of` and
+`agent_of`.  It then defines `po_loc` as `po & same_location`.  Consequently
+barriers are excluded because they have no location, while initial writes are
+excluded by `po`.  The `rf`, `co`, and `fr` edge well-formedness predicates in
 `theories/lkmm/memory_relations.v` reuse `same_location`, as do coherence
 totality, initial-write ordering, and the `location_used` projection.
 
 The feasibility kernel continues to accept an abstract `RcuGraph.po`; the
 later RCU compatibility view will connect it to this canonical relation.
+
+## Dependency candidates and Bell carrying
+
+`theories/lkmm/memory_relations.v` represents `direct_addr`, `direct_data`,
+and `direct_ctrl` provenance as three distinct finite edge sets.  Their
+well-formedness predicates require a program-order source read and
+respectively a memory, write, or write target.  Edge membership records
+provenance explicitly; the later LKMM-Core program-graph correspondence must
+justify that provenance from syntactic data and control flow rather than
+reconstructing it by alias analysis.
+
+The public `addr`, `data`, and `ctrl` relations are the extended Bell views,
+each prepending `carry_dep = (direct_data ; rfi)*` to the corresponding direct
+relation.  The upstream `[~ Srcu-unlock]` filter is absent because SRCU is
+outside the selected event vocabulary.
 
 ## Reads-from candidates
 

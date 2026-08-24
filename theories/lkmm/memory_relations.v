@@ -28,30 +28,37 @@ Module LkmmMemoryRelations.
       conditional operations contribute only their marked read event. *)
   Definition rmw (edges : edge_set) : relation := edge_relation edges.
 
+  (** Direct dependency edges are finite provenance supplied by the candidate
+      program graph.  Bell carrying is defined separately below. *)
+  Definition direct_addr (edges : edge_set) : relation := edge_relation edges.
+
+  Definition direct_data (edges : edge_set) : relation := edge_relation edges.
+
+  Definition direct_ctrl (edges : edge_set) : relation := edge_relation edges.
+
   (** Linux v6.18 [linux-kernel.bell]: semantic event classes obtained by
       filtering the syntactic access and barrier annotations. *)
   Definition failed_rmw (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_attribute rmw_mark_of E eid = Some RmwMarked /\
+    event_has_rmw_mark E eid RmwMarked /\
     ~ (rel_domain (rmw rmw_edges) eid \/ rel_range (rmw rmw_edges) eid).
 
   Definition acquire (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_attribute access_mode_of E eid = Some AccessAcquire /\
-    event_attribute access_kind_of E eid <> Some AccessWrite /\
+    event_has_access_mode E eid AccessAcquire /\
+    ~ event_has_access_kind E eid AccessWrite /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition release (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_attribute access_mode_of E eid = Some AccessRelease /\
-    event_attribute access_kind_of E eid <> Some AccessRead /\
+    event_has_access_mode E eid AccessRelease /\
+    ~ event_has_access_kind E eid AccessRead /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition mb (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    (event_attribute access_mode_of E eid = Some AccessMb \/
-      event_attribute barrier_kind_of E eid = Some BarrierMb) /\
+    (event_has_access_mode E eid AccessMb \/ event_has_barrier_kind E eid BarrierMb) /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition noreturn (E : event_structure) (eid : event_id) : Prop :=
-    event_attribute access_mode_of E eid = Some AccessNoreturn /\
-    event_attribute access_kind_of E eid <> Some AccessWrite.
+    event_has_access_mode E eid AccessNoreturn /\
+    ~ event_has_access_kind E eid AccessWrite.
 
   (** From-read is derived from reads-from and coherence order: a read is
       before every write that is coherence-later than its source write. *)
@@ -114,6 +121,20 @@ Module LkmmMemoryRelations.
     - intros [[Hfr _] | [Hfr _]]; exact Hfr.
   Qed.
 
+  (** Linux v6.18 [linux-kernel.bell]: with SRCU excluded, dependency
+      carrying is [(direct_data ; rfi)*]. *)
+  Definition carry_dep (E : event_structure) (rf_edges data_edges : edge_set) : relation :=
+    rtc (rel_seq (direct_data data_edges) (rfi E rf_edges)).
+
+  Definition addr (E : event_structure) (rf_edges data_edges addr_edges : edge_set) : relation :=
+    rel_seq (carry_dep E rf_edges data_edges) (direct_addr addr_edges).
+
+  Definition data (E : event_structure) (rf_edges data_edges : edge_set) : relation :=
+    rel_seq (carry_dep E rf_edges data_edges) (direct_data data_edges).
+
+  Definition ctrl (E : event_structure) (rf_edges data_edges ctrl_edges : edge_set) : relation :=
+    rel_seq (carry_dep E rf_edges data_edges) (direct_ctrl ctrl_edges).
+
   (** Linux v6.18: [com = rf | co | fr]. *)
   Definition com (rf_edges co_edges : edge_set) : relation :=
     rel_union (rf rf_edges) (rel_union (co co_edges) (fr rf_edges co_edges)).
@@ -127,6 +148,48 @@ Module LkmmMemoryRelations.
   Definition atomicity (E : event_structure) (rmw_edges rf_edges co_edges : edge_set) : Prop :=
     rel_is_empty
       (rel_intersection (rmw rmw_edges) (rel_seq (fre E rf_edges co_edges) (coe E co_edges))).
+
+  Definition direct_addr_edge_wf (E : event_structure) (read access : event_id) : Prop :=
+    event_is_read E read /\
+    event_is_memory E access /\
+    po E read access.
+
+  Definition direct_data_edge_wf (E : event_structure) (read write : event_id) : Prop :=
+    event_is_read E read /\
+    event_is_write E write /\
+    po E read write.
+
+  Definition direct_ctrl_edge_wf (E : event_structure) (read write : event_id) : Prop :=
+    event_is_read E read /\
+    event_is_write E write /\
+    po E read write.
+
+  Definition direct_addr_wf (E : event_structure) (edges : edge_set) : Prop :=
+    forall read access,
+      direct_addr edges read access -> direct_addr_edge_wf E read access.
+
+  Definition direct_data_wf (E : event_structure) (edges : edge_set) : Prop :=
+    forall read write,
+      direct_data edges read write -> direct_data_edge_wf E read write.
+
+  Definition direct_ctrl_wf (E : event_structure) (edges : edge_set) : Prop :=
+    forall read write,
+      direct_ctrl edges read write -> direct_ctrl_edge_wf E read write.
+
+  Lemma direct_addr_wf_edge E edges read access :
+    direct_addr_wf E edges ->
+    direct_addr edges read access -> direct_addr_edge_wf E read access.
+  Proof. intros Hedges Haddr. by eapply Hedges. Qed.
+
+  Lemma direct_data_wf_edge E edges read write :
+    direct_data_wf E edges ->
+    direct_data edges read write -> direct_data_edge_wf E read write.
+  Proof. intros Hedges Hdata. by eapply Hedges. Qed.
+
+  Lemma direct_ctrl_wf_edge E edges read write :
+    direct_ctrl_wf E edges ->
+    direct_ctrl edges read write -> direct_ctrl_edge_wf E read write.
+  Proof. intros Hedges Hctrl. by eapply Hedges. Qed.
 
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
     exists write_event read_event val,
@@ -338,7 +401,7 @@ Module LkmmMemoryRelations.
   Qed.
 
   Definition location_used (E : event_structure) (loc : location) : Prop :=
-    exists eid, event_attribute location_of E eid = Some loc.
+    exists eid, event_has_location E eid loc.
 
   Definition initial_write_at (E : event_structure) (loc : location) (write : event_id) : Prop :=
     exists val, lookup_event E write = Some (EInitWrite loc val).
@@ -517,6 +580,114 @@ Module LkmmMemoryRelations.
     exact Hsame_loc.
   Qed.
 
+  Module DependencyTests.
+    Definition source_read : event := EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
+    Definition relay_write : event := EAgent 0 1 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition relay_read : event := EAgent 0 2 (LMemory AccessRead AccessOnce NotRmw 0 1%Z).
+    Definition addr_target : event := EAgent 0 3 (LMemory AccessRead AccessOnce NotRmw 1 0%Z).
+    Definition data_target : event := EAgent 0 4 (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
+    Definition ctrl_target : event := EAgent 0 5 (LMemory AccessWrite AccessOnce NotRmw 2 1%Z).
+
+    Definition sample_events : event_structure := {[
+      0 := source_read;
+      1 := relay_write;
+      2 := relay_read;
+      3 := addr_target;
+      4 := data_target;
+      5 := ctrl_target
+    ]}.
+    Definition sample_rf : edge_set := {[(1, 2)]}.
+    Definition sample_addr : edge_set := {[(2, 3)]}.
+    Definition sample_data : edge_set := {[(0, 1); (2, 4)]}.
+    Definition sample_ctrl : edge_set := {[(2, 5)]}.
+
+    Local Lemma sample_addr_wf : direct_addr_wf sample_events sample_addr.
+    Proof.
+      intros read access Haddr.
+      unfold direct_addr, edge_relation, sample_addr in Haddr.
+      assert (read = 2 /\ access = 3) as [-> ->] by set_solver.
+      repeat split.
+      - exists relay_read. split; reflexivity.
+      - exists addr_target. split; first reflexivity. done.
+      - exists 0, 2, 3,
+          (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
+          (LMemory AccessRead AccessOnce NotRmw 1 0%Z).
+        repeat split; reflexivity || lia.
+    Qed.
+
+    Local Lemma sample_data_wf : direct_data_wf sample_events sample_data.
+    Proof.
+      intros read write Hdata.
+      unfold direct_data, edge_relation, sample_data in Hdata.
+      assert ((read = 0 /\ write = 1) \/ (read = 2 /\ write = 4))
+        as [[-> ->] | [-> ->]] by set_solver.
+      - repeat split.
+        + exists source_read. split; reflexivity.
+        + exists relay_write. split; reflexivity.
+        + exists 0, 0, 1,
+          (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
+          (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+          repeat split; reflexivity || lia.
+      - repeat split.
+        + exists relay_read. split; reflexivity.
+        + exists data_target. split; reflexivity.
+        + exists 0, 2, 4,
+          (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
+          (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
+          repeat split; reflexivity || lia.
+    Qed.
+
+    Local Lemma sample_ctrl_wf : direct_ctrl_wf sample_events sample_ctrl.
+    Proof.
+      intros read write Hctrl.
+      unfold direct_ctrl, edge_relation, sample_ctrl in Hctrl.
+      assert (read = 2 /\ write = 5) as [-> ->] by set_solver.
+      repeat split.
+      - exists relay_read. split; reflexivity.
+      - exists ctrl_target. split; reflexivity.
+      - exists 0, 2, 5,
+          (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
+          (LMemory AccessWrite AccessOnce NotRmw 2 1%Z).
+        repeat split; reflexivity || lia.
+    Qed.
+
+    Local Lemma sample_carrier : carry_dep sample_events sample_rf sample_data 0 2.
+    Proof.
+      apply rt_step. exists 1. split.
+      - unfold direct_data, edge_relation, sample_data. set_solver.
+      - split.
+        + unfold rf, edge_relation, sample_rf. set_solver.
+        + exists 0. split; reflexivity.
+    Qed.
+
+    Example address_dependency_carries :
+      direct_addr_wf sample_events sample_addr /\
+      addr sample_events sample_rf sample_data sample_addr 0 3.
+    Proof.
+      split; first apply sample_addr_wf.
+      exists 2. split; first apply sample_carrier.
+      unfold direct_addr, edge_relation, sample_addr. set_solver.
+    Qed.
+
+    Example data_dependency_carries :
+      direct_data_wf sample_events sample_data /\
+      data sample_events sample_rf sample_data 0 4.
+    Proof.
+      split; first apply sample_data_wf.
+      exists 2. split; first apply sample_carrier.
+      unfold direct_data, edge_relation, sample_data. set_solver.
+    Qed.
+
+    Example control_dependency_carries :
+      direct_ctrl_wf sample_events sample_ctrl /\
+      ctrl sample_events sample_rf sample_data sample_ctrl 0 5.
+    Proof.
+      split; first apply sample_ctrl_wf.
+      exists 2. split; first apply sample_carrier.
+      unfold direct_ctrl, edge_relation, sample_ctrl. set_solver.
+    Qed.
+  End DependencyTests.
+
   Module BellEventClassTests.
     Definition acquire_read : event :=
       EAgent 0 0 (LMemory AccessRead AccessAcquire RmwMarked 0 0%Z).
@@ -539,19 +710,20 @@ Module LkmmMemoryRelations.
     Definition noreturn_write : event :=
       EAgent 0 11 (LMemory AccessWrite AccessNoreturn RmwMarked 0 4%Z).
 
-    Definition sample_events : event_structure :=
-      {[0 := acquire_read;
-        1 := acquire_write;
-        2 := failed_acquire_read;
-        3 := release_read;
-        4 := release_write;
-        5 := failed_release_write;
-        6 := mb_read;
-        7 := mb_write;
-        8 := mb_barrier;
-        9 := failed_mb_read;
-        10 := failed_noreturn_read;
-        11 := noreturn_write]}.
+    Definition sample_events : event_structure := {[
+      0 := acquire_read;
+      1 := acquire_write;
+      2 := failed_acquire_read;
+      3 := release_read;
+      4 := release_write;
+      5 := failed_release_write;
+      6 := mb_read;
+      7 := mb_write;
+      8 := mb_barrier;
+      9 := failed_mb_read;
+      10 := failed_noreturn_read;
+      11 := noreturn_write
+    ]}.
     Definition sample_rmw : edge_set := {[(0, 1); (3, 4); (6, 7)]}.
 
     Example semantic_event_classification :
@@ -581,7 +753,8 @@ Module LkmmMemoryRelations.
       repeat split;
         unfold failed_rmw, acquire, release, mb, noreturn,
           rel_domain, rel_range, rmw, edge_relation,
-          event_attribute, lookup_event, sample_events, sample_rmw,
+          event_has_rmw_mark, event_has_access_mode, event_has_access_kind,
+          event_has_barrier_kind, lookup_event, sample_events, sample_rmw,
           acquire_read, acquire_write, failed_acquire_read,
           release_read, release_write, failed_release_write,
           mb_read, mb_write, mb_barrier, failed_mb_read,
@@ -948,7 +1121,8 @@ Module LkmmMemoryRelations.
           as [(-> & ->) | [(-> & ->) | (-> & ->)]];
         unfold co, edge_relation, sample_co; set_solver.
       - intros loc (eid & Hloc).
-        apply event_attribute_Some in Hloc as (ev & Hlookup & Hloc).
+        unfold event_has_location in Hloc.
+        apply bind_Some in Hloc as (ev & Hlookup & Hloc).
         destruct (sample_lookup_cases eid ev Hlookup)
           as [(-> & ->) | [(-> & ->) | (-> & ->)]];
         simpl in Hloc; assert (loc = 0) as -> by congruence;
@@ -1058,14 +1232,15 @@ Module LkmmMemoryRelations.
     Definition agent0_initial_read : event :=
       EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
 
-    Definition sample_events : event_structure :=
-      {[0 := init_write;
-        1 := agent0_write;
-        2 := agent0_read;
-        3 := agent0_later_write;
-        4 := agent1_read;
-        5 := agent1_write;
-        6 := agent0_initial_read]}.
+    Definition sample_events : event_structure := {[
+      0 := init_write;
+      1 := agent0_write;
+      2 := agent0_read;
+      3 := agent0_later_write;
+      4 := agent1_read;
+      5 := agent1_write;
+      6 := agent0_initial_read
+    ]}.
 
     Definition sample_rf : edge_set := {[(0, 6); (1, 2); (1, 4)]}.
     Definition sample_co : edge_set := {[(0, 1); (0, 3); (0, 5); (1, 3); (1, 5); (3, 5)]}.
