@@ -60,6 +60,11 @@ Module LkmmMemoryRelations.
     event_has_access_mode E eid AccessNoreturn /\
     ~ event_has_access_kind E eid AccessWrite.
 
+  (** Plain accesses are outside the selected vocabulary, so every
+      represented event belongs to Linux v6.18 [Marked]. *)
+  Definition marked (E : event_structure) (eid : event_id) : Prop :=
+    in_event_structure E eid.
+
   (** Linux v6.18: [acq-po = [Acquire] ; po ; [M]] *)
   Definition acq_po (E : event_structure) (rmw_edges : edge_set) : relation :=
     fun source target =>
@@ -201,6 +206,49 @@ Module LkmmMemoryRelations.
 
   Definition ctrl (E : event_structure) (rf_edges data_edges ctrl_edges : edge_set) : relation :=
     rel_seq (carry_dep E rf_edges data_edges) (direct_ctrl ctrl_edges).
+
+  (** Linux v6.18: [dep = addr | data]. *)
+  Definition dep (E : event_structure) (rf_edges data_edges addr_edges : edge_set) : relation :=
+    rel_union (addr E rf_edges data_edges addr_edges) (data E rf_edges data_edges).
+
+  (** Linux v6.18: [rwdep = (dep | ctrl) ; [W]]. *)
+  Definition rwdep (E : event_structure)
+      (rf_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
+    fun source target =>
+      rel_union (dep E rf_edges data_edges addr_edges)
+        (ctrl E rf_edges data_edges ctrl_edges) source target /\
+      event_is_write E target.
+
+  (** Linux v6.18: [overwrite = co | fr]. *)
+  Definition overwrite (rf_edges co_edges : edge_set) : relation :=
+    rel_union (co co_edges) (fr rf_edges co_edges).
+
+  (** Selected fragment of Linux v6.18 [to-w = rwdep | (overwrite & int)].
+      The [addr ; [Plain] ; wmb] branch is empty because plain accesses are
+      outside the event vocabulary. *)
+  Definition to_w (E : event_structure)
+      (rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
+    rel_union (rwdep E rf_edges data_edges addr_edges ctrl_edges)
+      (rel_intersection (overwrite rf_edges co_edges) (same_agent E)).
+
+  (** Linux v6.18: [to-r = (addr ; [R]) | (dep ; [Marked] ; rfi)]. *)
+  Definition to_r (E : event_structure) (rf_edges data_edges addr_edges : edge_set) : relation :=
+    rel_union
+      (fun source target =>
+        addr E rf_edges data_edges addr_edges source target /\
+        event_is_read E target)
+      (fun source target =>
+        exists middle,
+          dep E rf_edges data_edges addr_edges source middle /\
+          marked E middle /\ rfi E rf_edges middle target).
+
+  (** Selected fragment of Linux v6.18 [ppo].  Lock ordering is outside the
+      event vocabulary, and [fence] is the current base fence relation. *)
+  Definition ppo (E : event_structure)
+      (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
+    rel_union (to_r E rf_edges data_edges addr_edges)
+      (rel_union (to_w E rf_edges co_edges data_edges addr_edges ctrl_edges)
+        (rel_intersection (fence E rmw_edges) (same_agent E))).
 
   (** Linux v6.18: [com = rf | co | fr]. *)
   Definition com (rf_edges co_edges : edge_set) : relation :=
@@ -751,6 +799,38 @@ Module LkmmMemoryRelations.
       split; first apply sample_ctrl_wf.
       exists 2. split; first apply sample_carrier.
       unfold direct_ctrl, edge_relation, sample_ctrl. set_solver.
+    Qed.
+
+    Example preserved_program_order_dependency_paths :
+      ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 3 /\
+      ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 4 /\
+      ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 5 /\
+      ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 2.
+    Proof.
+      destruct address_dependency_carries as [_ Haddr].
+      destruct data_dependency_carries as [_ Hdata].
+      destruct control_dependency_carries as [_ Hctrl].
+      assert (data sample_events sample_rf sample_data 0 1) as Hdata_direct.
+      { exists 0. split; first apply rt_refl.
+        unfold direct_data, edge_relation, sample_data. set_solver. }
+      assert (marked sample_events 1) as Hmarked.
+      { apply in_event_structure_lookup_iff. exists relay_write. reflexivity. }
+      assert (rfi sample_events sample_rf 1 2) as Hrfi.
+      { split.
+        - unfold rf, edge_relation, sample_rf. set_solver.
+        - exists 0. split; reflexivity. }
+      split_and!.
+      - left. left. split; first done.
+        exists addr_target. split; reflexivity.
+      - right. left. left. split.
+        + left. right. exact Hdata.
+        + exists data_target. split; reflexivity.
+      - right. left. left. split.
+        + right. exact Hctrl.
+        + exists ctrl_target. split; reflexivity.
+      - left. right. exists 1. split.
+        + right. exact Hdata_direct.
+        + split; done.
     Qed.
   End DependencyTests.
 
