@@ -52,7 +52,7 @@ Module LkmmMemoryRelations.
     ~ event_has_access_kind E eid AccessRead /\
     ~ failed_rmw E rmw_edges eid.
 
-  Definition mb (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
+  Definition mb_event (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
     (event_has_access_mode E eid AccessMb \/ event_has_barrier_kind E eid BarrierMb) /\
     ~ failed_rmw E rmw_edges eid.
 
@@ -69,6 +69,63 @@ Module LkmmMemoryRelations.
   Definition po_rel (E : event_structure) (rmw_edges : edge_set) : relation :=
     fun source target =>
       event_is_memory E source /\ po E source target /\ release E rmw_edges target.
+
+  (** Herd7's standard library defines
+      [fencerel(B) = (po & (_ * B)) ; po]. *)
+  Definition fencerel (E : event_structure) (kind : barrier_kind) : relation :=
+    fun source target =>
+      exists barrier,
+        po E source barrier /\
+        event_has_barrier_kind E barrier kind /\
+        po E barrier target.
+
+  (** Linux v6.18: [R4rmb = R \ Noreturn]. *)
+  Definition r4_rmb (E : event_structure) (eid : event_id) : Prop :=
+    event_is_read E eid /\ ~ noreturn E eid.
+
+  (** Linux v6.18: [rmb = [R4rmb] ; fencerel(Rmb) ; [R4rmb]]. *)
+  Definition rmb (E : event_structure) : relation :=
+    fun source target =>
+      r4_rmb E source /\ fencerel E BarrierRmb source target /\ r4_rmb E target.
+
+  (** Linux v6.18: [wmb = [W] ; fencerel(Wmb) ; [W]]. *)
+  Definition wmb (E : event_structure) : relation :=
+    fun source target =>
+      event_is_write E source /\ fencerel E BarrierWmb source target /\
+      event_is_write E target.
+
+  (** Selected Linux v6.18 [mb] branches: explicit full barriers and the
+      virtual barriers on either side of a successful full-barrier RMW. *)
+  Definition mb (E : event_structure) (rmw_edges : edge_set) : relation :=
+    rel_union
+      (fun source target =>
+        event_is_memory E source /\ fencerel E BarrierMb source target /\
+        event_is_memory E target)
+      (rel_union
+        (fun source target =>
+          event_is_memory E source /\ po E source target /\
+          mb_event E rmw_edges target /\ event_is_read E target)
+        (fun source target =>
+          mb_event E rmw_edges source /\ event_is_write E source /\
+          po E source target /\ event_is_memory E target)).
+
+  (** Selected normal-RCU branch of [gp = po ; [Sync-rcu | Sync-srcu] ; po?]. *)
+  Definition gp (E : event_structure) : relation :=
+    fun source target =>
+      exists sync,
+        po E source sync /\
+        event_has_barrier_kind E sync BarrierSyncRcu /\
+        optional (po E) sync target.
+
+  Definition strong_fence (E : event_structure) (rmw_edges : edge_set) : relation :=
+    rel_union (mb E rmw_edges) (gp E).
+
+  Definition nonrw_fence (E : event_structure) (rmw_edges : edge_set) : relation :=
+    rel_union (strong_fence E rmw_edges)
+      (rel_union (po_rel E rmw_edges) (acq_po E rmw_edges)).
+
+  Definition fence (E : event_structure) (rmw_edges : edge_set) : relation :=
+    rel_union (nonrw_fence E rmw_edges) (rel_union (wmb E) (rmb E)).
 
   (** From-read is derived from reads-from and coherence order: a read is
       before every write that is coherence-later than its source write. *)
@@ -746,21 +803,21 @@ Module LkmmMemoryRelations.
       release sample_events sample_rmw 4 /\
       ~ (release sample_events sample_rmw 3 \/
           release sample_events sample_rmw 5) /\
-      mb sample_events sample_rmw 6 /\
-      mb sample_events sample_rmw 8 /\
+      mb_event sample_events sample_rmw 6 /\
+      mb_event sample_events sample_rmw 8 /\
       failed_rmw sample_events sample_rmw 9 /\
-      ~ mb sample_events sample_rmw 9 /\
+      ~ mb_event sample_events sample_rmw 9 /\
       failed_rmw sample_events sample_rmw 10 /\
       noreturn sample_events 10 /\
       ~ noreturn sample_events 11 /\
       ~ (failed_rmw sample_events sample_rmw 99 \/
           acquire sample_events sample_rmw 99 \/
           release sample_events sample_rmw 99 \/
-          mb sample_events sample_rmw 99 \/
+          mb_event sample_events sample_rmw 99 \/
           noreturn sample_events 99).
     Proof.
       repeat split;
-        unfold failed_rmw, acquire, release, mb, noreturn,
+        unfold failed_rmw, acquire, release, mb_event, noreturn,
           rel_domain, rel_range, rmw, edge_relation,
           event_has_rmw_mark, event_has_access_mode, event_has_access_kind,
           event_has_barrier_kind, lookup_event, sample_events, sample_rmw,
@@ -812,6 +869,176 @@ Module LkmmMemoryRelations.
         simpl; try set_solver; naive_solver.
     Qed.
   End AcquireReleaseOrderingTests.
+
+  Module FenceOrderingTests.
+    Definition noreturn_read : event :=
+      EAgent 0 0 (LMemory AccessRead AccessNoreturn NotRmw 0 0%Z).
+    Definition before_read : event :=
+      EAgent 0 1 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
+    Definition rmb_barrier : event := EAgent 0 2 (LBarrier BarrierRmb).
+    Definition after_read : event :=
+      EAgent 0 3 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
+    Definition before_write : event :=
+      EAgent 0 4 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition wmb_barrier : event := EAgent 0 5 (LBarrier BarrierWmb).
+    Definition after_write : event :=
+      EAgent 0 6 (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
+    Definition mb_barrier : event := EAgent 0 7 (LBarrier BarrierMb).
+    Definition before_rmw : event :=
+      EAgent 0 8 (LMemory AccessRead AccessOnce NotRmw 0 2%Z).
+    Definition sync_rcu : event := EAgent 0 9 (LBarrier BarrierSyncRcu).
+    Definition rmw_read : event :=
+      EAgent 0 10 (LMemory AccessRead AccessMb RmwMarked 0 2%Z).
+    Definition rmw_write : event :=
+      EAgent 0 11 (LMemory AccessWrite AccessMb RmwMarked 0 3%Z).
+    Definition after_rmw : event :=
+      EAgent 0 12 (LMemory AccessRead AccessOnce NotRmw 0 3%Z).
+
+    Definition sample_events : event_structure := {[
+      0 := noreturn_read;
+      1 := before_read;
+      2 := rmb_barrier;
+      3 := after_read;
+      4 := before_write;
+      5 := wmb_barrier;
+      6 := after_write;
+      7 := mb_barrier;
+      8 := before_rmw;
+      9 := sync_rcu;
+      10 := rmw_read;
+      11 := rmw_write;
+      12 := after_rmw
+    ]}.
+    Definition sample_rmw : edge_set := {[(10, 11)]}.
+
+    Local Lemma sample_po eid1 eid2 index1 index2 label1 label2 :
+      lookup_event sample_events eid1 = Some (EAgent 0 index1 label1) ->
+      lookup_event sample_events eid2 = Some (EAgent 0 index2 label2) ->
+      index1 < index2 ->
+      po sample_events eid1 eid2.
+    Proof.
+      intros Hlookup1 Hlookup2 Hlt.
+      exists 0, index1, index2, label1, label2. done.
+    Qed.
+
+    Local Ltac solve_sample_po :=
+      eapply sample_po; [reflexivity | reflexivity | lia].
+
+    Local Lemma sample_rmb : rmb sample_events 1 3.
+    Proof.
+      unfold rmb, r4_rmb. repeat split.
+      - eexists. split; done.
+      - unfold noreturn, event_has_access_mode, event_has_access_kind.
+        intros [Hmode _].
+        change (Some AccessOnce = Some AccessNoreturn) in Hmode. discriminate.
+      - unfold fencerel. exists 2. repeat split; try solve_sample_po.
+      - eexists. split; done.
+      - unfold noreturn, event_has_access_mode, event_has_access_kind.
+        intros [Hmode _].
+        change (Some AccessOnce = Some AccessNoreturn) in Hmode. discriminate.
+    Qed.
+
+    Local Lemma sample_not_rmb : ~ rmb sample_events 0 3.
+    Proof.
+      unfold rmb, r4_rmb. intros ((_ & Hnot_noreturn) & _). apply Hnot_noreturn.
+      unfold noreturn, event_has_access_mode, event_has_access_kind. split; first done.
+      intros Hkind.
+      change (Some AccessRead = Some AccessWrite) in Hkind. discriminate.
+    Qed.
+
+    Local Lemma sample_wmb : wmb sample_events 4 6.
+    Proof.
+      unfold wmb. repeat split.
+      - eexists. split; done.
+      - unfold fencerel. exists 5. repeat split; try solve_sample_po.
+      - eexists. split; done.
+    Qed.
+
+    Local Lemma sample_not_wmb : ~ wmb sample_events 3 6.
+    Proof.
+      intros ((ev & Hlookup & Hwrite) & _).
+      change (Some after_read = Some ev) in Hlookup.
+      injection Hlookup as <-. done.
+    Qed.
+
+    Local Lemma sample_mb_event_read : mb_event sample_events sample_rmw 10.
+    Proof.
+      unfold mb_event, failed_rmw, rel_domain, rel_range, rmw, edge_relation,
+        event_has_access_mode, event_has_rmw_mark, sample_rmw.
+      simpl. set_solver.
+    Qed.
+
+    Local Lemma sample_mb_event_write : mb_event sample_events sample_rmw 11.
+    Proof.
+      unfold mb_event, failed_rmw, rel_domain, rel_range, rmw, edge_relation,
+        event_has_access_mode, event_has_rmw_mark, sample_rmw.
+      simpl. set_solver.
+    Qed.
+
+    Local Lemma sample_mb_explicit : mb sample_events sample_rmw 6 8.
+    Proof.
+      left. repeat split.
+      - eexists. split; done.
+      - unfold fencerel. exists 7. repeat split; try solve_sample_po.
+      - eexists. split; done.
+    Qed.
+
+    Local Lemma sample_mb_before_rmw : mb sample_events sample_rmw 8 10.
+    Proof.
+      right. left. split.
+      - eexists. split; done.
+      - split; first solve_sample_po. split.
+        + apply sample_mb_event_read.
+        + eexists. split; done.
+    Qed.
+
+    Local Lemma sample_mb_after_rmw : mb sample_events sample_rmw 11 12.
+    Proof.
+      right. right. split; first apply sample_mb_event_write.
+      split.
+      - eexists. split; done.
+      - split; first solve_sample_po.
+        eexists. split; done.
+    Qed.
+
+    Local Lemma sample_gp_at_sync : gp sample_events 8 9.
+    Proof.
+      exists 9. split; first solve_sample_po. split.
+      - unfold event_has_barrier_kind. reflexivity.
+      - left. done.
+    Qed.
+
+    Local Lemma sample_gp_after : gp sample_events 8 10.
+    Proof.
+      exists 9. split; first solve_sample_po. split.
+      - unfold event_has_barrier_kind. reflexivity.
+      - right. solve_sample_po.
+    Qed.
+
+    Example primitive_fence_ordering :
+      rmb sample_events 1 3 /\
+      ~ rmb sample_events 0 3 /\
+      wmb sample_events 4 6 /\
+      ~ wmb sample_events 3 6 /\
+      mb sample_events sample_rmw 6 8 /\
+      mb sample_events sample_rmw 8 10 /\
+      mb sample_events sample_rmw 11 12 /\
+      gp sample_events 8 9 /\
+      gp sample_events 8 10.
+    Proof.
+      split_and!;
+        [ apply sample_rmb
+        | apply sample_not_rmb
+        | apply sample_wmb
+        | apply sample_not_wmb
+        | apply sample_mb_explicit
+        | apply sample_mb_before_rmw
+        | apply sample_mb_after_rmw
+        | apply sample_gp_at_sync
+        | apply sample_gp_after ].
+    Qed.
+
+  End FenceOrderingTests.
 
   Module ReadsFromTests.
     Definition init_write : event := EInitWrite 0 0%Z.
