@@ -60,6 +60,16 @@ Module LkmmMemoryRelations.
     event_has_access_mode E eid AccessNoreturn /\
     ~ event_has_access_kind E eid AccessWrite.
 
+  (** Linux v6.18: [acq-po = [Acquire] ; po ; [M]] *)
+  Definition acq_po (E : event_structure) (rmw_edges : edge_set) : relation :=
+    fun source target =>
+      acquire E rmw_edges source /\ po E source target /\ event_is_memory E target.
+
+  (** Linux v6.18: [po-rel = [M] ; po ; [Release]] *)
+  Definition po_rel (E : event_structure) (rmw_edges : edge_set) : relation :=
+    fun source target =>
+      event_is_memory E source /\ po E source target /\ release E rmw_edges target.
+
   (** From-read is derived from reads-from and coherence order: a read is
       before every write that is coherence-later than its source write. *)
   Definition fr (rf_edges co_edges : edge_set) : relation :=
@@ -94,8 +104,8 @@ Module LkmmMemoryRelations.
   Proof.
     split.
     - intros Hrf. destruct (decide (same_agent E write read)) as [Hint | Hext].
-      + left. split; done.
-      + right. split; done.
+      + by left.
+      + by right.
     - intros [[Hrf _] | [Hrf _]]; exact Hrf.
   Qed.
 
@@ -105,8 +115,8 @@ Module LkmmMemoryRelations.
   Proof.
     split.
     - intros Hco. destruct (decide (same_agent E write1 write2)) as [Hint | Hext].
-      + left. split; done.
-      + right. split; done.
+      + by left.
+      + by right.
     - intros [[Hco _] | [Hco _]]; exact Hco.
   Qed.
 
@@ -116,8 +126,8 @@ Module LkmmMemoryRelations.
   Proof.
     split.
     - intros Hfr. destruct (decide (same_agent E read write)) as [Hint | Hext].
-      + left. split; done.
-      + right. split; done.
+      + by left.
+      + by right.
     - intros [[Hfr _] | [Hfr _]]; exact Hfr.
   Qed.
 
@@ -266,8 +276,7 @@ Module LkmmMemoryRelations.
     exists write_event, read_event, val. done.
   Qed.
 
-  Definition rmw_edge_wf (E : event_structure)
-      (read write : event_id) : Prop :=
+  Definition rmw_edge_wf (E : event_structure) (read write : event_id) : Prop :=
     exists read_event write_event,
       lookup_event E read = Some read_event /\
       lookup_event E write = Some write_event /\
@@ -532,7 +541,7 @@ Module LkmmMemoryRelations.
         Hsource' & Hwrite & Hsource_kind' & Hwrite_kind &
         Hsource_write_loc).
     exists read_event, write_event.
-    repeat split; try done.
+    split_and!; try done.
     eapply same_location_transitive.
     - by apply same_location_symmetric.
     - exact Hsource_write_loc.
@@ -608,7 +617,7 @@ Module LkmmMemoryRelations.
       assert (read = 2 /\ access = 3) as [-> ->] by set_solver.
       repeat split.
       - exists relay_read. split; reflexivity.
-      - exists addr_target. split; first reflexivity. done.
+      - exists addr_target. split; done.
       - exists 0, 2, 3,
           (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
           (LMemory AccessRead AccessOnce NotRmw 1 0%Z).
@@ -764,6 +773,45 @@ Module LkmmMemoryRelations.
         simpl; set_solver.
     Qed.
   End BellEventClassTests.
+
+  Module AcquireReleaseOrderingTests.
+    Definition acquire_read : event :=
+      EAgent 0 0 (LMemory AccessRead AccessAcquire NotRmw 0 0%Z).
+    Definition barrier : event := EAgent 0 1 (LBarrier BarrierMb).
+    Definition middle_write : event :=
+      EAgent 0 2 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition release_write : event :=
+      EAgent 0 3 (LMemory AccessWrite AccessRelease NotRmw 0 2%Z).
+
+    Definition sample_events : event_structure := {[
+      0 := acquire_read;
+      1 := barrier;
+      2 := middle_write;
+      3 := release_write
+    ]}.
+    Definition no_rmw : edge_set := ∅.
+
+    Example acquire_release_ordering :
+      acq_po sample_events no_rmw 0 2 /\
+      po_rel sample_events no_rmw 2 3 /\
+      ~ acq_po sample_events no_rmw 0 1 /\
+      ~ po_rel sample_events no_rmw 1 3.
+    Proof.
+      assert (event_is_memory sample_events 2) as Hmemory.
+      { exists middle_write. split; reflexivity. }
+      assert (~ event_is_memory sample_events 1) as Hbarrier.
+      { intros (ev & Hlookup & Hmemory').
+        change (Some barrier = Some ev) in Hlookup.
+        injection Hlookup as <-. done. }
+      repeat split;
+        unfold acq_po, po_rel, acquire, release, failed_rmw,
+          rel_domain, rel_range, rmw, edge_relation, event_is_memory,
+          event_has_access_mode, event_has_access_kind, event_has_rmw_mark,
+          po, lookup_event, sample_events, no_rmw, acquire_read, barrier,
+          middle_write, release_write;
+        simpl; try set_solver; naive_solver.
+    Qed.
+  End AcquireReleaseOrderingTests.
 
   Module ReadsFromTests.
     Definition init_write : event := EInitWrite 0 0%Z.
@@ -953,8 +1001,7 @@ Module LkmmMemoryRelations.
         assert (read_event = marked_write) as ->.
         { change (Some marked_write = Some read_event) in Hread. congruence. }
         discriminate Hread_kind. }
-      assert (~ rmw_wf unmarked_source_events
-        ({[(0, 1)]} : edge_set)) as Hsource_marked.
+      assert (~ rmw_wf unmarked_source_events ({[(0, 1)]} : edge_set)) as Hsource_marked.
       { intros Hwf.
         destruct (rmw_wf_marked unmarked_source_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -963,8 +1010,7 @@ Module LkmmMemoryRelations.
         assert (read_event = unmarked_read) as ->.
         { change (Some unmarked_read = Some read_event) in Hread. congruence. }
         discriminate Hread_marked. }
-      assert (~ rmw_wf unmarked_target_events
-        ({[(0, 1)]} : edge_set)) as Htarget_marked.
+      assert (~ rmw_wf unmarked_target_events ({[(0, 1)]} : edge_set)) as Htarget_marked.
       { intros Hwf.
         destruct (rmw_wf_marked unmarked_target_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -973,8 +1019,7 @@ Module LkmmMemoryRelations.
         assert (write_event = unmarked_write) as ->.
         { change (Some unmarked_write = Some write_event) in Hwrite. congruence. }
         discriminate Hwrite_marked. }
-      assert (~ rmw_wf different_location_events
-        ({[(0, 1)]} : edge_set)) as Hlocation.
+      assert (~ rmw_wf different_location_events ({[(0, 1)]} : edge_set)) as Hlocation.
       { intros Hwf.
         pose proof (rmw_wf_same_location different_location_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -982,8 +1027,7 @@ Module LkmmMemoryRelations.
         change (Some 0 = Some loc) in Hread_loc.
         change (Some 1 = Some loc) in Hwrite_loc.
         congruence. }
-      assert (~ rmw_wf different_mode_events
-        ({[(0, 1)]} : edge_set)) as Hmode.
+      assert (~ rmw_wf different_mode_events ({[(0, 1)]} : edge_set)) as Hmode.
       { intros Hwf.
         pose proof (rmw_wf_same_mode different_mode_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -991,8 +1035,7 @@ Module LkmmMemoryRelations.
         change (Some AccessMb = Some mode) in Hread_mode.
         change (Some AccessOnce = Some mode) in Hwrite_mode.
         congruence. }
-      assert (~ rmw_wf different_agent_events
-        ({[(0, 1)]} : edge_set)) as Hagent.
+      assert (~ rmw_wf different_agent_events ({[(0, 1)]} : edge_set)) as Hagent.
       { intros Hwf.
         pose proof (rmw_wf_po different_agent_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -1003,8 +1046,7 @@ Module LkmmMemoryRelations.
           Some (EAgent agent index2 label2)) in Hwrite.
         unfold marked_read, other_agent_write in Hread, Hwrite.
         congruence. }
-      assert (~ rmw_wf reversed_po_events
-        ({[(0, 1)]} : edge_set)) as Hpo.
+      assert (~ rmw_wf reversed_po_events ({[(0, 1)]} : edge_set)) as Hpo.
       { intros Hwf.
         pose proof (rmw_wf_po reversed_po_events
           ({[(0, 1)]} : edge_set) 0 1 Hwf (singleton_rmw_edge 0 1))
@@ -1166,8 +1208,7 @@ Module LkmmMemoryRelations.
         apply (Hirreflexive 1).
         eapply Htransitive with (write2 := 2);
           unfold co, edge_relation, cyclic_co; set_solver. }
-      assert (~ co_wf missing_initial_events
-        (∅ : edge_set)) as Hmissing.
+      assert (~ co_wf missing_initial_events (∅ : edge_set)) as Hmissing.
       { intros Hwf.
         pose proof (co_wf_initial_exists missing_initial_events
           (∅ : edge_set) Hwf) as Hexists.
@@ -1177,8 +1218,7 @@ Module LkmmMemoryRelations.
         unfold lookup_event, missing_initial_events in Hlookup.
         apply lookup_singleton_Some in Hlookup as [Heid Hevent].
         discriminate Hevent. }
-      assert (~ co_wf duplicate_initial_events
-        (∅ : edge_set)) as Hduplicate.
+      assert (~ co_wf duplicate_initial_events (∅ : edge_set)) as Hduplicate.
       { intros Hwf.
         pose proof (co_wf_initial_unique duplicate_initial_events
           (∅ : edge_set) Hwf) as Hunique.
@@ -1271,9 +1311,7 @@ Module LkmmMemoryRelations.
         - intros (agent & Hagent0 & Hagent1).
           change (Some 0 = Some agent) in Hagent0.
           change (Some 1 = Some agent) in Hagent1. congruence. }
-      split; first exact Hrfi.
-      split; first exact Hrfe.
-      split; done.
+      split_and!; done.
     Qed.
 
     (** Although read [6] reads from the initial write, [fri] classifies the
@@ -1308,9 +1346,7 @@ Module LkmmMemoryRelations.
         - intros (agent & Hagent0 & Hagent1).
           change (Some 0 = Some agent) in Hagent0.
           change (Some 1 = Some agent) in Hagent1. congruence. }
-      split; first exact Hrfe.
-      split; first exact Hcoe.
-      split; done.
+      split_and!; done.
     Qed.
   End InternalExternalTests.
 
@@ -1356,7 +1392,7 @@ Module LkmmMemoryRelations.
         + exists 0, 0, 1,
             (LMemory AccessWrite AccessOnce NotRmw 0 1%Z),
             (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
-          repeat split; try reflexivity. lia.
+          split_and!; try done. lia.
         + exists 0. split; reflexivity.
       - apply t_step. right. unfold com, rel_union. right. left.
         unfold co, edge_relation, reversed_co. set_solver.
