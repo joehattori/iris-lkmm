@@ -4,8 +4,10 @@ From iris_lkmm.lkmm Require Import prelude.
 
 (** Canonical event vocabulary for the selected LKMM fragment.
 
-    Access modes and RMW marking are syntactic annotations from
-    [linux-kernel.bell].  The semantic [Acquire], [Release], [Mb],
+    Access modes and RMW marking encode the selected syntactic vocabulary
+    from [linux-kernel.bell].  [AccessPlain] is the Rocq representation of a
+    memory access with no named Bell access annotation; upstream [Plain]
+    remains a derived class.  The semantic [Acquire], [Release], [Mb],
     [Noreturn], and [FailedRMW] sets depend on execution relations, including
     [rmw], and are therefore defined in [memory_relations.v] rather than this
     event-vocabulary layer. *)
@@ -26,7 +28,8 @@ Module LkmmEvents.
   | AccessRelease
   | AccessAcquire
   | AccessNoreturn
-  | AccessMb.
+  | AccessMb
+  | AccessPlain.
 
   (** [RmwMarked] records the syntactic RMW classification.  A successful
       RMW consists of marked read and write events connected by an
@@ -78,6 +81,7 @@ Module LkmmEvents.
         | AccessAcquire => 2
         | AccessNoreturn => 3
         | AccessMb => 4
+        | AccessPlain => 5
         end)
       (fun n =>
         match n with
@@ -85,7 +89,8 @@ Module LkmmEvents.
         | 1 => AccessRelease
         | 2 => AccessAcquire
         | 3 => AccessNoreturn
-        | _ => AccessMb
+        | 4 => AccessMb
+        | _ => AccessPlain
         end) _).
     by intros [].
   Qed.

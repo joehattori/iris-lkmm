@@ -39,7 +39,7 @@ Module LkmmMemoryRelations.
   (** Linux v6.18 [linux-kernel.bell]: semantic event classes obtained by
       filtering the syntactic access and barrier annotations. *)
   Definition failed_rmw (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_has_rmw_mark E eid RmwMarked /\
+    event_is_rmw_marked E eid /\
     ~ (rel_domain (rmw rmw_edges) eid \/ rel_range (rmw rmw_edges) eid).
 
   Definition acquire (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
@@ -60,10 +60,15 @@ Module LkmmMemoryRelations.
     event_has_access_mode E eid AccessNoreturn /\
     ~ event_has_access_kind E eid AccessWrite.
 
-  (** Plain accesses are outside the selected vocabulary, so every
-      represented event belongs to Linux v6.18 [Marked]. *)
+  (** Upstream derives [Plain = M \ Marked].  In the canonical vocabulary,
+      an [AccessPlain], [NotRmw] access is exactly such an event.  An
+      independently RMW-marked access remains [Marked]. *)
+  Definition plain (E : event_structure) (eid : event_id) : Prop :=
+    event_has_access_mode E eid AccessPlain /\
+    ~ event_is_rmw_marked E eid.
+
   Definition marked (E : event_structure) (eid : event_id) : Prop :=
-    in_event_structure E eid.
+    in_event_structure E eid /\ ~ plain E eid.
 
   (** Linux v6.18: [acq-po = [Acquire] ; po ; [M]] *)
   Definition acq_po (E : event_structure) (rmw_edges : edge_set) : relation :=
@@ -224,8 +229,7 @@ Module LkmmMemoryRelations.
     rel_union (co co_edges) (fr rf_edges co_edges).
 
   (** Selected fragment of Linux v6.18 [to-w = rwdep | (overwrite & int)].
-      The [addr ; [Plain] ; wmb] branch is empty because plain accesses are
-      outside the event vocabulary. *)
+      The [addr ; [Plain] ; wmb] branch is deferred to a separate change. *)
   Definition to_w (E : event_structure)
       (rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
     rel_union (rwdep E rf_edges data_edges addr_edges ctrl_edges)
@@ -698,7 +702,7 @@ Module LkmmMemoryRelations.
     Definition source_read : event := EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
     Definition relay_write : event := EAgent 0 1 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
     Definition relay_read : event := EAgent 0 2 (LMemory AccessRead AccessOnce NotRmw 0 1%Z).
-    Definition addr_target : event := EAgent 0 3 (LMemory AccessRead AccessOnce NotRmw 1 0%Z).
+    Definition addr_target : event := EAgent 0 3 (LMemory AccessRead AccessPlain NotRmw 1 0%Z).
     Definition data_target : event := EAgent 0 4 (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
     Definition ctrl_target : event := EAgent 0 5 (LMemory AccessWrite AccessOnce NotRmw 2 1%Z).
 
@@ -725,7 +729,7 @@ Module LkmmMemoryRelations.
       - exists addr_target. split; done.
       - exists 0, 2, 3,
           (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
-          (LMemory AccessRead AccessOnce NotRmw 1 0%Z).
+          (LMemory AccessRead AccessPlain NotRmw 1 0%Z).
         repeat split; reflexivity || lia.
     Qed.
 
@@ -814,7 +818,10 @@ Module LkmmMemoryRelations.
       { exists 0. split; first apply rt_refl.
         unfold direct_data, edge_relation, sample_data. set_solver. }
       assert (marked sample_events 1) as Hmarked.
-      { apply in_event_structure_lookup_iff. exists relay_write. reflexivity. }
+      { split.
+        - apply in_event_structure_lookup_iff. exists relay_write. reflexivity.
+        - intros [Hmode _].
+          change (Some AccessOnce = Some AccessPlain) in Hmode. discriminate. }
       assert (rfi sample_events sample_rf 1 2) as Hrfi.
       { split.
         - unfold rf, edge_relation, sample_rf. set_solver.
@@ -831,6 +838,22 @@ Module LkmmMemoryRelations.
       - left. right. exists 1. split.
         + right. exact Hdata_direct.
         + split; done.
+    Qed.
+
+    Example plain_access_classification :
+      plain sample_events 3 /\ ~ marked sample_events 3 /\ marked sample_events 1.
+    Proof.
+      assert (plain sample_events 3) as Hplain.
+      { split; first reflexivity.
+        unfold event_is_rmw_marked.
+        change (Some NotRmw <> Some RmwMarked). discriminate. }
+      assert (marked sample_events 1) as Hmarked.
+      { split.
+        - apply in_event_structure_lookup_iff. exists relay_write. reflexivity.
+        - intros [Hmode _].
+          change (Some AccessOnce = Some AccessPlain) in Hmode. discriminate. }
+      split_and!; try done.
+      intros [_ Hnot_plain]. exact (Hnot_plain Hplain).
     Qed.
   End DependencyTests.
 
@@ -899,7 +922,7 @@ Module LkmmMemoryRelations.
       repeat split;
         unfold failed_rmw, acquire, release, mb_event, noreturn,
           rel_domain, rel_range, rmw, edge_relation,
-          event_has_rmw_mark, event_has_access_mode, event_has_access_kind,
+          event_is_rmw_marked, event_has_access_mode, event_has_access_kind,
           event_has_barrier_kind, lookup_event, sample_events, sample_rmw,
           acquire_read, acquire_write, failed_acquire_read,
           release_read, release_write, failed_release_write,
@@ -943,7 +966,7 @@ Module LkmmMemoryRelations.
       repeat split;
         unfold acq_po, po_rel, acquire, release, failed_rmw,
           rel_domain, rel_range, rmw, edge_relation, event_is_memory,
-          event_has_access_mode, event_has_access_kind, event_has_rmw_mark,
+          event_has_access_mode, event_has_access_kind, event_is_rmw_marked,
           po, lookup_event, sample_events, no_rmw, acquire_read, barrier,
           middle_write, release_write;
         simpl; try set_solver; naive_solver.
@@ -1044,14 +1067,14 @@ Module LkmmMemoryRelations.
     Local Lemma sample_mb_event_read : mb_event sample_events sample_rmw 10.
     Proof.
       unfold mb_event, failed_rmw, rel_domain, rel_range, rmw, edge_relation,
-        event_has_access_mode, event_has_rmw_mark, sample_rmw.
+        event_has_access_mode, event_is_rmw_marked, sample_rmw.
       simpl. set_solver.
     Qed.
 
     Local Lemma sample_mb_event_write : mb_event sample_events sample_rmw 11.
     Proof.
       unfold mb_event, failed_rmw, rel_domain, rel_range, rmw, edge_relation,
-        event_has_access_mode, event_has_rmw_mark, sample_rmw.
+        event_has_access_mode, event_is_rmw_marked, sample_rmw.
       simpl. set_solver.
     Qed.
 

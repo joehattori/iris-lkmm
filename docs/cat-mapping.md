@@ -14,15 +14,15 @@ can be filtered using the candidate `rmw` relation.
 
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |
-| `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. RMW marking is orthogonal to read/write direction because successful operations will be represented by paired read and write events. |
+| `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. `AccessPlain` is the Rocq representation of a memory access with no named Bell access annotation; it is not itself an upstream annotation. RMW marking remains orthogonal to read/write direction. |
 | `linux-kernel.bell:25-37` | barrier annotations | `barrier_kind`, `LBarrier` | Includes only `MB`, `rmb`, `wmb`, `rcu-lock`, `rcu-unlock`, and `sync-rcu`, as selected by the project scope. |
 | `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | `failed_rmw`, `acquire`, `release`, `mb_event`, `noreturn` | Direct execution-dependent unary predicates. `Mb` includes both MB-tagged memory accesses and full `MB` barriers before subtracting `FailedRMW`. |
-| `linux-kernel.bell:89-91` | `Marked` and `Plain` | `marked` | Every represented event is `Marked` because plain accesses are outside the selected vocabulary; no `Plain` predicate is exposed. |
+| `linux-kernel.bell:89-91` | `Marked` and `Plain = M \ Marked` | `marked`, `plain` | In the canonical vocabulary, `AccessPlain`/`NotRmw` accesses are exactly `Plain`; every other represented event is `Marked`, including independently RMW-marked accesses. |
 | `linux-kernel.bell:93-96` | `(data ; [~ Srcu-unlock] ; rfi)*` carrying into `addr`, `data`, and `ctrl` | `carry_dep`, `addr`, `data`, `ctrl` | The selected fragment has no SRCU events, so the filter is omitted and the closure uses `direct_data ; rfi`. |
 | Herd7 `stdlib.cat:29` | `fencerel(B) = (po & (_ * B)) ; po` | `fencerel` | Direct existential translation using a barrier-kind witness between the endpoints in program order. |
 | `linux-kernel.cat:28-29` | `[Acquire] ; po ; [M]` and `[M] ; po ; [Release]` | `acq_po`, `po_rel` | Direct derived relations using the semantic Bell classes and consumed by `nonrw_fence`. |
 | `linux-kernel.cat:33-63` | `R4rmb`, `rmb`, `wmb`, selected `mb`, normal-RCU `gp`, `strong-fence`, `nonrw-fence`, and `fence` | `r4_rmb`, `rmb`, `wmb`, `mb`, `gp`, `strong_fence`, `nonrw_fence`, `fence` | Derived from `po`, tagged barrier events, semantic Bell classes, and relation unions. Lock, SRCU, and before/after-atomic branches are outside the selected vocabulary; the later generalized `rcu-fence` extension remains deferred. |
-| `linux-kernel.cat:78-84` | `dep`, `rwdep`, `overwrite`, `to-w`, `to-r`, and `ppo` | `dep`, `rwdep`, `overwrite`, `to_w`, `to_r`, `ppo` | Uses `same_agent` for `int` and the base `fence`. The plain-access `to-w` branch and lock-ordering `ppo` branch are omitted because their event classes are outside the selected vocabulary. |
+| `linux-kernel.cat:78-84` | `dep`, `rwdep`, `overwrite`, `to-w`, `to-r`, and `ppo` | `dep`, `rwdep`, `overwrite`, `to_w`, `to_r`, `ppo` | Uses `same_agent` for `int` and the base `fence`. The plain-access `to-w` branch is deferred to a separate change; lock ordering remains outside the vocabulary. |
 | `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
 | `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
 | `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
@@ -31,11 +31,12 @@ can be filtered using the candidate `rmw` relation.
 
 Initial writes are represented explicitly by `EInitWrite`.  Locations are
 abstract natural-number identifiers and values are mathematical integers;
-machine-word overflow is not modeled at this layer.  Plain accesses, compiler
-`barrier`, before/after-atomic barriers, lock operations, and SRCU have no
-constructors.  Address, data, and control dependencies are graph relations,
-not event labels; `direct_addr`, `direct_data`, and `direct_ctrl` expose their
-finite provenance edge sets through relational views.
+machine-word overflow is not modeled at this layer.  Unannotated memory
+accesses use `AccessPlain`; compiler `barrier`, before/after-atomic barriers,
+lock operations, and SRCU have no constructors.  Address, data, and control
+dependencies are graph relations, not event labels; `direct_addr`,
+`direct_data`, and `direct_ctrl` expose their finite provenance edge sets
+through relational views.
 
 The existing feasibility kernel retains its five-label graph vocabulary until
 the later RCU compatibility-view commit.
@@ -52,7 +53,7 @@ local index.  `event_structure_wf` ensures that an agent-local position
 identifies at most one event.
 
 The same file uses a local lookup-and-projection helper to define the public
-`event_has_access_kind`, `event_has_access_mode`, `event_has_rmw_mark`,
+`event_has_access_kind`, `event_has_access_mode`, `event_is_rmw_marked`,
 `event_has_barrier_kind`, and `event_has_location` predicates, as well as the
 binary `same_attribute` relation.  The canonical `same_location` and
 `same_agent` relations specialize the latter with `location_of` and

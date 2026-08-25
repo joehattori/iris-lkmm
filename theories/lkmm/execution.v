@@ -57,9 +57,8 @@ Module LkmmExecution.
       (mode : access_mode) : Prop :=
     event_attribute access_mode_of E eid = Some mode.
 
-  Definition event_has_rmw_mark (E : event_structure) (eid : event_id)
-      (mark : rmw_mark) : Prop :=
-    event_attribute rmw_mark_of E eid = Some mark.
+  Definition event_is_rmw_marked (E : event_structure) (eid : event_id) : Prop :=
+    event_attribute rmw_mark_of E eid = Some RmwMarked.
 
   Definition event_has_barrier_kind (E : event_structure) (eid : event_id)
       (kind : barrier_kind) : Prop :=
