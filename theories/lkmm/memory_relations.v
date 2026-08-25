@@ -228,12 +228,14 @@ Module LkmmMemoryRelations.
   Definition overwrite (rf_edges co_edges : edge_set) : relation :=
     rel_union (co co_edges) (fr rf_edges co_edges).
 
-  (** Selected fragment of Linux v6.18 [to-w = rwdep | (overwrite & int)].
-      The [addr ; [Plain] ; wmb] branch is deferred to a separate change. *)
+  (** Linux v6.18:
+      [to-w = rwdep | (overwrite & int) | (addr ; [Plain] ; wmb)]. *)
   Definition to_w (E : event_structure)
       (rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
     rel_union (rwdep E rf_edges data_edges addr_edges ctrl_edges)
-      (rel_intersection (overwrite rf_edges co_edges) (same_agent E)).
+      (rel_union (rel_intersection (overwrite rf_edges co_edges) (same_agent E))
+        (rel_seq (addr E rf_edges data_edges addr_edges)
+          (fun source target => plain E source /\ wmb E source target))).
 
   (** Linux v6.18: [to-r = (addr ; [R]) | (dep ; [Marked] ; rfi)]. *)
   Definition to_r (E : event_structure) (rf_edges data_edges addr_edges : edge_set) : relation :=
@@ -982,7 +984,7 @@ Module LkmmMemoryRelations.
     Definition after_read : event :=
       EAgent 0 3 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
     Definition before_write : event :=
-      EAgent 0 4 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+      EAgent 0 4 (LMemory AccessWrite AccessPlain NotRmw 0 1%Z).
     Definition wmb_barrier : event := EAgent 0 5 (LBarrier BarrierWmb).
     Definition after_write : event :=
       EAgent 0 6 (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
@@ -1013,6 +1015,7 @@ Module LkmmMemoryRelations.
       12 := after_rmw
     ]}.
     Definition sample_rmw : edge_set := {[(10, 11)]}.
+    Definition sample_addr : edge_set := {[(3, 4)]}.
 
     Local Lemma sample_po eid1 eid2 index1 index2 label1 label2 :
       lookup_event sample_events eid1 = Some (EAgent 0 index1 label1) ->
@@ -1055,6 +1058,17 @@ Module LkmmMemoryRelations.
       - eexists. split; done.
       - unfold fencerel. exists 5. repeat split; try solve_sample_po.
       - eexists. split; done.
+    Qed.
+
+    Local Lemma sample_plain_to_w : to_w sample_events ∅ ∅ ∅ sample_addr ∅ 3 6.
+    Proof.
+      right. right. exists 4. split.
+      - exists 3. split; first apply rt_refl.
+        unfold direct_addr, edge_relation, sample_addr. set_solver.
+      - split; last apply sample_wmb.
+        split; first reflexivity.
+        unfold event_is_rmw_marked.
+        change (Some NotRmw <> Some RmwMarked). discriminate.
     Qed.
 
     Local Lemma sample_not_wmb : ~ wmb sample_events 3 6.
@@ -1127,7 +1141,8 @@ Module LkmmMemoryRelations.
       mb sample_events sample_rmw 8 10 /\
       mb sample_events sample_rmw 11 12 /\
       gp sample_events 8 9 /\
-      gp sample_events 8 10.
+      gp sample_events 8 10 /\
+      to_w sample_events ∅ ∅ ∅ sample_addr ∅ 3 6.
     Proof.
       split_and!;
         [ apply sample_rmb
@@ -1138,7 +1153,8 @@ Module LkmmMemoryRelations.
         | apply sample_mb_before_rmw
         | apply sample_mb_after_rmw
         | apply sample_gp_at_sync
-        | apply sample_gp_after ].
+        | apply sample_gp_after
+        | apply sample_plain_to_w ].
     Qed.
 
   End FenceOrderingTests.
