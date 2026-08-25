@@ -31,9 +31,9 @@ Module LkmmExecution.
       lookup_event E eid2 = Some (EAgent agent index label2) ->
       eid1 = eid2.
 
-  Local Definition event_satisfies (predicate : event -> Prop)
+  Local Definition event_satisfies (pred : event -> Prop)
       (E : event_structure) (eid : event_id) : Prop :=
-    exists ev, lookup_event E eid = Some ev /\ predicate ev.
+    exists ev, lookup_event E eid = Some ev /\ pred ev.
 
   Definition event_is_read (E : event_structure) (eid : event_id) : Prop :=
     event_satisfies is_read E eid.
@@ -49,23 +49,22 @@ Module LkmmExecution.
       (E : event_structure) (eid : event_id) : option A :=
     lookup_event E eid ≫= project.
 
-  Definition event_has_access_kind (E : event_structure) (eid : event_id)
-      (kind : access_kind) : Prop :=
+  Definition event_has_access_kind (E : event_structure) (kind : access_kind)
+      (eid : event_id) : Prop :=
     event_attribute access_kind_of E eid = Some kind.
 
-  Definition event_has_access_mode (E : event_structure) (eid : event_id)
-      (mode : access_mode) : Prop :=
+  Definition event_has_access_mode (E : event_structure) (mode : access_mode)
+      (eid : event_id) : Prop :=
     event_attribute access_mode_of E eid = Some mode.
 
   Definition event_is_rmw_marked (E : event_structure) (eid : event_id) : Prop :=
     event_attribute rmw_mark_of E eid = Some RmwMarked.
 
-  Definition event_has_barrier_kind (E : event_structure) (eid : event_id)
-      (kind : barrier_kind) : Prop :=
+  Definition event_has_barrier_kind (E : event_structure) (kind : barrier_kind)
+      (eid : event_id) : Prop :=
     event_attribute barrier_kind_of E eid = Some kind.
 
-  Definition event_has_location (E : event_structure) (eid : event_id)
-      (loc : location) : Prop :=
+  Definition event_has_location (E : event_structure) (loc : location) (eid : event_id) : Prop :=
     event_attribute location_of E eid = Some loc.
 
   (** Two identifiers have the same attribute when both projections are
@@ -259,7 +258,7 @@ Module LkmmExecution.
     assert (agent1 = agent2) as -> by congruence.
     assert (index2 = index2') as -> by congruence.
     exists agent2, index1, index3, label1, label3.
-    repeat split; try done. lia.
+    split_and!; try done. lia.
   Qed.
 
   Lemma po_loc_po E eid1 eid2 :
@@ -428,7 +427,7 @@ Module LkmmExecution.
       exists 0, 0, 2,
         (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
         (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
-      repeat split; try reflexivity. lia.
+      split_and!; try reflexivity. lia.
     Qed.
 
     Example same_agent_same_location_is_in_po_loc :
@@ -450,7 +449,7 @@ Module LkmmExecution.
       - exists 0, 0, 2,
           (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
           (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
-        repeat split; try reflexivity. lia.
+        split_and!; try reflexivity. lia.
       - intros [_ (loc & Hloc1 & Hloc2)].
         change (Some 0 = Some loc) in Hloc1.
         change (Some 1 = Some loc) in Hloc2. congruence.

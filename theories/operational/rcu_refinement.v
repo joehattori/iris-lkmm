@@ -214,7 +214,7 @@ Module RcuRefinement.
     intros Hsound Hcert Hl.
     destruct (Hsound cert Hcert l Hl) as (cs & Hcs & Hlock).
     exists cs. split; last done.
-    unfold certificate_covers. repeat split; try done.
+    unfold certificate_covers. split_and!; try done.
     by rewrite Hlock.
   Qed.
 

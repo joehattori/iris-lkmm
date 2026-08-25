@@ -12,6 +12,9 @@ relations are kept in the graph layers.  The capitalized semantic Bell sets
 lowercase unary predicates in `memory_relations.v`, where the syntactic tags
 can be filtered using the candidate `rmw` relation.
 
+CAT restricted identities `[S]` are represented uniformly by
+`rel_id_on S` from the relational prelude.
+
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |
 | `linux-kernel.bell:16-23` | `ONCE`, `RELEASE`, `ACQUIRE`, `NORETURN`, and `MB` access annotations; `R`, `W`, and `RMW` instruction classes | `access_mode`, `access_kind`, `rmw_mark`, `LMemory` | Direct finite syntactic vocabulary. `AccessPlain` is the Rocq representation of a memory access with no named Bell access annotation; it is not itself an upstream annotation. RMW marking remains orthogonal to read/write direction. |
@@ -19,7 +22,7 @@ can be filtered using the candidate `rmw` relation.
 | `linux-kernel.bell:40-48` | filtering of syntactic tags into semantic `FailedRMW`, `Acquire`, `Release`, `Mb`, and `Noreturn` sets | `failed_rmw`, `acquire`, `release`, `mb_event`, `noreturn` | Direct execution-dependent unary predicates. `Mb` includes both MB-tagged memory accesses and full `MB` barriers before subtracting `FailedRMW`. |
 | `linux-kernel.bell:89-91` | `Marked` and `Plain = M \ Marked` | `marked`, `plain` | In the canonical vocabulary, `AccessPlain`/`NotRmw` accesses are exactly `Plain`; every other represented event is `Marked`, including independently RMW-marked accesses. |
 | `linux-kernel.bell:93-96` | `(data ; [~ Srcu-unlock] ; rfi)*` carrying into `addr`, `data`, and `ctrl` | `carry_dep`, `addr`, `data`, `ctrl` | The selected fragment has no SRCU events, so the filter is omitted and the closure uses `direct_data ; rfi`. |
-| Herd7 `stdlib.cat:29` | `fencerel(B) = (po & (_ * B)) ; po` | `fencerel` | Direct existential translation using a barrier-kind witness between the endpoints in program order. |
+| Herd7 `stdlib.cat:29` | `fencerel(B) = (po & (_ * B)) ; po` | `fencerel` | Equivalent `po ; [B] ; po` composition using `rel_id_on` for the barrier witness. |
 | `linux-kernel.cat:28-29` | `[Acquire] ; po ; [M]` and `[M] ; po ; [Release]` | `acq_po`, `po_rel` | Direct derived relations using the semantic Bell classes and consumed by `nonrw_fence`. |
 | `linux-kernel.cat:33-63` | `R4rmb`, `rmb`, `wmb`, selected `mb`, normal-RCU `gp`, `strong-fence`, `nonrw-fence`, and `fence` | `r4_rmb`, `rmb`, `wmb`, `mb`, `gp`, `strong_fence`, `nonrw_fence`, `fence` | Derived from `po`, tagged barrier events, semantic Bell classes, and relation unions. Lock, SRCU, and before/after-atomic branches are outside the selected vocabulary; the later generalized `rcu-fence` extension remains deferred. |
 | `linux-kernel.cat:78-84` | `dep`, `rwdep`, `overwrite`, `to-w`, `to-r`, and `ppo` | `dep`, `rwdep`, `overwrite`, `to_w`, `to_r`, `ppo` | Uses `same_agent` for `int` and the base `fence`, and includes `addr ; [Plain] ; wmb`. Lock ordering remains outside the vocabulary. |

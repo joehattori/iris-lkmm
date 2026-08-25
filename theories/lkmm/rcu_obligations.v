@@ -77,7 +77,7 @@ Module RcuObligations.
           (pre & a & post & -> & Ha & Hpre).
         exists (x :: pre), a, post. cbn [obligation_balance].
         rewrite Hx. cbn.
-        repeat split; try done.
+        split_and!; try done.
         change (q + (1 + obligation_balance pre) = 0).
         replace (q + (1 + obligation_balance pre))
           with (q + 1 + obligation_balance pre) by ring.
@@ -85,7 +85,7 @@ Module RcuObligations.
       - intros Hq Hneg.
         destruct (Z.eq_dec q 0) as [-> | Hq0].
         + exists [], x, xs. cbn [obligation_balance].
-          rewrite Hx. cbn. by repeat split.
+          rewrite Hx. cbn. by split_and!.
         + assert (0 <= q - 1) by lia.
           cbn [obligation_balance] in Hneg.
           rewrite Hx in Hneg. cbn in Hneg.
@@ -97,7 +97,7 @@ Module RcuObligations.
             (pre & a & post & -> & Ha & Hpre).
           exists (x :: pre), a, post. cbn [obligation_balance].
           rewrite Hx. cbn.
-          repeat split; try done.
+          split_and!; try done.
           change (q + (-1 + obligation_balance pre) = 0).
           replace (q + (-1 + obligation_balance pre))
             with (q - 1 + obligation_balance pre) by ring.
@@ -118,7 +118,7 @@ Module RcuObligations.
       - intros Hq Hpos.
         destruct (Z.eq_dec q 0) as [-> | Hq0].
         + exists [], x, xs. cbn [obligation_balance].
-          rewrite Hx. cbn. by repeat split.
+          rewrite Hx. cbn. by split_and!.
         + assert (0 <= q - 1) by lia.
           cbn [obligation_balance] in Hpos.
           rewrite Hx in Hpos. cbn in Hpos.
@@ -130,7 +130,7 @@ Module RcuObligations.
             (pre & a & post & -> & Ha & Hpre).
           exists (x :: pre), a, post. cbn [obligation_balance].
           rewrite Hx. cbn.
-          repeat split; try done.
+          split_and!; try done.
           change (- q + (1 + obligation_balance pre) = 0).
           replace (- q + (1 + obligation_balance pre))
             with (- (q - 1) + obligation_balance pre) by ring.
@@ -147,7 +147,7 @@ Module RcuObligations.
           (pre & a & post & -> & Ha & Hpre).
         exists (x :: pre), a, post. cbn [obligation_balance].
         rewrite Hx. cbn.
-        repeat split; try done.
+        split_and!; try done.
         change (- q + (-1 + obligation_balance pre) = 0).
         replace (- q + (-1 + obligation_balance pre))
           with (- (q + 1) + obligation_balance pre) by ring.
@@ -456,7 +456,7 @@ Module RcuObligations.
   Proof.
     intros Hne Hchain. inversion Hchain; subst.
     - exfalso. by apply Hne.
-    - repeat split; try done.
+    - split_and!; try done.
       eexists. split; eassumption.
   Qed.
 
@@ -475,7 +475,7 @@ Module RcuObligations.
     - simpl in Hchain.
       destruct (linked_chain_cons_inv G a right x y Hright Hchain)
         as (Hvalid & -> & n & Hrightchain & Hlink).
-      exists (atom_end a), n. repeat split; try done.
+      exists (atom_end a), n. split_and!; try done.
       by apply Linked_one.
     - change ((a :: b :: left) ++ right)
         with (a :: ((b :: left) ++ right)) in Hchain.
@@ -485,7 +485,7 @@ Module RcuObligations.
         as (Hvalid & -> & z & Htailchain & Hfirstlink).
       destruct (IH z ltac:(discriminate) Hright Htailchain)
         as (m & n & Hleftchain & Hrightchain & Hboundary).
-      exists m, n. repeat split; try done.
+      exists m, n. split_and!; try done.
       by eapply Linked_cons.
   Qed.
 
@@ -504,7 +504,7 @@ Module RcuObligations.
       as (m & n & Hpre & Hlast & Hlink).
     destruct (linked_chain_one_inv G last n y Hlast)
       as (Hvalid & -> & ->).
-    exists m. repeat split; done.
+    exists m. split_and!; done.
   Qed.
 
   Lemma rcu_order_chain_sound G x y :

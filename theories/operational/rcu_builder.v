@@ -197,7 +197,7 @@ Module RcuBuilder.
   Proof.
     intros (a & b & c & d & Hpo & Hhb & Hpb & Hprop & Hlast).
     exists (RcuLinkCommitment x a b c d y). simpl.
-    repeat split; done.
+    split_and!; done.
   Qed.
 
   Lemma rcu_link_commitment_valid_mono G H k :
@@ -205,7 +205,7 @@ Module RcuBuilder.
     rcu_link_commitment_valid H k.
   Proof.
     intros GH (Hpo & Hhb & Hpb & Hprop & Hlast).
-    repeat split.
+    split_and!.
     - eapply optional_mono; [by eapply graph_le_po | done].
     - eapply rtc_mono; [by eapply graph_le_hb | done].
     - eapply rtc_mono; [by eapply graph_le_pb | done].
@@ -254,7 +254,12 @@ Module RcuBuilder.
 
   Lemma empty_raw_has_no_rb x y :
     ~ rb (graph_of_raw empty_raw) x y.
-  Proof. intros (a & b & c & d & Hprop & _). inversion Hprop. Qed.
+  Proof.
+    intros Hrb. unfold rb in Hrb.
+    apply rel_seq_id_on_r in Hrb as [Hprefix _].
+    destruct Hprefix as (c & (b & (a & Hprop & _) & _) & _).
+    inversion Hprop.
+  Qed.
 
   Lemma initial_builder_invariant :
     builder_invariant initial_builder.

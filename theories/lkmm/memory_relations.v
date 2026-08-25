@@ -43,28 +43,28 @@ Module LkmmMemoryRelations.
     ~ (rel_domain (rmw rmw_edges) eid \/ rel_range (rmw rmw_edges) eid).
 
   Definition acquire (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_has_access_mode E eid AccessAcquire /\
-    ~ event_has_access_kind E eid AccessWrite /\
+    event_has_access_mode E AccessAcquire eid /\
+    ~ event_has_access_kind E AccessWrite eid /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition release (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    event_has_access_mode E eid AccessRelease /\
-    ~ event_has_access_kind E eid AccessRead /\
+    event_has_access_mode E AccessRelease eid /\
+    ~ event_has_access_kind E AccessRead eid /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition mb_event (E : event_structure) (rmw_edges : edge_set) (eid : event_id) : Prop :=
-    (event_has_access_mode E eid AccessMb \/ event_has_barrier_kind E eid BarrierMb) /\
+    (event_has_access_mode E AccessMb eid \/ event_has_barrier_kind E BarrierMb eid) /\
     ~ failed_rmw E rmw_edges eid.
 
   Definition noreturn (E : event_structure) (eid : event_id) : Prop :=
-    event_has_access_mode E eid AccessNoreturn /\
-    ~ event_has_access_kind E eid AccessWrite.
+    event_has_access_mode E AccessNoreturn eid /\
+    ~ event_has_access_kind E AccessWrite eid.
 
   (** Upstream derives [Plain = M \ Marked].  In the canonical vocabulary,
       an [AccessPlain], [NotRmw] access is exactly such an event.  An
       independently RMW-marked access remains [Marked]. *)
   Definition plain (E : event_structure) (eid : event_id) : Prop :=
-    event_has_access_mode E eid AccessPlain /\
+    event_has_access_mode E AccessPlain eid /\
     ~ event_is_rmw_marked E eid.
 
   Definition marked (E : event_structure) (eid : event_id) : Prop :=
@@ -72,22 +72,18 @@ Module LkmmMemoryRelations.
 
   (** Linux v6.18: [acq-po = [Acquire] ; po ; [M]] *)
   Definition acq_po (E : event_structure) (rmw_edges : edge_set) : relation :=
-    fun source target =>
-      acquire E rmw_edges source /\ po E source target /\ event_is_memory E target.
+    rel_seq (rel_seq (rel_id_on (acquire E rmw_edges)) (po E))
+      (rel_id_on (event_is_memory E)).
 
   (** Linux v6.18: [po-rel = [M] ; po ; [Release]] *)
   Definition po_rel (E : event_structure) (rmw_edges : edge_set) : relation :=
-    fun source target =>
-      event_is_memory E source /\ po E source target /\ release E rmw_edges target.
+    rel_seq (rel_seq (rel_id_on (event_is_memory E)) (po E))
+      (rel_id_on (release E rmw_edges)).
 
   (** Herd7's standard library defines
       [fencerel(B) = (po & (_ * B)) ; po]. *)
   Definition fencerel (E : event_structure) (kind : barrier_kind) : relation :=
-    fun source target =>
-      exists barrier,
-        po E source barrier /\
-        event_has_barrier_kind E barrier kind /\
-        po E barrier target.
+    rel_seq (rel_seq (po E) (rel_id_on (event_has_barrier_kind E kind))) (po E).
 
   (** Linux v6.18: [R4rmb = R \ Noreturn]. *)
   Definition r4_rmb (E : event_structure) (eid : event_id) : Prop :=
@@ -95,37 +91,47 @@ Module LkmmMemoryRelations.
 
   (** Linux v6.18: [rmb = [R4rmb] ; fencerel(Rmb) ; [R4rmb]]. *)
   Definition rmb (E : event_structure) : relation :=
-    fun source target =>
-      r4_rmb E source /\ fencerel E BarrierRmb source target /\ r4_rmb E target.
+    rel_seq (rel_seq (rel_id_on (r4_rmb E)) (fencerel E BarrierRmb))
+      (rel_id_on (r4_rmb E)).
 
   (** Linux v6.18: [wmb = [W] ; fencerel(Wmb) ; [W]]. *)
   Definition wmb (E : event_structure) : relation :=
-    fun source target =>
-      event_is_write E source /\ fencerel E BarrierWmb source target /\
-      event_is_write E target.
+    rel_seq (rel_seq (rel_id_on (event_is_write E)) (fencerel E BarrierWmb))
+      (rel_id_on (event_is_write E)).
 
-  (** Selected Linux v6.18 [mb] branches: explicit full barriers and the
-      virtual barriers on either side of a successful full-barrier RMW. *)
+  (** Selected Linux v6.18 branches:
+      [mb =
+        ([M] ; fencerel(Mb) ; [M]) |
+        ([M] ; po ; [Mb & R]) |
+        ([Mb & W] ; po ; [M])].
+
+      The first branch models explicit [smp_mb()] barriers.  The next two
+      give successful full-barrier RMWs the ordering they would have if the
+      operation were enclosed by [smp_mb()] barriers: Bell adds [Mb] tags to
+      the read and write, and these branches supply the corresponding virtual
+      program-order edges. *)
   Definition mb (E : event_structure) (rmw_edges : edge_set) : relation :=
     rel_union
-      (fun source target =>
-        event_is_memory E source /\ fencerel E BarrierMb source target /\
-        event_is_memory E target)
+      (rel_seq
+        (rel_seq (rel_id_on (event_is_memory E)) (fencerel E BarrierMb))
+        (rel_id_on (event_is_memory E)))
       (rel_union
-        (fun source target =>
-          event_is_memory E source /\ po E source target /\
-          mb_event E rmw_edges target /\ event_is_read E target)
-        (fun source target =>
-          mb_event E rmw_edges source /\ event_is_write E source /\
-          po E source target /\ event_is_memory E target)).
+        (rel_seq
+          (rel_seq (rel_id_on (event_is_memory E)) (po E))
+          (rel_intersection
+            (rel_id_on (mb_event E rmw_edges)) (rel_id_on (event_is_read E))))
+        (rel_seq
+          (rel_seq
+            (rel_intersection
+              (rel_id_on (mb_event E rmw_edges)) (rel_id_on (event_is_write E)))
+            (po E))
+          (rel_id_on (event_is_memory E)))).
 
   (** Selected normal-RCU branch of [gp = po ; [Sync-rcu | Sync-srcu] ; po?]. *)
   Definition gp (E : event_structure) : relation :=
-    fun source target =>
-      exists sync,
-        po E source sync /\
-        event_has_barrier_kind E sync BarrierSyncRcu /\
-        optional (po E) sync target.
+    rel_seq
+      (rel_seq (po E) (rel_id_on (event_has_barrier_kind E BarrierSyncRcu)))
+      (optional (po E)).
 
   Definition strong_fence (E : event_structure) (rmw_edges : edge_set) : relation :=
     rel_union (mb E rmw_edges) (gp E).
@@ -219,10 +225,10 @@ Module LkmmMemoryRelations.
   (** Linux v6.18: [rwdep = (dep | ctrl) ; [W]]. *)
   Definition rwdep (E : event_structure)
       (rf_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
-    fun source target =>
-      rel_union (dep E rf_edges data_edges addr_edges)
-        (ctrl E rf_edges data_edges ctrl_edges) source target /\
-      event_is_write E target.
+    rel_seq
+      (rel_union (dep E rf_edges data_edges addr_edges)
+        (ctrl E rf_edges data_edges ctrl_edges))
+      (rel_id_on (event_is_write E)).
 
   (** Linux v6.18: [overwrite = co | fr]. *)
   Definition overwrite (rf_edges co_edges : edge_set) : relation :=
@@ -234,19 +240,18 @@ Module LkmmMemoryRelations.
       (rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
     rel_union (rwdep E rf_edges data_edges addr_edges ctrl_edges)
       (rel_union (rel_intersection (overwrite rf_edges co_edges) (same_agent E))
-        (rel_seq (addr E rf_edges data_edges addr_edges)
-          (fun source target => plain E source /\ wmb E source target))).
+        (rel_seq
+          (rel_seq (addr E rf_edges data_edges addr_edges) (rel_id_on (plain E)))
+          (wmb E))).
 
   (** Linux v6.18: [to-r = (addr ; [R]) | (dep ; [Marked] ; rfi)]. *)
   Definition to_r (E : event_structure) (rf_edges data_edges addr_edges : edge_set) : relation :=
     rel_union
-      (fun source target =>
-        addr E rf_edges data_edges addr_edges source target /\
-        event_is_read E target)
-      (fun source target =>
-        exists middle,
-          dep E rf_edges data_edges addr_edges source middle /\
-          marked E middle /\ rfi E rf_edges middle target).
+      (rel_seq (addr E rf_edges data_edges addr_edges)
+        (rel_id_on (event_is_read E)))
+      (rel_seq
+        (rel_seq (dep E rf_edges data_edges addr_edges) (rel_id_on (marked E)))
+        (rfi E rf_edges)).
 
   (** Selected fragment of Linux v6.18 [ppo].  Lock ordering is outside the
       event vocabulary, and [fence] is the current base fence relation. *)
@@ -521,7 +526,7 @@ Module LkmmMemoryRelations.
   Qed.
 
   Definition location_used (E : event_structure) (loc : location) : Prop :=
-    exists eid, event_has_location E eid loc.
+    exists eid, event_has_location E loc eid.
 
   Definition initial_write_at (E : event_structure) (loc : location) (write : event_id) : Prop :=
     exists val, lookup_event E write = Some (EInitWrite loc val).
@@ -726,13 +731,13 @@ Module LkmmMemoryRelations.
       intros read access Haddr.
       unfold direct_addr, edge_relation, sample_addr in Haddr.
       assert (read = 2 /\ access = 3) as [-> ->] by set_solver.
-      repeat split.
+      split_and!.
       - exists relay_read. split; reflexivity.
       - exists addr_target. split; done.
       - exists 0, 2, 3,
           (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
           (LMemory AccessRead AccessPlain NotRmw 1 0%Z).
-        repeat split; reflexivity || lia.
+        split_and!; reflexivity || lia.
     Qed.
 
     Local Lemma sample_data_wf : direct_data_wf sample_events sample_data.
@@ -741,20 +746,20 @@ Module LkmmMemoryRelations.
       unfold direct_data, edge_relation, sample_data in Hdata.
       assert ((read = 0 /\ write = 1) \/ (read = 2 /\ write = 4))
         as [[-> ->] | [-> ->]] by set_solver.
-      - repeat split.
+      - split_and!.
         + exists source_read. split; reflexivity.
         + exists relay_write. split; reflexivity.
         + exists 0, 0, 1,
           (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
           (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
-          repeat split; reflexivity || lia.
-      - repeat split.
+          split_and!; reflexivity || lia.
+      - split_and!.
         + exists relay_read. split; reflexivity.
         + exists data_target. split; reflexivity.
         + exists 0, 2, 4,
           (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
           (LMemory AccessWrite AccessOnce NotRmw 1 1%Z).
-          repeat split; reflexivity || lia.
+          split_and!; reflexivity || lia.
     Qed.
 
     Local Lemma sample_ctrl_wf : direct_ctrl_wf sample_events sample_ctrl.
@@ -762,13 +767,13 @@ Module LkmmMemoryRelations.
       intros read write Hctrl.
       unfold direct_ctrl, edge_relation, sample_ctrl in Hctrl.
       assert (read = 2 /\ write = 5) as [-> ->] by set_solver.
-      repeat split.
+      split_and!.
       - exists relay_read. split; reflexivity.
       - exists ctrl_target. split; reflexivity.
       - exists 0, 2, 5,
           (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
           (LMemory AccessWrite AccessOnce NotRmw 2 1%Z).
-        repeat split; reflexivity || lia.
+        split_and!; reflexivity || lia.
     Qed.
 
     Local Lemma sample_carrier : carry_dep sample_events sample_rf sample_data 0 2.
@@ -829,17 +834,17 @@ Module LkmmMemoryRelations.
         - unfold rf, edge_relation, sample_rf. set_solver.
         - exists 0. split; reflexivity. }
       split_and!.
-      - left. left. split; first done.
+      - left. left. apply rel_seq_id_on_r. split_and!; first done.
         exists addr_target. split; reflexivity.
-      - right. left. left. split.
+      - right. left. left. apply rel_seq_id_on_r. split_and!.
         + left. right. exact Hdata.
         + exists data_target. split; reflexivity.
-      - right. left. left. split.
+      - right. left. left. apply rel_seq_id_on_r. split_and!.
         + right. exact Hctrl.
         + exists ctrl_target. split; reflexivity.
       - left. right. exists 1. split.
-        + right. exact Hdata_direct.
-        + split; done.
+        + apply rel_seq_id_on_r. split; [by right | done].
+        + exact Hrfi.
     Qed.
 
     Example plain_access_classification :
@@ -921,7 +926,7 @@ Module LkmmMemoryRelations.
           mb_event sample_events sample_rmw 99 \/
           noreturn sample_events 99).
     Proof.
-      repeat split;
+      split_and!;
         unfold failed_rmw, acquire, release, mb_event, noreturn,
           rel_domain, rel_range, rmw, edge_relation,
           event_is_rmw_marked, event_has_access_mode, event_has_access_kind,
@@ -932,7 +937,10 @@ Module LkmmMemoryRelations.
           failed_noreturn_read, noreturn_write;
         simpl; try unfold failed_rmw;
         unfold rel_domain, rel_range, rmw, edge_relation;
-        simpl; set_solver.
+        simpl; try split_and!; try (right; reflexivity);
+        try (intros [Hmarked _]; unfold event_is_rmw_marked in Hmarked;
+          discriminate Hmarked);
+        set_solver.
     Qed.
   End BellEventClassTests.
 
@@ -965,9 +973,10 @@ Module LkmmMemoryRelations.
       { intros (ev & Hlookup & Hmemory').
         change (Some barrier = Some ev) in Hlookup.
         injection Hlookup as <-. done. }
-      repeat split;
+      split_and!;
         unfold acq_po, po_rel, acquire, release, failed_rmw,
-          rel_domain, rel_range, rmw, edge_relation, event_is_memory,
+          rel_seq, rel_id_on, rel_domain, rel_range, rmw, edge_relation,
+          event_is_memory,
           event_has_access_mode, event_has_access_kind, event_is_rmw_marked,
           po, lookup_event, sample_events, no_rmw, acquire_read, barrier,
           middle_write, release_write;
@@ -1030,14 +1039,20 @@ Module LkmmMemoryRelations.
     Local Ltac solve_sample_po :=
       eapply sample_po; [reflexivity | reflexivity | lia].
 
+    Local Ltac solve_sample_fencerel barrier :=
+      unfold fencerel; exists barrier; split_and!;
+        [ apply rel_seq_id_on_r; split_and!; [solve_sample_po | reflexivity]
+        | solve_sample_po ].
+
     Local Lemma sample_rmb : rmb sample_events 1 3.
     Proof.
-      unfold rmb, r4_rmb. repeat split.
+      unfold rmb. rewrite rel_seq_id_on_r, rel_seq_id_on_l.
+      unfold r4_rmb. split_and!.
       - eexists. split; done.
       - unfold noreturn, event_has_access_mode, event_has_access_kind.
         intros [Hmode _].
         change (Some AccessOnce = Some AccessNoreturn) in Hmode. discriminate.
-      - unfold fencerel. exists 2. repeat split; try solve_sample_po.
+      - solve_sample_fencerel 2.
       - eexists. split; done.
       - unfold noreturn, event_has_access_mode, event_has_access_kind.
         intros [Hmode _].
@@ -1046,7 +1061,8 @@ Module LkmmMemoryRelations.
 
     Local Lemma sample_not_rmb : ~ rmb sample_events 0 3.
     Proof.
-      unfold rmb, r4_rmb. intros ((_ & Hnot_noreturn) & _). apply Hnot_noreturn.
+      unfold rmb. rewrite rel_seq_id_on_r, rel_seq_id_on_l.
+      unfold r4_rmb. intros (((_ & Hnot_noreturn) & _) & _). apply Hnot_noreturn.
       unfold noreturn, event_has_access_mode, event_has_access_kind. split; first done.
       intros Hkind.
       change (Some AccessRead = Some AccessWrite) in Hkind. discriminate.
@@ -1054,26 +1070,28 @@ Module LkmmMemoryRelations.
 
     Local Lemma sample_wmb : wmb sample_events 4 6.
     Proof.
-      unfold wmb. repeat split.
+      unfold wmb. rewrite rel_seq_id_on_r, rel_seq_id_on_l. split_and!.
       - eexists. split; done.
-      - unfold fencerel. exists 5. repeat split; try solve_sample_po.
+      - solve_sample_fencerel 5.
       - eexists. split; done.
     Qed.
 
     Local Lemma sample_plain_to_w : to_w sample_events ∅ ∅ ∅ sample_addr ∅ 3 6.
     Proof.
       right. right. exists 4. split.
-      - exists 3. split; first apply rt_refl.
-        unfold direct_addr, edge_relation, sample_addr. set_solver.
-      - split; last apply sample_wmb.
-        split; first reflexivity.
-        unfold event_is_rmw_marked.
-        change (Some NotRmw <> Some RmwMarked). discriminate.
+      - apply rel_seq_id_on_r. split.
+        + exists 3. split; first apply rt_refl.
+          unfold direct_addr, edge_relation, sample_addr. set_solver.
+        + split; first reflexivity.
+          unfold event_is_rmw_marked.
+          change (Some NotRmw <> Some RmwMarked). discriminate.
+      - apply sample_wmb.
     Qed.
 
     Local Lemma sample_not_wmb : ~ wmb sample_events 3 6.
     Proof.
-      intros ((ev & Hlookup & Hwrite) & _).
+      unfold wmb. rewrite rel_seq_id_on_r, rel_seq_id_on_l.
+      intros (((ev & Hlookup & Hwrite) & _) & _).
       change (Some after_read = Some ev) in Hlookup.
       injection Hlookup as <-. done.
     Qed.
@@ -1094,41 +1112,45 @@ Module LkmmMemoryRelations.
 
     Local Lemma sample_mb_explicit : mb sample_events sample_rmw 6 8.
     Proof.
-      left. repeat split.
+      left. rewrite rel_seq_id_on_r, rel_seq_id_on_l. split_and!.
       - eexists. split; done.
-      - unfold fencerel. exists 7. repeat split; try solve_sample_po.
+      - solve_sample_fencerel 7.
       - eexists. split; done.
     Qed.
 
     Local Lemma sample_mb_before_rmw : mb sample_events sample_rmw 8 10.
     Proof.
-      right. left. split.
-      - eexists. split; done.
-      - split; first solve_sample_po. split.
-        + apply sample_mb_event_read.
+      right. left. exists 10. split.
+      - apply rel_seq_id_on_l. split_and!.
         + eexists. split; done.
+        + solve_sample_po.
+      - split_and!.
+        + split; [done | apply sample_mb_event_read].
+        + split; first done. eexists. split; done.
     Qed.
 
     Local Lemma sample_mb_after_rmw : mb sample_events sample_rmw 11 12.
     Proof.
-      right. right. split; first apply sample_mb_event_write.
-      split.
+      right. right. apply rel_seq_id_on_r. split.
+      - exists 11. split.
+        + split_and!.
+          * split; [done | apply sample_mb_event_write].
+          * split; first done. eexists. split; done.
+        + solve_sample_po.
       - eexists. split; done.
-      - split; first solve_sample_po.
-        eexists. split; done.
     Qed.
 
     Local Lemma sample_gp_at_sync : gp sample_events 8 9.
     Proof.
-      exists 9. split; first solve_sample_po. split.
-      - unfold event_has_barrier_kind. reflexivity.
+      exists 9. split.
+      - apply rel_seq_id_on_r. split_and!; [solve_sample_po | reflexivity].
       - left. done.
     Qed.
 
     Local Lemma sample_gp_after : gp sample_events 8 10.
     Proof.
-      exists 9. split; first solve_sample_po. split.
-      - unfold event_has_barrier_kind. reflexivity.
+      exists 9. split.
+      - apply rel_seq_id_on_r. split_and!; [solve_sample_po | reflexivity].
       - right. solve_sample_po.
     Qed.
 
@@ -1175,7 +1197,7 @@ Module LkmmMemoryRelations.
         unfold rf, edge_relation, sample_rf in Hrf.
         assert (write = 0 /\ read = 1) as [-> ->] by set_solver.
         exists init_write, once_read, 0%Z.
-        repeat split; try reflexivity.
+        split_and!; try reflexivity.
         exists 0. split; reflexivity.
       - split.
         + intros write1 write2 read Hrf1 Hrf2.
@@ -1284,16 +1306,16 @@ Module LkmmMemoryRelations.
       rmw_wf failed_events (∅ : edge_set).
     Proof.
       split.
-      - repeat split.
+      - split_and!.
         + intros read write Hrmw.
           unfold rmw, edge_relation, sample_rmw in Hrmw.
           assert (read = 0 /\ write = 1) as [-> ->] by set_solver.
           exists marked_read, marked_write.
-          repeat split; try reflexivity.
+          split_and!; try reflexivity.
           * exists 0, 0, 1,
               (LMemory AccessRead AccessMb RmwMarked 0 7%Z),
               (LMemory AccessWrite AccessMb RmwMarked 0 8%Z).
-            repeat split; try reflexivity. lia.
+            split_and!; try reflexivity. lia.
           * exists 0. split; reflexivity.
           * exists AccessMb. split; reflexivity.
         + intros read write1 write2 Hrmw1 Hrmw2.
@@ -1307,7 +1329,7 @@ Module LkmmMemoryRelations.
             as [(-> & ->) | (-> & ->)].
           * discriminate Hwrite.
           * exists 0. unfold rmw, edge_relation, sample_rmw. set_solver.
-      - repeat split.
+      - split_and!.
         + intros read write Hrmw.
           unfold rmw, edge_relation in Hrmw. set_solver.
         + intros read write1 write2 Hrmw1 Hrmw2.
@@ -1480,7 +1502,7 @@ Module LkmmMemoryRelations.
 
     Example sample_co_wf : co_wf sample_events sample_co.
     Proof.
-      repeat split.
+      split_and!.
       - intros write1 write2 Hco.
         unfold co, edge_relation, sample_co in Hco.
         assert ((write1 = 0 /\ write2 = 1) \/
@@ -1488,13 +1510,13 @@ Module LkmmMemoryRelations.
           (write1 = 1 /\ write2 = 2)) as
             [(-> & ->) | [(-> & ->) | (-> & ->)]] by set_solver.
         + exists init_write, first_write.
-          repeat split; try reflexivity.
+          split_and!; try reflexivity.
           exists 0. split; reflexivity.
         + exists init_write, second_write.
-          repeat split; try reflexivity.
+          split_and!; try reflexivity.
           exists 0. split; reflexivity.
         + exists first_write, second_write.
-          repeat split; try reflexivity.
+          split_and!; try reflexivity.
           exists 0. split; reflexivity.
       - intros write Hco.
         unfold co, edge_relation, sample_co in Hco. set_solver.

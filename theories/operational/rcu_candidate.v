@@ -256,7 +256,7 @@ Module RcuCandidate.
     destruct (lift_safe_raw_schedule empty_raw (candidate_raw C)
       initial_builder eq_refl initial_builder_invariant
       Hschedule Hconsistent) as (s & Hrun & Hraw & _).
-    exists s. repeat split; try done.
+    exists s. split_and!; try done.
     by rewrite Hraw.
   Qed.
 
@@ -279,7 +279,7 @@ Module RcuCandidate.
       rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k).
     { by rewrite Hraw. }
     destruct (commit_ready_rcu_link s k Hvalid') as (s' & Hstep & Hin).
-    exists k, s'. repeat split; try done.
+    exists k, s'. split_and!; try done.
     eapply builder_run_trans; first done.
     econstructor; [done | constructor].
   Qed.

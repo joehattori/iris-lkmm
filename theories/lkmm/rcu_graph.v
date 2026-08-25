@@ -149,9 +149,11 @@ Module RcuGraph.
 
   (** Linux v6.18: [rb = prop ; rcu-fence ; hb* ; pb* ; [Marked]]. *)
   Definition rb (G : graph) : relation :=
-    fun x y => exists a b c d,
-      G.(prop) x a /\ rcu_fence G a b /\
-      rtc G.(hb) b c /\ rtc G.(pb) c d /\ d = y /\ marked G y.
+    rel_seq
+      (rel_seq
+        (rel_seq (rel_seq G.(prop) (rcu_fence G)) (rtc G.(hb)))
+        (rtc G.(pb)))
+      (rel_id_on (marked G)).
 
   Definition rcu_consistent (G : graph) : Prop := forall e, ~ rb G e e.
 

@@ -13,6 +13,9 @@ Module LkmmPrelude.
 
   Definition rel_id : relation := eq.
 
+  (** CAT's [[S]]: identity restricted to the event set [S]. *)
+  Definition rel_id_on (pred : event_id -> Prop) : relation := fun x y => x = y /\ pred x.
+
   Definition rel_union (r1 r2 : relation) : relation := fun x y => r1 x y \/ r2 x y.
 
   Definition rel_intersection (r1 r2 : relation) : relation := fun x y => r1 x y /\ r2 x y.
@@ -67,6 +70,22 @@ Module LkmmPrelude.
       exists w. split; first done. by exists z.
     - intros (w & Hxw & z & Hwz & Hzy).
       exists z. split; last done. by exists w.
+  Qed.
+
+  Lemma rel_seq_id_on_l pred r x y :
+    rel_seq (rel_id_on pred) r x y <-> pred x /\ r x y.
+  Proof.
+    split.
+    - intros (z & [-> Hpred] & Hzy). done.
+    - intros [Hpred Hxy]. exists x. split_and!; done.
+  Qed.
+
+  Lemma rel_seq_id_on_r r pred x y :
+    rel_seq r (rel_id_on pred) x y <-> r x y /\ pred y.
+  Proof.
+    split.
+    - intros (z & Hxz & [-> Hpred]). done.
+    - intros [Hxy Hpred]. exists y. split_and!; done.
   Qed.
 
   Lemma optional_mono r1 r2 :

@@ -63,10 +63,12 @@ Module RcuGateExamples.
   Lemma permissive_link s x y :
     rcu_link (graph_of_state permissive_relations s) x y.
   Proof.
-    exists x, x, x, x. repeat split.
+    exists x, x, x, x. split_and!.
     - by left.
     - apply rt_refl.
     - apply rt_refl.
+    - done.
+    - done.
   Qed.
 
   Definition reader_cert := GpCertificate 3 [0].
@@ -167,7 +169,7 @@ Module RcuGateExamples.
   Example incremental_link_witness_is_valid :
     rcu_link_commitment_valid (graph_of_raw link_raw) rcu_link_witness.
   Proof.
-    repeat split.
+    split_and!.
     - by left.
     - apply rt_refl.
     - apply rt_refl.
@@ -236,13 +238,15 @@ Module RcuGateExamples.
       split; first by intros x y Hin; inversion Hin.
       split; first by intros x y Hin; inversion Hin.
       intros cs Hin. destruct Hin as [Heq | []]. subst cs.
-      simpl. repeat split; auto.
+      simpl. split_and!; auto.
   Qed.
 
   Example one_reader_candidate_consistent :
     rcu_consistent (candidate_graph one_reader_candidate).
   Proof.
-    intros e (a & b & c & d & Hprop & _).
+    intros e Hrb. unfold rb in Hrb.
+    apply rel_seq_id_on_r in Hrb as [Hprefix _].
+    destruct Hprefix as (c & (b & (a & Hprop & _) & _) & _).
     inversion Hprop.
   Qed.
 

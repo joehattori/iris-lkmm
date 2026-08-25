@@ -48,7 +48,7 @@ Module RcuMono.
     rel_included (rcu_link G) (rcu_link H).
   Proof.
     intros GH x y (a & b & c & d & Hpo & Hhb & Hpb & Hprop & Hlast).
-    exists a, b, c, d. repeat split.
+    exists a, b, c, d. split_and!.
     - eapply optional_mono; [by eapply graph_le_po | done].
     - eapply rtc_mono; [by eapply graph_le_hb | done].
     - eapply rtc_mono; [by eapply graph_le_pb | done].
@@ -92,7 +92,7 @@ Module RcuMono.
     rel_included (rcu_fence G) (rcu_fence H).
   Proof.
     intros GH x y (a & b & Hpo & Horder & Hlast).
-    exists a, b. repeat split.
+    exists a, b. split_and!.
     - by eapply graph_le_po.
     - by eapply rcu_order_mono.
     - eapply optional_mono; [by eapply graph_le_po | done].
@@ -102,17 +102,17 @@ Module RcuMono.
     graph_le G H ->
     rel_included (rb G) (rb H).
   Proof.
-    intros GH x y (a & b & c & d & Hprop & Hfence & Hhb & Hpb & -> & Hmark).
-    exists a, b, c, y.
-    split.
-    - by eapply graph_le_prop.
-    - split.
-      + by eapply rcu_fence_mono.
-      + split.
-        * eapply rtc_mono; [by eapply graph_le_hb | done].
-        * split.
-          -- eapply rtc_mono; [by eapply graph_le_pb | done].
-          -- split; [done | by eapply graph_le_events].
+    intros GH x y Hrb. unfold rb in Hrb |- *.
+    apply rel_seq_id_on_r in Hrb as [Hprefix Hmark].
+    apply rel_seq_id_on_r. split_and!; last by eapply graph_le_events.
+    destruct Hprefix as (c & (b & (a & Hprop & Hfence) & Hhb) & Hpb).
+    exists c. split.
+    - exists b. split.
+      + exists a. split.
+        * by eapply graph_le_prop.
+        * by eapply rcu_fence_mono.
+      + eapply rtc_mono; [by eapply graph_le_hb | done].
+    - eapply rtc_mono; [by eapply graph_le_pb | done].
   Qed.
 
 End RcuMono.
