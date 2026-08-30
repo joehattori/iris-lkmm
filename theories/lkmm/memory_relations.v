@@ -323,6 +323,26 @@ Module LkmmMemoryRelations.
         (optional (rfe E rf_edges)))
       (rel_id_on (marked E)).
 
+  (** Linux v6.18: [hb = [Marked] ; (ppo | rfe | ((prop \ id) & int)) ; [Marked]]. *)
+  Definition hb (E : event_structure)
+      (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
+    rel_seq
+      (rel_seq
+        (rel_id_on (marked E))
+        (rel_union
+          (ppo E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges)
+          (rel_union
+            (rfe E rf_edges)
+            (rel_intersection
+              (rel_difference (prop E rmw_edges rf_edges co_edges) rel_id)
+              (same_agent E)))))
+      (rel_id_on (marked E)).
+
+  (** Linux v6.18: [acyclic hb as happens-before]. *)
+  Definition happens_before (E : event_structure)
+      (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : Prop :=
+    rel_acyclic (hb E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges).
+
   (** Linux v6.18: [com = rf | co | fr]. *)
   Definition com (rf_edges co_edges : edge_set) : relation :=
     rel_union (rf rf_edges) (rel_union (co co_edges) (fr rf_edges co_edges)).
@@ -1323,12 +1343,24 @@ Module LkmmMemoryRelations.
     Definition sample_rf : edge_set := {[(1, 2); (3, 4); (5, 6)]}.
     Definition sample_rmw : edge_set := {[(4, 5)]}.
     Definition sample_co : edge_set := {[(0, 1)]}.
+    Definition cyclic_ctrl : edge_set := {[(0, 1); (1, 0)]}.
 
     Local Ltac solve_marked :=
       split;
         [ apply in_event_structure_lookup_iff; eexists; reflexivity
         | intros [Hmode _]; unfold event_has_access_mode in Hmode;
           discriminate Hmode ].
+
+    Local Ltac solve_cyclic_hb :=
+      apply rel_seq_id_on_r; split_and!;
+        [ apply rel_seq_id_on_l; split_and!;
+          [ solve_marked
+          | left; right; left; left; apply rel_seq_id_on_r; split_and!;
+            [ right; eexists; split;
+              [ apply rt_refl
+              | unfold direct_ctrl, edge_relation, cyclic_ctrl; set_solver ]
+            | eexists; split; [reflexivity | done] ] ]
+        | solve_marked ].
 
     Local Lemma sample_po_rel : po_rel sample_events sample_rmw 2 3.
     Proof.
@@ -1378,7 +1410,9 @@ Module LkmmMemoryRelations.
           (po_rel sample_events sample_rmw)) 1 3 /\
       rmw_sequence sample_rf sample_rmw 3 5 /\
       cumul_fence sample_events sample_rmw sample_rf 1 5 /\
-      prop sample_events sample_rmw sample_rf sample_co 0 6.
+      prop sample_events sample_rmw sample_rf sample_co 0 6 /\
+      hb sample_events sample_rmw sample_rf sample_co ∅ ∅ ∅ 0 6 /\
+      ~ happens_before sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl.
     Proof.
       assert (marked sample_events 0) as Hmarked0 by solve_marked.
       assert (marked sample_events 1) as Hmarked1 by solve_marked.
@@ -1407,6 +1441,22 @@ Module LkmmMemoryRelations.
         exists 1. split.
         - apply rel_seq_id_on_l. split_and!; [done | right; apply sample_external_overwrite].
         - apply rt_step. exact Hcumul_fence. }
+      assert (hb sample_events sample_rmw sample_rf sample_co ∅ ∅ ∅ 0 6) as Hhb.
+      { apply rel_seq_id_on_r. split; last done.
+        apply rel_seq_id_on_l. split; first done.
+        right. right. split_and!.
+        - split; [done | discriminate].
+        - exists 2. split; reflexivity. }
+      assert (hb sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl 0 1)
+        as Hhb01 by solve_cyclic_hb.
+      assert (hb sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl 1 0)
+        as Hhb10 by solve_cyclic_hb.
+      assert (~ happens_before sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl)
+        as Hnot_happens_before.
+      { intros Hhappens_before.
+        unfold happens_before, rel_acyclic, rel_irreflexive in Hhappens_before.
+        apply (Hhappens_before 0).
+        eapply t_trans with (y := 1); apply t_step; done. }
       split_and!; done.
     Qed.
   End PropagationTests.
