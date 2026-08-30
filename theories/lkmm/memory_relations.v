@@ -178,13 +178,13 @@ Module LkmmMemoryRelations.
     rel_intersection (rf rf_edges) (same_agent E).
 
   Definition rfe (E : event_structure) (rf_edges : edge_set) : relation :=
-    rel_difference (rf rf_edges) (same_agent E).
+    rel_intersection (rf rf_edges) (ext E).
 
   Definition coi (E : event_structure) (co_edges : edge_set) : relation :=
     rel_intersection (co co_edges) (same_agent E).
 
   Definition coe (E : event_structure) (co_edges : edge_set) : relation :=
-    rel_difference (co co_edges) (same_agent E).
+    rel_intersection (co co_edges) (ext E).
 
   (** [fri] and [fre] classify the endpoints of the already-derived [fr]
       relation; they are not reconstructed from partitions of [rf] and [co]. *)
@@ -192,7 +192,7 @@ Module LkmmMemoryRelations.
     rel_intersection (fr rf_edges co_edges) (same_agent E).
 
   Definition fre (E : event_structure) (rf_edges co_edges : edge_set) : relation :=
-    rel_difference (fr rf_edges co_edges) (same_agent E).
+    rel_intersection (fr rf_edges co_edges) (ext E).
 
   Lemma rf_internal_external E edges write read :
     rf edges write read <->
@@ -283,6 +283,45 @@ Module LkmmMemoryRelations.
     rel_union (to_r E rf_edges data_edges addr_edges)
       (rel_union (to_w E rf_edges co_edges data_edges addr_edges ctrl_edges)
         (rel_intersection (fence E rmw_edges) (same_agent E))).
+
+  (** Linux v6.18: [A-cumul(r) = (rfe ; [Marked])? ; r]. *)
+  Definition a_cumul (E : event_structure) (rf_edges : edge_set) (r : relation) : relation :=
+    rel_seq (optional (rel_seq (rfe E rf_edges) (rel_id_on (marked E)))) r.
+
+  (** Linux v6.18: [rmw-sequence = (rf ; rmw)*]. *)
+  Definition rmw_sequence (rf_edges rmw_edges : edge_set) : relation :=
+    rtc (rel_seq (rf rf_edges) (rmw rmw_edges)).
+
+  (** Selected Linux v6.18:
+      [cumul-fence = [Marked] ; (A-cumul(strong-fence | po-rel) | wmb) ; [Marked] ; rmw-sequence].
+      The [po-unlock-lock-po] branch is omitted with lock events. *)
+  Definition cumul_fence (E : event_structure) (rmw_edges rf_edges : edge_set) : relation :=
+    rel_seq
+      (rel_seq
+        (rel_seq
+          (rel_id_on (marked E))
+          (rel_union
+            (a_cumul E rf_edges
+              (rel_union (strong_fence E rmw_edges) (po_rel E rmw_edges)))
+            (wmb E)))
+        (rel_id_on (marked E)))
+      (rmw_sequence rf_edges rmw_edges).
+
+  (** Linux v6.18:
+      [prop = [Marked] ; (overwrite & ext)? ; cumul-fence* ; [Marked] ; rfe? ; [Marked]]. *)
+  Definition prop (E : event_structure) (rmw_edges rf_edges co_edges : edge_set) : relation :=
+    rel_seq
+      (rel_seq
+        (rel_seq
+          (rel_seq
+            (rel_seq
+              (rel_id_on (marked E))
+              (optional
+                (rel_intersection (overwrite rf_edges co_edges) (ext E))))
+            (rtc (cumul_fence E rmw_edges rf_edges)))
+          (rel_id_on (marked E)))
+        (optional (rfe E rf_edges)))
+      (rel_id_on (marked E)).
 
   (** Linux v6.18: [com = rf | co | fr]. *)
   Definition com (rf_edges co_edges : edge_set) : relation :=
@@ -1255,6 +1294,122 @@ Module LkmmMemoryRelations.
     Qed.
 
   End FenceOrderingTests.
+
+  Module PropagationTests.
+    Definition co_source : event :=
+      EAgent 2 0 (LMemory AccessWrite AccessOnce NotRmw 0 0%Z).
+    Definition rf_source : event :=
+      EAgent 0 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+    Definition remote_read : event :=
+      EAgent 1 0 (LMemory AccessRead AccessOnce NotRmw 0 1%Z).
+    Definition release_write : event :=
+      EAgent 1 1 (LMemory AccessWrite AccessRelease NotRmw 0 2%Z).
+    Definition rmw_read : event :=
+      EAgent 1 2 (LMemory AccessRead AccessOnce RmwMarked 0 2%Z).
+    Definition rmw_write : event :=
+      EAgent 1 3 (LMemory AccessWrite AccessOnce RmwMarked 0 3%Z).
+    Definition final_read : event :=
+      EAgent 2 1 (LMemory AccessRead AccessOnce NotRmw 0 3%Z).
+
+    Definition sample_events : event_structure := {[
+      0 := co_source;
+      1 := rf_source;
+      2 := remote_read;
+      3 := release_write;
+      4 := rmw_read;
+      5 := rmw_write;
+      6 := final_read
+    ]}.
+    Definition sample_rf : edge_set := {[(1, 2); (3, 4); (5, 6)]}.
+    Definition sample_rmw : edge_set := {[(4, 5)]}.
+    Definition sample_co : edge_set := {[(0, 1)]}.
+
+    Local Ltac solve_marked :=
+      split;
+        [ apply in_event_structure_lookup_iff; eexists; reflexivity
+        | intros [Hmode _]; unfold event_has_access_mode in Hmode;
+          discriminate Hmode ].
+
+    Local Lemma sample_po_rel : po_rel sample_events sample_rmw 2 3.
+    Proof.
+      unfold po_rel. rewrite rel_seq_id_on_r, rel_seq_id_on_l. split_and!.
+      - eexists. split; done.
+      - exists 1, 0, 1,
+          (LMemory AccessRead AccessOnce NotRmw 0 1%Z),
+          (LMemory AccessWrite AccessRelease NotRmw 0 2%Z).
+        split_and!; try done. lia.
+      - unfold release, failed_rmw, rel_domain, rel_range, rmw, edge_relation,
+          event_has_access_mode, event_has_access_kind, event_is_rmw_marked,
+          sample_rmw.
+        simpl. set_solver.
+    Qed.
+
+    Local Lemma sample_rfe_left : rfe sample_events sample_rf 1 2.
+    Proof.
+      split.
+      - unfold rf, edge_relation, sample_rf. set_solver.
+      - intros (agent & Hagent0 & Hagent1).
+        change (Some 0 = Some agent) in Hagent0.
+        change (Some 1 = Some agent) in Hagent1. congruence.
+    Qed.
+
+    Local Lemma sample_rfe_right : rfe sample_events sample_rf 5 6.
+    Proof.
+      split.
+      - unfold rf, edge_relation, sample_rf. set_solver.
+      - intros (agent & Hagent1 & Hagent2).
+        change (Some 1 = Some agent) in Hagent1.
+        change (Some 2 = Some agent) in Hagent2. congruence.
+    Qed.
+
+    Local Lemma sample_external_overwrite :
+      rel_intersection (overwrite sample_rf sample_co) (ext sample_events) 0 1.
+    Proof.
+      split.
+      - left. unfold co, edge_relation, sample_co. set_solver.
+      - intros (agent & Hagent2 & Hagent0).
+        change (Some 2 = Some agent) in Hagent2.
+        change (Some 0 = Some agent) in Hagent0. congruence.
+    Qed.
+
+    Example propagation_chain :
+      a_cumul sample_events sample_rf
+        (rel_union (strong_fence sample_events sample_rmw)
+          (po_rel sample_events sample_rmw)) 1 3 /\
+      rmw_sequence sample_rf sample_rmw 3 5 /\
+      cumul_fence sample_events sample_rmw sample_rf 1 5 /\
+      prop sample_events sample_rmw sample_rf sample_co 0 6.
+    Proof.
+      assert (marked sample_events 0) as Hmarked0 by solve_marked.
+      assert (marked sample_events 1) as Hmarked1 by solve_marked.
+      assert (marked sample_events 2) as Hmarked2 by solve_marked.
+      assert (marked sample_events 3) as Hmarked3 by solve_marked.
+      assert (marked sample_events 5) as Hmarked5 by solve_marked.
+      assert (marked sample_events 6) as Hmarked6 by solve_marked.
+      assert (a_cumul sample_events sample_rf
+        (rel_union (strong_fence sample_events sample_rmw)
+          (po_rel sample_events sample_rmw)) 1 3) as Hacumul.
+      { exists 2. split.
+        - right. apply rel_seq_id_on_r. split_and!; [apply sample_rfe_left | done].
+        - right. apply sample_po_rel. }
+      assert (rmw_sequence sample_rf sample_rmw 3 5) as Hrmw_sequence.
+      { apply rt_step. exists 4. split;
+          unfold rf, rmw, edge_relation, sample_rf, sample_rmw; set_solver. }
+      assert (cumul_fence sample_events sample_rmw sample_rf 1 5) as Hcumul_fence.
+      { exists 3. split; last done.
+        apply rel_seq_id_on_r. split; last done.
+        apply rel_seq_id_on_l. split; first done.
+        left. exact Hacumul. }
+      assert (prop sample_events sample_rmw sample_rf sample_co 0 6) as Hprop.
+      { apply rel_seq_id_on_r. split; last done.
+        exists 5. split; last (right; apply sample_rfe_right).
+        apply rel_seq_id_on_r. split; last done.
+        exists 1. split.
+        - apply rel_seq_id_on_l. split_and!; [done | right; apply sample_external_overwrite].
+        - apply rt_step. exact Hcumul_fence. }
+      split_and!; done.
+    Qed.
+  End PropagationTests.
 
   Module ReadsFromTests.
     Definition init_write : event := EInitWrite 0 0%Z.

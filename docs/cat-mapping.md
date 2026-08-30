@@ -26,6 +26,7 @@ CAT restricted identities `[S]` are represented uniformly by
 | `linux-kernel.cat:28-29` | `[Acquire] ; po ; [M]` and `[M] ; po ; [Release]` | `acq_po`, `po_rel` | Direct derived relations using the semantic Bell classes and consumed by `nonrw_fence`. |
 | `linux-kernel.cat:33-63` | `R4rmb`, `rmb`, `wmb`, selected `mb`, normal-RCU `gp`, `strong-fence`, `nonrw-fence`, and `fence` | `r4_rmb`, `rmb`, `wmb`, `mb`, `gp`, `strong_fence`, `nonrw_fence`, `fence` | Includes explicit full barriers, full-barrier RMWs, and before/after-atomic augmentation. Lock and SRCU branches remain outside the selected vocabulary; the later generalized `rcu-fence` extension remains deferred. |
 | `linux-kernel.cat:78-84` | `dep`, `rwdep`, `overwrite`, `to-w`, `to-r`, and `ppo` | `dep`, `rwdep`, `overwrite`, `to_w`, `to_r`, `ppo` | Uses `same_agent` for `int` and the base `fence`, and includes `addr ; [Plain] ; wmb`. Lock ordering remains outside the vocabulary. |
+| `linux-kernel.cat:97-103` | `A-cumul`, `rmw-sequence`, `cumul-fence`, and `prop` | `a_cumul`, `rmw_sequence`, `cumul_fence`, `prop` | Direct relational translation using restricted identities, optional relations, and reflexive-transitive closures. `ext` is the complement of `same_agent`; the lock-only `po-unlock-lock-po` branch is omitted. |
 | `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
 | `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
 | `linux-kernel.def:23-24` | `smp_mb__before_atomic` and `smp_mb__after_atomic` | `BarrierBeforeAtomic`, `BarrierAfterAtomic` | Direct barrier constructors; program-layer generation remains deferred. |
@@ -62,7 +63,8 @@ The same file uses a local lookup-and-projection helper to define the public
 `event_has_barrier_kind`, and `event_has_location` predicates, as well as the
 binary `same_attribute` relation.  The canonical `same_location` and
 `same_agent` relations specialize the latter with `location_of` and
-`agent_of`.  It then defines `po_loc` as `po & same_location`.  Consequently
+`agent_of`; `ext` is the complement of `same_agent`.  It then defines
+`po_loc` as `po & same_location`.  Consequently
 barriers are excluded because they have no location, while initial writes are
 excluded by `po`.  The `rf`, `co`, and `fr` edge well-formedness predicates in
 `theories/lkmm/memory_relations.v` reuse `same_location`, as do coherence

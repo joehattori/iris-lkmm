@@ -94,6 +94,9 @@ Module LkmmExecution.
 
   Definition same_agent (E : event_structure) : relation := same_attribute agent_of E.
 
+  (** Herd's [ext]: endpoints that do not belong to the same program agent. *)
+  Definition ext (E : event_structure) : relation := fun eid1 eid2 => ~ same_agent E eid1 eid2.
+
   (** Program order is the full strict order between generated events of one
       agent.  Local indices need not be contiguous.  Initial writes are
       excluded because they have no agent-local position. *)
