@@ -343,6 +343,22 @@ Module LkmmMemoryRelations.
       (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : Prop :=
     rel_acyclic (hb E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges).
 
+  (** Linux v6.18: [pb = prop ; strong-fence ; hb* ; [Marked]]. *)
+  Definition pb (E : event_structure)
+      (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=
+    rel_seq
+      (rel_seq
+        (rel_seq
+          (prop E rmw_edges rf_edges co_edges)
+          (strong_fence E rmw_edges))
+        (rtc (hb E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges)))
+      (rel_id_on (marked E)).
+
+  (** Linux v6.18: [acyclic pb as propagation]. *)
+  Definition propagation (E : event_structure)
+      (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : Prop :=
+    rel_acyclic (pb E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges).
+
   (** Linux v6.18: [com = rf | co | fr]. *)
   Definition com (rf_edges co_edges : edge_set) : relation :=
     rel_union (rf rf_edges) (rel_union (co co_edges) (fr rf_edges co_edges)).
@@ -1330,6 +1346,9 @@ Module LkmmMemoryRelations.
       EAgent 1 3 (LMemory AccessWrite AccessOnce RmwMarked 0 3%Z).
     Definition final_read : event :=
       EAgent 2 1 (LMemory AccessRead AccessOnce NotRmw 0 3%Z).
+    Definition mb_barrier : event := EAgent 2 2 (LBarrier BarrierMb).
+    Definition pb_target : event :=
+      EAgent 2 3 (LMemory AccessRead AccessOnce NotRmw 0 3%Z).
 
     Definition sample_events : event_structure := {[
       0 := co_source;
@@ -1338,12 +1357,14 @@ Module LkmmMemoryRelations.
       3 := release_write;
       4 := rmw_read;
       5 := rmw_write;
-      6 := final_read
+      6 := final_read;
+      7 := mb_barrier;
+      8 := pb_target
     ]}.
     Definition sample_rf : edge_set := {[(1, 2); (3, 4); (5, 6)]}.
     Definition sample_rmw : edge_set := {[(4, 5)]}.
     Definition sample_co : edge_set := {[(0, 1)]}.
-    Definition cyclic_ctrl : edge_set := {[(0, 1); (1, 0)]}.
+    Definition cyclic_ctrl : edge_set := {[(0, 1); (1, 0); (8, 0)]}.
 
     Local Ltac solve_marked :=
       split;
@@ -1404,6 +1425,24 @@ Module LkmmMemoryRelations.
         change (Some 0 = Some agent) in Hagent0. congruence.
     Qed.
 
+    Local Lemma sample_strong_fence : strong_fence sample_events sample_rmw 6 8.
+    Proof.
+      left. left. rewrite rel_seq_id_on_r, rel_seq_id_on_l. split_and!.
+      - eexists. split; done.
+      - unfold fencerel. exists 7. split.
+        + apply rel_seq_id_on_r. split_and!.
+          * exists 2, 1, 2,
+              (LMemory AccessRead AccessOnce NotRmw 0 3%Z),
+              (LBarrier BarrierMb).
+            split_and!; try done. lia.
+          * unfold event_has_barrier_kind. reflexivity.
+        + exists 2, 2, 3,
+            (LBarrier BarrierMb),
+            (LMemory AccessRead AccessOnce NotRmw 0 3%Z).
+          split_and!; try done. lia.
+      - eexists. split; done.
+    Qed.
+
     Example propagation_chain :
       a_cumul sample_events sample_rf
         (rel_union (strong_fence sample_events sample_rmw)
@@ -1412,7 +1451,9 @@ Module LkmmMemoryRelations.
       cumul_fence sample_events sample_rmw sample_rf 1 5 /\
       prop sample_events sample_rmw sample_rf sample_co 0 6 /\
       hb sample_events sample_rmw sample_rf sample_co ∅ ∅ ∅ 0 6 /\
-      ~ happens_before sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl.
+      ~ happens_before sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl /\
+      pb sample_events sample_rmw sample_rf sample_co ∅ ∅ ∅ 0 8 /\
+      ~ propagation sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl.
     Proof.
       assert (marked sample_events 0) as Hmarked0 by solve_marked.
       assert (marked sample_events 1) as Hmarked1 by solve_marked.
@@ -1420,6 +1461,7 @@ Module LkmmMemoryRelations.
       assert (marked sample_events 3) as Hmarked3 by solve_marked.
       assert (marked sample_events 5) as Hmarked5 by solve_marked.
       assert (marked sample_events 6) as Hmarked6 by solve_marked.
+      assert (marked sample_events 8) as Hmarked8 by solve_marked.
       assert (a_cumul sample_events sample_rf
         (rel_union (strong_fence sample_events sample_rmw)
           (po_rel sample_events sample_rmw)) 1 3) as Hacumul.
@@ -1457,6 +1499,22 @@ Module LkmmMemoryRelations.
         unfold happens_before, rel_acyclic, rel_irreflexive in Hhappens_before.
         apply (Hhappens_before 0).
         eapply t_trans with (y := 1); apply t_step; done. }
+      assert (pb sample_events sample_rmw sample_rf sample_co ∅ ∅ ∅ 0 8) as Hpb.
+      { apply rel_seq_id_on_r. split; last done.
+        exists 8. split; last apply rt_refl.
+        exists 6. split; [done | apply sample_strong_fence]. }
+      assert (hb sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl 8 0)
+        as Hhb80 by solve_cyclic_hb.
+      assert (pb sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl 0 0)
+        as Hpb00.
+      { apply rel_seq_id_on_r. split; last done.
+        exists 8. split; last (apply rt_step; done).
+        exists 6. split; [done | apply sample_strong_fence]. }
+      assert (~ propagation sample_events sample_rmw sample_rf sample_co ∅ ∅ cyclic_ctrl)
+        as Hnot_propagation.
+      { intros Hpropagation.
+        unfold propagation, rel_acyclic, rel_irreflexive in Hpropagation.
+        apply (Hpropagation 0). apply t_step. done. }
       split_and!; done.
     Qed.
   End PropagationTests.
