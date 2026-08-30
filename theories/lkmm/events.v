@@ -44,7 +44,9 @@ Module LkmmEvents.
   | BarrierWmb
   | BarrierRcuLock
   | BarrierRcuUnlock
-  | BarrierSyncRcu.
+  | BarrierSyncRcu
+  | BarrierBeforeAtomic
+  | BarrierAfterAtomic.
 
   Inductive event_label :=
   | LMemory (kind : access_kind) (mode : access_mode)
@@ -120,6 +122,8 @@ Module LkmmEvents.
         | BarrierRcuLock => 3
         | BarrierRcuUnlock => 4
         | BarrierSyncRcu => 5
+        | BarrierBeforeAtomic => 6
+        | BarrierAfterAtomic => 7
         end)
       (fun n =>
         match n with
@@ -128,7 +132,9 @@ Module LkmmEvents.
         | 2 => BarrierWmb
         | 3 => BarrierRcuLock
         | 4 => BarrierRcuUnlock
-        | _ => BarrierSyncRcu
+        | 5 => BarrierSyncRcu
+        | 6 => BarrierBeforeAtomic
+        | _ => BarrierAfterAtomic
         end) _).
     by intros [].
   Qed.
