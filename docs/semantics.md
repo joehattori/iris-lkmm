@@ -32,6 +32,11 @@ sufficient to take the finish transition.  Neither theorem invokes
 
 ## Independent graph-chain invariant
 
+`execution_graph.v` defines the RCU-independent feasibility graph containing
+canonical events and abstract `hb`, `prop`, and `pb` relations.  It is a
+minimal shared graph view, not yet the final LKMM candidate-execution type.
+`rcu_graph.v` adds the normal-RCU classifications and consistency condition.
+
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
 are either:

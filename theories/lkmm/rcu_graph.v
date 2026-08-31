@@ -1,28 +1,17 @@
-From Stdlib Require Import Arith Lia List.
-From stdpp Require Import base tactics.
-From iris_lkmm.lkmm Require Import execution memory_relations rcu_matching.
-Import ListNotations.
+From Stdlib Require Import Lia.
+From stdpp Require Import tactics.
+From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_matching.
 
 (** The finite, normal-RCU-only graph kernel used by the feasibility gate.
-    The memory-model relations are parameters of the graph on purpose: this
-    file studies the RCU recursion without yet transcribing the rest of LKMM. *)
+    The shared graph record supplies abstract memory-model relations; this
+    file adds only the normal-RCU classifications and consistency condition. *)
 Module RcuGraph.
-  Export RcuMatching.
-  Import LkmmMemoryRelations.
-
-  Record graph := Graph {
-    events : event_structure;
-    hb : relation;
-    prop : relation;
-    pb : relation
-  }.
-
-  Definition in_graph (G : graph) (e : event_id) : Prop := in_event_structure G.(events) e.
+  Export LkmmExecutionGraph RcuMatching.
 
   Definition is_gp (G : graph) : event_id -> Prop :=
     event_has_barrier_kind G.(events) BarrierSyncRcu.
 
-  Definition graph_po (G : graph) : relation := LkmmExecution.po G.(events).
+  Definition graph_po (G : graph) : relation := po G.(events).
 
   (** [rcu-rscsi] is the inverse of the matching relation computed by the
       Bell file: it runs from the unlock back to its matching lock. *)
