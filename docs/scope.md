@@ -2,7 +2,7 @@
 
 The feasibility kernel includes finite event identifiers, read/write labels,
 normal-RCU lock/unlock and grace-period labels, canonical program order,
-finite candidate `rf`, abstract `hb`/`prop`/`pb`, computed nested critical
+finite candidate `rf` and `co`, abstract `hb`/`prop`/`pb`, computed nested critical
 sections, `rcu-link`, `rcu-order`, `rcu-fence`, `rb`, and `rb` irreflexivity.
 It also includes finite GP/inverse-RSCS chains, signed obligation balances,
 and their proved equivalence to recursive `rcu-order`.
@@ -22,9 +22,9 @@ reclamation update, and a proved bridge from completed machine certificates
 to that update's snapshot-clear premise.
 
 The incremental prototype includes fixed concurrent agents and the five
-gate-language instructions.  It carries finite `rf` candidates but does not
-yet generate or validate them.  It deliberately excludes values, locations,
-`co`, `fr`, barriers, dependencies, RMWs, SRCU, locks, the full LKMM
+gate-language instructions.  It carries finite `rf` and `co` candidates but
+does not yet generate or validate them.  It deliberately excludes values,
+locations, graph-level `fr`, barriers, dependencies, RMWs, SRCU, locks, the full LKMM
 consistency predicate, Iris WP/adequacy, and the `percpu_ref` case study.
 The coupled theorem is the gate-language result, not yet the final full
 LKMM-Core `ProgramGraph` theorem.

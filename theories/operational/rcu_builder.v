@@ -25,6 +25,7 @@ Module RcuBuilder.
   Record raw_graph := RawGraph {
     raw_events : event_structure;
     raw_rf : list edge;
+    raw_co : list edge;
     raw_hb : list edge;
     raw_prop : list edge;
     raw_pb : list edge
@@ -34,34 +35,44 @@ Module RcuBuilder.
     {|
       events := r.(raw_events);
       rf_edges := list_to_set r.(raw_rf);
+      co_edges := list_to_set r.(raw_co);
       hb := edge_rel r.(raw_hb);
       prop := edge_rel r.(raw_prop);
       pb := edge_rel r.(raw_pb)
     |}.
 
-  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [].
+  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (<[ev.(le_id) := ev.(le_event)]> r.(raw_events))
-      r.(raw_rf) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_rf) r.(raw_co) r.(raw_hb) r.(raw_prop) r.(raw_pb).
 
   Definition add_rf (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) (e :: r.(raw_rf)) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+    RawGraph r.(raw_events) (e :: r.(raw_rf)) r.(raw_co)
+      r.(raw_hb) r.(raw_prop) r.(raw_pb).
+
+  Definition add_co (r : raw_graph) (e : edge) : raw_graph :=
+    RawGraph r.(raw_events) r.(raw_rf) (e :: r.(raw_co))
+      r.(raw_hb) r.(raw_prop) r.(raw_pb).
 
   Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_rf) (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_co)
+      (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
 
   Definition add_prop (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_rf) r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_co)
+      r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
 
   Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_rf) r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_co)
+      r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
       rcu_trace_tail r.(raw_events) ev.(le_id) ev.(le_event) ->
       raw_step r (add_event r ev)
   | RawStepRf r e : raw_step r (add_rf r e)
+  | RawStepCo r e : raw_step r (add_co r e)
   | RawStepHb r e : raw_step r (add_hb r e)
   | RawStepProp r e : raw_step r (add_prop r e)
   | RawStepPb r e : raw_step r (add_pb r e).
@@ -98,10 +109,13 @@ Module RcuBuilder.
         intros Heq. pose proof (proj1 H) as Hfresh.
         unfold lookup_event in Hfresh. congruence.
       + intros edge Hedge. done.
+      + intros edge Hedge. done.
       + unfold rel_included, edge_rel. done.
       + unfold rel_included, edge_rel. done.
       + unfold rel_included, edge_rel. done.
       + apply rcu_rscsi_tail_mono. done.
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
