@@ -51,12 +51,14 @@ normal-RCU recursive `rcu-order` relation.
 
 `event_integrity` records that every lock on an open stack, both endpoints
 of every closed section, and every completed GP certificate are backed by
-events emitted by the machine.  `operational_event_integrity` proves this
-for every reachable state.
+events emitted by the machine.  It also states that the operational stack
+and closed-section cache agree with the canonical stack matcher.
+`operational_event_integrity` proves this for every reachable state.
 
-`graph_of_state` extracts the finite emitted event identifiers, GP labels,
-and matched critical sections.  Its `po`, `hb`, `prop`, and `pb`
-relations are supplied by an explicit `abstract_relations` parameter.
+`graph_of_state` uses the machine's canonical event map directly.  Program
+order, GP classification, `Marked`, and inverse critical-section matching are
+derived from that map; only `hb`, `prop`, and `pb` are supplied by the
+`abstract_relations` parameter.
 
 `certificate_covers s cert cs` says that:
 
@@ -79,12 +81,14 @@ construction is handled by the graph builder below.
 
 ## Incremental graph builder
 
-`rcu_builder.v` represents the finite graph as explicit event, base-edge,
-and matched-section lists.  A raw mutation adds exactly one of:
+`rcu_builder.v` represents the finite graph as a canonical event map and
+explicit `hb`, `prop`, and `pb` edge lists.  A raw mutation adds exactly one of:
 
-- a fresh labeled event;
-- one `po`, `hb`, `prop`, or `pb` edge; or
-- one matched critical section.
+- a fresh canonical event at a per-agent tail position; or
+- one `hb`, `prop`, or `pb` edge.
+
+Program order and RCU matching are recomputed from the event map and are not
+builder transitions.
 
 A `rcu_link_commitment` records all four intermediate events witnessing
 `po? ; hb* ; pb* ; prop ; po`.  `rcu_link_commitment_sound` proves that a
@@ -110,11 +114,11 @@ Consequently, `completed_builder_run_rb_irreflexive` proves
 
 ## Independent candidates and finite scheduling
 
-`finite_candidate` is a declarative record of labeled events, four base-edge
-lists, and matched critical sections.  It contains no operational state,
+`finite_candidate` is a declarative record of event-ID/canonical-event pairs
+and three base-edge lists.  It contains no operational state,
 delta, transition list, or schedule.  `candidate_well_formed` requires unique
-event identifiers, relation endpoints in the event set, and correctly
-labeled section endpoints.
+event identifiers, canonical per-agent ordering, `event_structure_wf`,
+complete RCU matching, and relation endpoints in the event set.
 
 `candidate_has_raw_schedule` enumerates those finite components one at a
 time.  `lift_safe_raw_schedule` turns that enumeration into builder steps by
@@ -142,8 +146,8 @@ the transition relation itself never receives the final candidate.
 `rcu_coupled.v` combines program-machine steps and graph-builder steps as an
 asynchronous product.  A machine step changes only the machine state; a
 builder step changes only the graph state.  A completed execution requires
-the builder's event and matched-section lists to equal the machine's emitted
-events and closed sections.
+the builder and machine canonical event maps to agree and requires the
+computed RCU matching to contain no unmatched lock or unlock event.
 
 This makes delayed commitment explicit: execution need not guess its final
 graph initially, and graph facts need not be committed in lockstep with
@@ -189,8 +193,8 @@ the operational theorem and Iris update directly.
 
 - Reads and writes emit labels but do not yet choose values or construct
   `rf`, `co`, dependency, `hb`, `prop`, or `pb` edges.
-- The coupled `minimal_program_graph` covers the gate language's emitted
-  events and matched RCU sections.  It is not the future full LKMM-Core
+- The coupled `minimal_program_graph` covers the gate language's canonical
+  events and computed RCU sections.  It is not the future full LKMM-Core
   `ProgramGraph`, which must also cover values, reads-from, coherence,
   dependencies, and RMW behavior.
 - The completeness proof uses propositional excluded middle to partition an

@@ -1,5 +1,5 @@
 From Stdlib Require Import Arith Lia List ZArith.
-From stdpp Require Import base tactics.
+From stdpp Require Import base gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_graph rcu_obligations.
 From iris_lkmm.operational Require Import rcu_machine.
 Import ListNotations.
@@ -11,9 +11,17 @@ Import ListNotations.
 Module RcuRefinement.
   Import RcuGraph RcuObligations RcuMachine.
 
-  Definition generated_has (evs : list generated_event)
-      (e : event_id) (lab : label) : Prop :=
-    exists a, In (GeneratedEvent e a lab) evs.
+  Definition generated_has (E : event_structure) (e : event_id) (lab : label) : Prop :=
+    exists agent index,
+      lookup_event E e = Some (EAgent agent index (canonical_label lab)).
+
+  Definition generated_below (s : state) : Prop :=
+    forall eid ev, lookup_event s.(generated) eid = Some ev -> (eid < s.(next_id))%nat.
+
+  Definition generated_before_pc (s : state) : Prop :=
+    forall eid agent index label,
+      lookup_event s.(generated) eid = Some (EAgent agent index label) ->
+      (index < s.(pc) agent)%nat.
 
   Definition stacks_generated (s : state) : Prop :=
     forall a l, In l (s.(open_rscs_stack) a) ->
@@ -28,14 +36,125 @@ Module RcuRefinement.
     forall cert, In cert s.(gp_certificates) ->
       generated_has s.(generated) cert.(gc_event) LSyncRcu.
 
-  Definition event_integrity (s : state) : Prop :=
-    stacks_generated s /\ sections_generated s /\ certificates_generated s.
+  Definition stacks_match (s : state) : Prop :=
+    forall agent, computed_agent_stack s.(generated) agent = s.(open_rscs_stack) agent.
 
-  Lemma generated_has_cons ev evs e lab :
-    generated_has evs e lab ->
-    generated_has (ev :: evs) e lab.
+  Definition sections_match (s : state) : Prop :=
+    forall cs,
+      In cs s.(closed_sections) <->
+      rcu_rscs s.(generated) cs.(cs_lock) cs.(cs_unlock).
+
+  Definition event_integrity (s : state) : Prop :=
+    generated_below s /\
+    generated_before_pc s /\
+    event_structure_wf s.(generated) /\
+    stacks_generated s /\
+    sections_generated s /\
+    certificates_generated s /\
+    stacks_match s /\
+    sections_match s.
+
+  Lemma generated_fresh s :
+    generated_below s -> lookup_event s.(generated) s.(next_id) = None.
   Proof.
-    intros (a & Hin). exists a. by right.
+    intros Hbelow. destruct (lookup_event s.(generated) s.(next_id)) as [ev |]
+      eqn:Hlookup; last done. exfalso. pose proof (Hbelow _ _ Hlookup). lia.
+  Qed.
+
+  Lemma generated_has_emit_old s a new_lab old old_lab :
+    generated_below s -> generated_has s.(generated) old old_lab ->
+    generated_has (<[s.(next_id) := generated_event s a new_lab]> s.(generated)) old old_lab.
+  Proof.
+    intros Hbelow (agent & index & Hlookup). exists agent, index.
+    unfold lookup_event in Hlookup |- *. apply lookup_insert_Some. right. split; last done.
+    intros Heq. subst old. pose proof (Hbelow _ _ Hlookup). lia.
+  Qed.
+
+  Lemma generated_has_emit_new s a lab :
+    generated_has (<[s.(next_id) := generated_event s a lab]> s.(generated))
+      s.(next_id) lab.
+  Proof.
+    exists a, (s.(pc) a). unfold lookup_event, generated_event.
+    apply lookup_insert_Some. by left.
+  Qed.
+
+  Lemma generated_below_emit s a lab :
+    generated_below s ->
+    forall eid ev,
+      lookup_event (<[s.(next_id) := generated_event s a lab]> s.(generated)) eid =
+        Some ev ->
+      (eid < S s.(next_id))%nat.
+  Proof.
+    intros Hbelow eid ev Hlookup. unfold lookup_event in Hlookup.
+    apply lookup_insert_Some in Hlookup as [[-> _] | [_ Hlookup]]; first lia.
+    eapply Nat.lt_trans; first by eapply Hbelow. lia.
+  Qed.
+
+  Lemma generated_before_pc_emit s a lab :
+    generated_before_pc s ->
+    forall eid agent index label,
+      lookup_event (<[s.(next_id) := generated_event s a lab]> s.(generated)) eid =
+        Some (EAgent agent index label) ->
+      (index < update s.(pc) a (S (s.(pc) a)) agent)%nat.
+  Proof.
+    intros Hbefore eid agent index label Hlookup. unfold lookup_event in Hlookup.
+    apply lookup_insert_Some in Hlookup as [[_ Hevent] | [_ Hlookup]].
+    - unfold generated_event in Hevent. injection Hevent as <- <- <-.
+      rewrite update_eq. lia.
+    - destruct (Nat.eq_dec a agent) as [-> | Hneq].
+      + rewrite update_eq. eapply Nat.lt_trans; first by eapply Hbefore. lia.
+      + rewrite update_neq; last done. by eapply Hbefore.
+  Qed.
+
+  Lemma event_structure_wf_emit s a lab :
+    event_structure_wf s.(generated) ->
+    generated_before_pc s ->
+    event_structure_wf
+      (<[s.(next_id) := generated_event s a lab]> s.(generated)).
+  Proof.
+    intros Hwf Hbefore eid1 eid2 agent index label1 label2 Hlookup1 Hlookup2.
+    unfold lookup_event in Hlookup1, Hlookup2.
+    apply lookup_insert_Some in Hlookup1 as [[Heid1 Hevent1] | [Hneq1 Hlookup1]];
+      apply lookup_insert_Some in Hlookup2 as [[Heid2 Hevent2] | [Hneq2 Hlookup2]].
+    - congruence.
+    - subst eid1. unfold generated_event in Hevent1. injection Hevent1 as <- <- <-.
+      exfalso. pose proof (Hbefore _ _ _ _ Hlookup2). lia.
+    - subst eid2. unfold generated_event in Hevent2. injection Hevent2 as <- <- <-.
+      exfalso. pose proof (Hbefore _ _ _ _ Hlookup1). lia.
+    - by eapply Hwf.
+  Qed.
+
+  Lemma emitted_event_agent_tail s a lab :
+    generated_below s -> generated_before_pc s ->
+    rcu_agent_tail s.(generated) s.(next_id) (generated_event s a lab).
+  Proof.
+    intros Hbelow Hbefore. split; first by apply generated_fresh.
+    destruct lab; simpl; try done;
+      rewrite Forall_forall; intros token Hin;
+      destruct (rcu_agent_token_trace_lookup _ _ _ Hin) as [Hagent Hlookup];
+      unfold event_of_rcu_token in Hlookup;
+      destruct (token_kind token); simpl in Hlookup;
+      pose proof (Hbefore _ _ _ _ Hlookup) as Hindex;
+      unfold rcu_token_le; simpl; naive_solver lia.
+  Qed.
+
+  Lemma sections_match_non_rcu_emit s a lab :
+    sections_match s ->
+    generated_below s ->
+    rcu_token_of_entry (s.(next_id), generated_event s a lab) = None ->
+    sections_match
+      {|
+        next_id := S s.(next_id);
+        pc := update s.(pc) a (S (s.(pc) a));
+        open_rscs_stack := s.(open_rscs_stack);
+        pending_gp := s.(pending_gp);
+        generated := <[s.(next_id) := generated_event s a lab]> s.(generated);
+        closed_sections := s.(closed_sections);
+        gp_certificates := s.(gp_certificates)
+      |}.
+  Proof.
+    intros Hsections Hbelow Hnone cs. simpl. rewrite (Hsections cs).
+    symmetry. apply rcu_rscs_insert_non_rcu; [by apply generated_fresh | done].
   Qed.
 
   Lemma event_integrity_step P agents s act s' :
@@ -43,84 +162,155 @@ Module RcuRefinement.
     step P agents s act s' ->
     event_integrity s'.
   Proof.
-    intros (Hstacks & Hsections & Hcerts) Hstep.
-    inversion Hstep; subst; simpl.
-    - split.
-      + intros a' l Hin. apply generated_has_cons.
-        by apply (Hstacks a' l).
-      + split.
-        * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
-          split; by apply generated_has_cons.
-        * intros cert Hin. apply generated_has_cons.
-          by apply (Hcerts cert).
-    - split.
-      + intros a' l Hin. apply generated_has_cons.
-        by apply (Hstacks a' l).
-      + split.
-        * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
-          split; by apply generated_has_cons.
-        * intros cert Hin. apply generated_has_cons.
-          by apply (Hcerts cert).
-    - split.
-      + intros a' l Hin.
-        unfold lock_emit, update in Hin. simpl in Hin.
-        destruct (Nat.eq_dec a a') as [Heq | Hneq].
-        * subst a'.
-          simpl in Hin.
-          destruct Hin as [Heql | Hin].
-          -- subst l. unfold lock_emit. simpl. exists a. by left.
-          -- apply generated_has_cons. by apply (Hstacks a l).
-        * simpl in Hin.
-          apply generated_has_cons. by apply (Hstacks a' l).
-      + split.
-        * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
-          split; by apply generated_has_cons.
-        * intros cert Hin. apply generated_has_cons.
-          by apply (Hcerts cert).
-    - split.
-      + intros a' l' Hin.
-        unfold unlock_emit, update in Hin. simpl in Hin.
-        destruct (Nat.eq_dec a a') as [Heq | Hneq].
-        * subst a'. simpl in Hin.
-          apply generated_has_cons.
-          apply Hstacks with a. rewrite H0. by right.
-        * simpl in Hin. apply generated_has_cons.
-          by apply (Hstacks a' l').
-      + split.
-        * intros cs Hin.
-          unfold unlock_emit in Hin. simpl in Hin.
-          destruct Hin as [Hnew | Hin].
-          -- subst cs. split.
-             ++ apply generated_has_cons.
-                apply Hstacks with a. rewrite H0. by left.
-             ++ unfold unlock_emit. simpl. exists a. by left.
-          -- destruct (Hsections cs Hin) as [Hlock Hunlock].
-             split; by apply generated_has_cons.
-        * intros cert Hin. apply generated_has_cons.
-          by apply (Hcerts cert).
-    - unfold begin_gp. simpl. split; first done.
-      split; done.
-    - split.
-      + intros a' l Hin. apply generated_has_cons.
-        by apply (Hstacks a' l).
-      + split.
-        * intros cs Hin. destruct (Hsections cs Hin) as [Hlock Hunlock].
-          split; by apply generated_has_cons.
-        * intros cert Hin.
-          unfold finish_gp in Hin. simpl in Hin.
-          destruct Hin as [Hnew | Hin].
-          -- subst cert. unfold finish_gp. simpl. exists a. by left.
-          -- apply generated_has_cons. by apply (Hcerts cert).
+    intros (Hbelow & Hbefore & Hwf & Hstacks & Hsections & Hcerts & Hstack_match &
+      Hsection_match) Hstep.
+    inversion Hstep; subst.
+    - unfold event_integrity, ordinary_emit. simpl. split_and!.
+      + exact (generated_below_emit s a LRead Hbelow).
+      + exact (generated_before_pc_emit s a LRead Hbefore).
+      + exact (event_structure_wf_emit s a LRead Hwf Hbefore).
+      + intros agent lock Hin. eapply generated_has_emit_old; [done | by eapply Hstacks].
+      + intros section Hin. destruct (Hsections section Hin). split;
+          eapply generated_has_emit_old; eauto.
+      + intros cert Hin. eapply generated_has_emit_old; [done | by eapply Hcerts].
+      + intros agent. cbn. rewrite <- Hstack_match.
+        apply computed_agent_stack_insert_non_rcu; [by apply generated_fresh | done].
+      + intros section. cbn. rewrite (Hsection_match section). symmetry.
+        apply rcu_rscs_insert_non_rcu; [by apply generated_fresh | done].
+    - unfold event_integrity, ordinary_emit. simpl. split_and!.
+      + exact (generated_below_emit s a LWrite Hbelow).
+      + exact (generated_before_pc_emit s a LWrite Hbefore).
+      + exact (event_structure_wf_emit s a LWrite Hwf Hbefore).
+      + intros agent lock Hin. eapply generated_has_emit_old; [done | by eapply Hstacks].
+      + intros section Hin. destruct (Hsections section Hin). split;
+          eapply generated_has_emit_old; eauto.
+      + intros cert Hin. eapply generated_has_emit_old; [done | by eapply Hcerts].
+      + intros agent. cbn. rewrite <- Hstack_match.
+        apply computed_agent_stack_insert_non_rcu; [by apply generated_fresh | done].
+      + intros section. cbn. rewrite (Hsection_match section). symmetry.
+        apply rcu_rscs_insert_non_rcu; [by apply generated_fresh | done].
+    - pose (token := RcuToken s.(next_id) a (s.(pc) a) RcuTokenLock).
+      assert (Htail : rcu_agent_tail s.(generated) s.(next_id)
+          (generated_event s a LRcuLock)) by (by apply emitted_event_agent_tail).
+      assert (Htoken : rcu_token_of_entry
+          (s.(next_id), generated_event s a LRcuLock) = Some token) by done.
+      unfold event_integrity, lock_emit. simpl. split_and!.
+      + exact (generated_below_emit s a LRcuLock Hbelow).
+      + exact (generated_before_pc_emit s a LRcuLock Hbefore).
+      + exact (event_structure_wf_emit s a LRcuLock Hwf Hbefore).
+      + intros agent lock Hin. cbn in Hin. destruct (Nat.eq_dec a agent) as [-> | Hneq].
+        * rewrite update_eq in Hin. destruct Hin as [-> | Hin].
+          -- exists agent, (s.(pc) agent). unfold lookup_event, generated_event.
+             change ((<[lock := EAgent agent (s.(pc) agent)
+               (canonical_label LRcuLock)]> s.(generated)) !! lock =
+               Some (EAgent agent (s.(pc) agent) (canonical_label LRcuLock))).
+             apply lookup_insert_Some. by left.
+          -- eapply generated_has_emit_old; [done | by eapply Hstacks].
+        * rewrite update_neq in Hin; last done.
+          eapply generated_has_emit_old; [done | by eapply Hstacks].
+      + intros section Hin. destruct (Hsections section Hin). split;
+          eapply generated_has_emit_old; eauto.
+      + intros cert Hin. eapply generated_has_emit_old; [done | by eapply Hcerts].
+      + intros agent. cbn. destruct (Nat.eq_dec a agent) as [-> | Hneq].
+        * rewrite update_eq, <- Hstack_match.
+          by apply (computed_agent_stack_insert_lock _ _ _ token).
+        * rewrite update_neq; last done. rewrite <- Hstack_match.
+          apply computed_agent_stack_insert_other with (token := token); try done.
+          by apply generated_fresh.
+      + intros section. cbn. rewrite (Hsection_match section). symmetry.
+        by apply (rcu_rscs_agent_tail_lock _ _ _ token).
+    - pose (token := RcuToken s.(next_id) a (s.(pc) a) RcuTokenUnlock).
+      assert (Htail : rcu_agent_tail s.(generated) s.(next_id)
+          (generated_event s a LRcuUnlock)) by (by apply emitted_event_agent_tail).
+      assert (Htoken : rcu_token_of_entry
+          (s.(next_id), generated_event s a LRcuUnlock) = Some token) by done.
+      pose proof (Hstack_match a) as Hstack_a. rewrite H0 in Hstack_a.
+      unfold computed_agent_stack in Hstack_a.
+      destruct (token_stack (compute_agent_match_state s.(generated) a) a)
+        as [|lock_token token_rest] eqn:Htokens; simpl in Hstack_a; first discriminate.
+      injection Hstack_a as Hlock Hrest.
+      unfold event_integrity, unlock_emit. simpl. split_and!.
+      + exact (generated_below_emit s a LRcuUnlock Hbelow).
+      + exact (generated_before_pc_emit s a LRcuUnlock Hbefore).
+      + exact (event_structure_wf_emit s a LRcuUnlock Hwf Hbefore).
+      + intros agent lock Hin. cbn in Hin. destruct (Nat.eq_dec a agent) as [-> | Hneq].
+        * rewrite update_eq in Hin. eapply generated_has_emit_old; first done.
+          apply Hstacks with agent. rewrite H0. by right.
+        * rewrite update_neq in Hin; last done.
+          eapply generated_has_emit_old; [done | by eapply Hstacks].
+      + intros section [Heq | Hin].
+        * subst section. split.
+          -- eapply generated_has_emit_old; first done.
+             apply Hstacks with a. rewrite H0. change (In l (l :: rest)). by left.
+          -- exists a, (s.(pc) a). unfold lookup_event, generated_event.
+             change ((<[s.(next_id) := EAgent a (s.(pc) a)
+               (canonical_label LRcuUnlock)]> s.(generated)) !! s.(next_id) =
+               Some (EAgent a (s.(pc) a) (canonical_label LRcuUnlock))).
+             apply lookup_insert_Some. by left.
+        * destruct (Hsections section Hin). split; eapply generated_has_emit_old; eauto.
+      + intros cert Hin. eapply generated_has_emit_old; [done | by eapply Hcerts].
+      + intros agent. cbn. destruct (Nat.eq_dec a agent) as [-> | Hneq].
+        * rewrite update_eq, <- Hrest.
+          apply computed_agent_stack_insert_unlock with
+            (token := token) (lock_token := lock_token); try done.
+        * rewrite update_neq; last done.
+          rewrite <- (Hstack_match agent).
+          apply computed_agent_stack_insert_other with (token := token); try done.
+          by apply generated_fresh.
+      + intros section. cbn. split.
+        * intros [Heq | Hin].
+          -- subst section.
+             apply (proj2 (rcu_rscs_agent_tail_unlock _ _ _ token lock_token token_rest
+                l s.(next_id) Htail Htoken eq_refl Htokens)).
+             left. split; [symmetry; exact Hlock | reflexivity].
+          -- apply (proj2 (rcu_rscs_agent_tail_unlock _ _ _ token lock_token token_rest
+                section.(cs_lock) section.(cs_unlock) Htail Htoken eq_refl Htokens)).
+             right. by apply Hsection_match.
+        * intros Hmatched.
+          apply (proj1 (rcu_rscs_agent_tail_unlock _ _ _ token lock_token token_rest
+            section.(cs_lock) section.(cs_unlock) Htail Htoken eq_refl Htokens)) in Hmatched.
+          destruct Hmatched as [[Hcslock Hcsunlock] | Hold].
+          -- left. destruct section. simpl in *. subst. f_equal; congruence.
+          -- right. by apply Hsection_match.
+    - unfold event_integrity, begin_gp. simpl. split_and!; done.
+    - unfold event_integrity, finish_gp. simpl. split_and!.
+      + exact (generated_below_emit s a LSyncRcu Hbelow).
+      + exact (generated_before_pc_emit s a LSyncRcu Hbefore).
+      + exact (event_structure_wf_emit s a LSyncRcu Hwf Hbefore).
+      + intros agent lock Hin. eapply generated_has_emit_old; [done | by eapply Hstacks].
+      + intros section Hin. destruct (Hsections section Hin). split;
+          eapply generated_has_emit_old; eauto.
+      + intros cert [Heq | Hin].
+        * subst cert. exists a, (s.(pc) a). unfold lookup_event, generated_event.
+          change ((<[s.(next_id) := EAgent a (s.(pc) a)
+            (canonical_label LSyncRcu)]> s.(generated)) !! s.(next_id) =
+            Some (EAgent a (s.(pc) a) (canonical_label LSyncRcu))).
+          apply lookup_insert_Some. by left.
+        * eapply generated_has_emit_old; [done | by eapply Hcerts].
+      + intros agent. cbn. rewrite <- Hstack_match.
+        apply computed_agent_stack_insert_non_rcu; [by apply generated_fresh | done].
+      + intros section. cbn. rewrite (Hsection_match section). symmetry.
+        apply rcu_rscs_insert_non_rcu; [by apply generated_fresh | done].
   Qed.
 
   Lemma event_integrity_initial :
     event_integrity initial_state.
   Proof.
-    split.
+    unfold event_integrity. split_and!; cbn.
+    - intros eid ev Hlookup. exfalso. unfold lookup_event in Hlookup.
+      change ((∅ : event_structure) !! eid = Some ev) in Hlookup.
+      change (None = Some ev) in Hlookup. discriminate.
+    - intros eid agent index label Hlookup. exfalso. unfold lookup_event in Hlookup.
+      change ((∅ : event_structure) !! eid = Some (EAgent agent index label)) in Hlookup.
+      change (None = Some (EAgent agent index label)) in Hlookup. discriminate.
+    - apply empty_event_structure_wf.
     - intros a l Hin. inversion Hin.
-    - split.
-      + intros cs Hin. inversion Hin.
-      + intros cert Hin. inversion Hin.
+    - intros cs Hin. inversion Hin.
+    - intros cert Hin. inversion Hin.
+    - intros agent. vm_compute. reflexivity.
+    - intros cs. vm_compute. split.
+      + intros Hfalse. contradiction.
+      + intros (agent & Hfalse). contradiction.
   Qed.
 
   Lemma run_preserves_event_integrity P agents s1 actions s2 :
@@ -141,42 +331,20 @@ Module RcuRefinement.
   Qed.
 
   Record abstract_relations := AbstractRelations {
-    ar_po : relation;
     ar_hb : relation;
     ar_prop : relation;
     ar_pb : relation
   }.
 
-  Definition is_sync_at (e : event_id) (ev : generated_event) : bool :=
-    Nat.eqb ev.(ge_id) e &&
-    match ev.(ge_label) with LSyncRcu => true | _ => false end.
-
-  Definition generated_label (s : state) (e : event_id) : label :=
-    if existsb (is_sync_at e) s.(generated) then LSyncRcu else LRead.
-
   Definition graph_of_state (rels : abstract_relations) (s : state) : graph :=
-    Graph (map ge_id s.(generated)) (generated_label s)
-      rels.(ar_po) rels.(ar_hb) rels.(ar_prop) rels.(ar_pb)
-      s.(closed_sections).
-
-  Lemma generated_has_sync_label s e :
-    generated_has s.(generated) e LSyncRcu ->
-    generated_label s e = LSyncRcu.
-  Proof.
-    intros (a & Hin). unfold generated_label.
-    destruct (existsb (is_sync_at e) s.(generated)) eqn:Hexists; first done.
-    exfalso. apply Bool.not_true_iff_false in Hexists.
-    apply Hexists. apply existsb_exists.
-    exists (GeneratedEvent e a LSyncRcu). split; first done.
-    unfold is_sync_at. simpl. by rewrite Nat.eqb_refl.
-  Qed.
+    Graph s.(generated) rels.(ar_hb) rels.(ar_prop) rels.(ar_pb).
 
   Lemma generated_has_in_graph rels s e lab :
     generated_has s.(generated) e lab ->
     in_graph (graph_of_state rels s) e.
   Proof.
-    intros (a & Hin). simpl. apply in_map_iff.
-    exists (GeneratedEvent e a lab). split; done.
+    intros (agent & index & Hlookup). unfold in_graph, graph_of_state. simpl.
+    apply in_event_structure_lookup_iff. eauto.
   Qed.
 
   Lemma certificate_gp_atom_valid rels s cert :
@@ -184,18 +352,23 @@ Module RcuRefinement.
     In cert s.(gp_certificates) ->
     atom_valid (graph_of_state rels s) (AtomGp cert.(gc_event)).
   Proof.
-    intros (_ & _ & Hcerts) Hin. simpl. split.
-    - apply generated_has_in_graph with LSyncRcu.
-      by apply (Hcerts cert).
-    - apply generated_has_sync_label. by apply (Hcerts cert).
+    intros (_ & _ & _ & _ & _ & Hcerts & _ & _) Hin.
+    destruct (Hcerts cert Hin) as (agent & index & Hlookup).
+    unfold atom_valid, is_gp, graph_of_state. simpl.
+    apply event_has_barrier_kind_lookup.
+    exists (EAgent agent index (canonical_label LSyncRcu)). split; first done.
+    reflexivity.
   Qed.
 
   Lemma closed_section_atom_valid rels s cs :
+    event_integrity s ->
     In cs s.(closed_sections) ->
     atom_valid (graph_of_state rels s)
       (AtomRscs cs.(cs_unlock) cs.(cs_lock)).
   Proof.
-    intros Hin. simpl. exists cs. naive_solver.
+    intros (_ & _ & _ & _ & _ & _ & _ & Hsections) Hin.
+    unfold atom_valid, graph_rcu_rscsi, graph_of_state, rcu_rscsi. simpl.
+    by apply Hsections.
   Qed.
 
   Definition certificate_covers (s : state)
@@ -290,7 +463,8 @@ Module RcuRefinement.
     - by apply certificate_gp_atom_valid.
     - split.
       + apply closed_section_atom_valid.
-        by destruct Hcovers as (_ & ? & _).
+        * done.
+        * by destruct Hcovers as (_ & ? & _).
       + split.
         * by apply covered_rscs_gp_chain.
         * by apply covered_gp_rscs_chain.

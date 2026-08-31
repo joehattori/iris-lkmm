@@ -1,5 +1,5 @@
 From Stdlib Require Import Arith Lia List ZArith Relations.Relation_Operators.
-From iris_lkmm.lkmm Require Import rcu_graph.
+From iris_lkmm.lkmm Require Import execution rcu_graph.
 From iris_lkmm.lkmm Require Import rcu_obligations.
 From iris_lkmm.operational Require Import rcu_machine.
 From iris_lkmm.operational Require Import rcu_refinement.
@@ -10,7 +10,7 @@ From stdpp Require Import base sets tactics.
 Import ListNotations.
 
 Module RcuGateExamples.
-  Import RcuGraph RcuObligations RcuMachine RcuRefinement.
+  Import LkmmExecution RcuGraph RcuObligations RcuMachine RcuRefinement.
   Import RcuBuilder RcuCandidate.
   Import RcuCoupled.
 
@@ -57,40 +57,36 @@ Module RcuGateExamples.
   Qed.
 
   Definition permissive_relations : abstract_relations :=
-    AbstractRelations (fun _ _ => True) (fun _ _ => False)
-      (fun _ _ => True) (fun _ _ => False).
-
-  Lemma permissive_link s x y :
-    rcu_link (graph_of_state permissive_relations s) x y.
-  Proof.
-    exists x, x, x, x. split_and!.
-    - by left.
-    - apply rt_refl.
-    - apply rt_refl.
-    - done.
-    - done.
-  Qed.
+    AbstractRelations (fun _ _ => False) (fun _ _ => True) (fun _ _ => False).
 
   Definition reader_cert := GpCertificate 3 [0].
   Definition reader_cs := CriticalSection 0 2.
 
   Example one_reader_certificate_covers_section :
     certificate_covers s5 reader_cert reader_cs.
-  Proof.
-    vm_compute.
-    split; first by left.
-    split; by left.
+  Proof. vm_compute. split_and!; by left.
   Qed.
 
-  Example one_reader_snapshot_refines_rscs_gp_chain :
-    rcu_chain_order (graph_of_state permissive_relations s5) 2 3.
+  Lemma one_reader_gp_link :
+    rcu_link (graph_of_state permissive_relations s5) 3 2.
   Proof.
-    eapply covered_rscs_gp_chain with
-      (cert := reader_cert) (cs := reader_cs).
-    - eapply operational_event_integrity.
-      apply one_reader_one_gp.
+    exists 3, 3, 3, 0. split_and!.
+    - by left.
+    - apply rt_refl.
+    - apply rt_refl.
+    - done.
+    - unfold graph_po, po, graph_of_state. cbn.
+      exists 0, 0, 2, (canonical_label LRcuLock), (canonical_label LRcuUnlock).
+      split_and!; try reflexivity; lia.
+  Qed.
+
+  Example one_reader_snapshot_refines_gp_rscs_chain :
+    rcu_chain_order (graph_of_state permissive_relations s5) 3 0.
+  Proof.
+    eapply covered_gp_rscs_chain with (cert := reader_cert) (cs := reader_cs).
+    - eapply operational_event_integrity. apply one_reader_one_gp.
     - apply one_reader_certificate_covers_section.
-    - apply permissive_link.
+    - apply one_reader_gp_link.
   Qed.
 
   Definition nested0 := lock_emit initial_state 0.
@@ -116,7 +112,7 @@ Module RcuGateExamples.
     Hypothesis Hgp1 : is_gp G g1.
     Hypothesis Hgp2 : is_gp G g2.
     Hypothesis Hlink1 : rcu_link G g1 u.
-    Hypothesis Hcs : rcu_rscsi G u l.
+    Hypothesis Hcs : graph_rcu_rscsi G u l.
     Hypothesis Hlink2 : rcu_link G l g2.
 
     Example two_grace_period_chain :
@@ -157,10 +153,10 @@ Module RcuGateExamples.
 
   Definition link_raw : raw_graph :=
     RawGraph
-      [LabeledEvent 0 LSyncRcu;
-       LabeledEvent 1 LRead;
-       LabeledEvent 2 LRead]
-      [(1, 2)] [] [(0, 1)] [] [].
+      {[0 := EAgent 0 0 (canonical_label LSyncRcu);
+        1 := EAgent 0 1 (canonical_label LRead);
+        2 := EAgent 0 2 (canonical_label LRead)]}
+      [] [(0, 1)] [].
 
   Definition rcu_link_witness : rcu_link_commitment := RcuLinkCommitment 0 0 0 0 1 2.
 
@@ -174,7 +170,9 @@ Module RcuGateExamples.
     - apply rt_refl.
     - apply rt_refl.
     - by left.
-    - by left.
+    - unfold graph_po, po, graph_of_raw, link_raw. simpl.
+      exists 0, 1, 2, (canonical_label LRead), (canonical_label LRead).
+      split_and!; try reflexivity; lia.
   Qed.
 
   Example incremental_link_witness_denotes_rcu_link :
@@ -184,18 +182,19 @@ Module RcuGateExamples.
     apply incremental_link_witness_is_valid.
   Qed.
 
-  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [].
+  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [].
 
   Example empty_candidate_well_formed :
     candidate_well_formed empty_candidate.
   Proof.
-    unfold candidate_well_formed, empty_candidate. simpl.
-    split; first constructor.
-    split; first by intros x y Hin; inversion Hin.
-    split; first by intros x y Hin; inversion Hin.
-    split; first by intros x y Hin; inversion Hin.
-    split; first by intros x y Hin; inversion Hin.
-    intros cs Hin. inversion Hin.
+    unfold candidate_well_formed, empty_candidate. cbn. split_and!.
+    - constructor.
+    - done.
+    - apply empty_event_structure_wf.
+    - vm_compute. split_and!; reflexivity.
+    - intros x y Hin. inversion Hin.
+    - intros x y Hin. inversion Hin.
+    - intros x y Hin. inversion Hin.
   Qed.
 
   Example empty_candidate_consistent :
@@ -217,28 +216,27 @@ Module RcuGateExamples.
 
   Definition one_reader_candidate : finite_candidate :=
     FiniteCandidate
-      [LabeledEvent 3 LSyncRcu;
-       LabeledEvent 2 LRcuUnlock;
-       LabeledEvent 1 LRead;
-       LabeledEvent 0 LRcuLock]
-      [] [] [] [] [CriticalSection 0 2].
+      [LabeledEvent 3 (EAgent 1 0 (canonical_label LSyncRcu));
+       LabeledEvent 2 (EAgent 0 2 (canonical_label LRcuUnlock));
+       LabeledEvent 1 (EAgent 0 1 (canonical_label LRead));
+       LabeledEvent 0 (EAgent 0 0 (canonical_label LRcuLock))]
+      [] [] [].
 
   Example one_reader_candidate_well_formed :
     candidate_well_formed one_reader_candidate.
   Proof.
-    unfold candidate_well_formed, one_reader_candidate. simpl.
-    split.
-    - apply NoDup_cons_2; first set_solver.
-      apply NoDup_cons_2; first set_solver.
-      apply NoDup_cons_2; first set_solver.
-      apply NoDup_cons_2; first set_solver.
-      apply NoDup_nil_2.
-    - split; first by intros x y Hin; inversion Hin.
-      split; first by intros x y Hin; inversion Hin.
-      split; first by intros x y Hin; inversion Hin.
-      split; first by intros x y Hin; inversion Hin.
-      intros cs Hin. destruct Hin as [Heq | []]. subst cs.
-      simpl. split_and!; auto.
+    unfold candidate_well_formed. split_and!.
+    - vm_compute. repeat constructor; set_solver.
+    - vm_compute. split_and!; try reflexivity; try apply Forall_nil.
+      all: apply Forall_cons; [lia | apply Forall_nil].
+    - pose proof (operational_event_integrity _ _ _ _ one_reader_one_gp)
+        as (_ & _ & Hwf & _).
+      replace (raw_events (load_events (fc_events one_reader_candidate)))
+        with s5.(generated) by (vm_compute; reflexivity). done.
+    - vm_compute. split_and!; reflexivity.
+    - intros x y Hin. inversion Hin.
+    - intros x y Hin. inversion Hin.
+    - intros x y Hin. inversion Hin.
   Qed.
 
   Example one_reader_candidate_consistent :

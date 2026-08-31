@@ -1,4 +1,4 @@
-From Stdlib Require Import Arith List.
+From Stdlib Require Import Arith List ZArith.
 From stdpp Require Import base tactics.
 From iris_lkmm.lkmm Require Import rcu_graph.
 Import ListNotations.
@@ -13,16 +13,22 @@ Module RcuMachine.
 
   Definition agent := nat.
 
+  Inductive label :=
+  | LRead | LWrite | LRcuLock | LRcuUnlock | LSyncRcu.
+
   Inductive instruction :=
   | IRead | IWrite | IRcuLock | IRcuUnlock | ISynchronizeRcu.
 
   Definition program := agent -> list instruction.
 
-  Record generated_event := GeneratedEvent {
-    ge_id : event_id;
-    ge_agent : agent;
-    ge_label : label
-  }.
+  Definition canonical_label (lab : label) : event_label :=
+    match lab with
+    | LRead => LMemory AccessRead AccessOnce NotRmw 0 0%Z
+    | LWrite => LMemory AccessWrite AccessOnce NotRmw 0 0%Z
+    | LRcuLock => LBarrier BarrierRcuLock
+    | LRcuUnlock => LBarrier BarrierRcuUnlock
+    | LSyncRcu => LBarrier BarrierSyncRcu
+    end.
 
   Record gp_certificate := GpCertificate {
     gc_event : event_id;
@@ -40,10 +46,13 @@ Module RcuMachine.
         because [begin_gp] does not advance the program counter, so the PC
         cannot distinguish [None] from [Some []]. *)
     pending_gp : agent -> option (list event_id);
-    generated : list generated_event;
+    generated : event_structure;
     closed_sections : list critical_section;
     gp_certificates : list gp_certificate
   }.
+
+  Definition generated_event (s : state) (a : agent) (lab : label) : event :=
+    EAgent a (s.(pc) a) (canonical_label lab).
 
   Definition update {A} (f : nat -> A) (k : nat) (v : A) : nat -> A :=
     fun k' => if Nat.eq_dec k k' then v else f k'.
@@ -80,7 +89,7 @@ Module RcuMachine.
       pc := update s.(pc) a (S (s.(pc) a));
       open_rscs_stack := s.(open_rscs_stack);
       pending_gp := s.(pending_gp);
-      generated := GeneratedEvent s.(next_id) a lab :: s.(generated);
+      generated := <[s.(next_id) := generated_event s a lab]> s.(generated);
       closed_sections := s.(closed_sections);
       gp_certificates := s.(gp_certificates)
     |}.
@@ -92,7 +101,7 @@ Module RcuMachine.
       open_rscs_stack :=
         update s.(open_rscs_stack) a (s.(next_id) :: s.(open_rscs_stack) a);
       pending_gp := s.(pending_gp);
-      generated := GeneratedEvent s.(next_id) a LRcuLock :: s.(generated);
+      generated := <[s.(next_id) := generated_event s a LRcuLock]> s.(generated);
       closed_sections := s.(closed_sections);
       gp_certificates := s.(gp_certificates)
     |}.
@@ -104,7 +113,7 @@ Module RcuMachine.
       pc := update s.(pc) a (S (s.(pc) a));
       open_rscs_stack := update s.(open_rscs_stack) a rest;
       pending_gp := s.(pending_gp);
-      generated := GeneratedEvent s.(next_id) a LRcuUnlock :: s.(generated);
+      generated := <[s.(next_id) := generated_event s a LRcuUnlock]> s.(generated);
       closed_sections := CriticalSection l s.(next_id) :: s.(closed_sections);
       gp_certificates := s.(gp_certificates)
     |}.
@@ -126,7 +135,7 @@ Module RcuMachine.
       pc := update s.(pc) a (S (s.(pc) a));
       open_rscs_stack := s.(open_rscs_stack);
       pending_gp := update s.(pending_gp) a None;
-      generated := GeneratedEvent s.(next_id) a LSyncRcu :: s.(generated);
+      generated := <[s.(next_id) := generated_event s a LSyncRcu]> s.(generated);
       closed_sections := s.(closed_sections);
       gp_certificates :=
         GpCertificate s.(next_id) snap :: s.(gp_certificates)
@@ -179,7 +188,7 @@ Module RcuMachine.
       pc := fun _ => 0;
       open_rscs_stack := fun _ => [];
       pending_gp := fun _ => None;
-      generated := [];
+      generated := ∅;
       closed_sections := [];
       gp_certificates := []
     |}.

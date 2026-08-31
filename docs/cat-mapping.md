@@ -72,8 +72,7 @@ excluded by `po`.  The `rf`, `co`, and `fr` edge well-formedness predicates in
 `theories/lkmm/memory_relations.v` reuse `same_location`, as do coherence
 totality, initial-write ordering, and the `location_used` projection.
 
-The feasibility kernel continues to accept an abstract `RcuGraph.po`; the
-later RCU compatibility view will connect it to this canonical relation.
+The feasibility kernel uses this canonical `po` directly from its event map.
 
 ## Dependency candidates and Bell carrying
 
@@ -177,9 +176,9 @@ read-to-write endpoints are also related by `fre ; coe`; it is not folded into
 
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |
-| `linux-kernel.bell:56-68` | nested `rcu-rscs` matching | `critical_section`, `rcu_rscsi` | The graph stores already-matched, nested pairs; reproducing Bell's matching algorithm is future work. |
+| `linux-kernel.bell:56-70` | nested `rcu-rscs` matching | `compute_rcu_matching`, `rcu_rscs`, `bell_rcu_rscs` | A finite per-agent stack scan computes lock/unlock pairs in canonical `(agent, index, id)` order. Rocq proves endpoint shape, uniqueness, non-crossing nesting, totality for complete candidates, equivalence of the per-agent and aggregate Bell views, and equivalence between completeness and empty unmatched-event flags. A bounded adjacent-unmatched Bell iteration supplies a direct transcription regression. Final candidates reject unmatched locks and unlocks. |
 | `linux-kernel.cat:134` | `rcu-gp = [Sync-rcu]` | `is_gp` | Direct label test, additionally requiring membership in the finite event set. |
-| `linux-kernel.cat:136` | `rcu-rscsi = rcu-rscs^-1` | `rcu_rscsi` | Direct inverse orientation: unlock to matching lock. |
+| `linux-kernel.cat:136` | `rcu-rscsi = rcu-rscs^-1` | `rcu_rscsi` | Direct inverse of the computed matching: unlock to matching lock. |
 | `linux-kernel.cat:144` | `po? ; hb* ; pb* ; prop ; po` | `rcu_link` | Direct relational decomposition using reflexive-transitive closures. |
 | `linux-kernel.cat:154-163` | recursive `rcu-order` | `rcu_order` | The six normal-RCU disjuncts are constructors. All SRCU disjuncts are excluded. |
 | `linux-kernel.cat:164` | `po ; rcu-order ; po?` | `rcu_fence` | Direct relational decomposition. |

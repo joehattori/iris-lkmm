@@ -142,6 +142,21 @@ Module LkmmExecution.
       lookup_event E eid = Some ev /\ project ev = Some value.
   Proof. apply bind_Some. Qed.
 
+  Lemma event_has_access_mode_lookup E mode eid :
+    event_has_access_mode E mode eid <->
+    exists ev, lookup_event E eid = Some ev /\ access_mode_of ev = Some mode.
+  Proof. apply event_attribute_Some. Qed.
+
+  Lemma event_is_rmw_marked_lookup E eid :
+    event_is_rmw_marked E eid <->
+    exists ev, lookup_event E eid = Some ev /\ rmw_mark_of ev = Some RmwMarked.
+  Proof. apply event_attribute_Some. Qed.
+
+  Lemma event_has_barrier_kind_lookup E kind eid :
+    event_has_barrier_kind E kind eid <->
+    exists ev, lookup_event E eid = Some ev /\ barrier_kind_of ev = Some kind.
+  Proof. apply event_attribute_Some. Qed.
+
   Lemma same_attribute_endpoints {A} (project : event -> option A) E eid1 eid2 :
     same_attribute project E eid1 eid2 ->
     in_event_structure E eid1 /\ in_event_structure E eid2.

@@ -10,18 +10,15 @@ Import ListNotations.
     Program execution and graph commitment interleave, but neither component
     contains the other component's final state.  A completed execution is one
     in which the builder has caught up with the machine's emitted events and
-    matched critical sections.  This is the permitted delayed-commitment
-    design from the semantic architecture, not a final-graph oracle. *)
+    the canonical matcher has no unmatched RCU events.  This is the permitted
+    delayed-commitment design from the semantic architecture, not a final-graph
+    oracle. *)
 Module RcuCoupled.
   Import RcuGraph RcuMachine RcuMachineSafety RcuRefinement.
   Import RcuBuilder RcuCandidate.
 
-  Definition project_generated (ev : generated_event) : labeled_event :=
-    LabeledEvent ev.(ge_id) ev.(ge_label).
-
   Definition machine_matches_raw (m : RcuMachine.state) (r : raw_graph) : Prop :=
-    r.(raw_events) = map project_generated m.(generated) /\
-    r.(raw_critical_sections) = m.(closed_sections).
+    r.(raw_events) = m.(generated).
 
   Record coupled_state := CoupledState {
     coupled_machine : RcuMachine.state;
@@ -62,16 +59,18 @@ Module RcuCoupled.
   Definition initial_coupled : coupled_state := CoupledState initial_state initial_builder.
 
   Definition coupled_complete (s : coupled_state) : Prop :=
-    machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw).
+    machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw) /\
+    rcu_matching_complete s.(coupled_builder).(bs_raw).(raw_events).
 
   (** The program-graph predicate for the minimal gate language.  The memory
       relations remain the independently committed abstract graph layer; this
-      predicate states exactly that its events and RCU matching came from a
-      run of [P]. *)
+      predicate states exactly that its events and computed RCU matching came
+      from a run of [P]. *)
   Definition minimal_program_graph (P : program) (agents : list agent) (r : raw_graph) : Prop :=
     exists actions m,
       RcuMachine.run P agents initial_state actions m /\
-      machine_matches_raw m r.
+      machine_matches_raw m r /\
+      rcu_matching_complete r.(raw_events).
 
   Lemma coupled_run_trans P agents s1 as1 s2 as2 s3 :
     coupled_run P agents s1 as1 s2 ->
@@ -140,7 +139,7 @@ Module RcuCoupled.
     machine_stack_safe s.(coupled_machine).
   Proof.
     destruct s as [m b]. simpl.
-    intros Hrun Hcomplete.
+    intros Hrun (Hmatches & Hcomplete).
     pose proof (coupled_run_machine_projection P agents
       initial_coupled actions (CoupledState m b) Hrun) as Hmachine.
     pose proof (coupled_run_builder_projection P agents
@@ -194,7 +193,9 @@ Module RcuCoupled.
     split.
     - by eapply coupled_run_trans.
     - split; last done.
-      unfold coupled_complete. simpl. by rewrite Hraw.
+      unfold coupled_complete. simpl. split; first by rewrite Hraw.
+      destruct Hwf as (_ & _ & _ & Hcomplete & _). simpl in Hcomplete.
+      rewrite Hraw, candidate_raw_events. done.
   Qed.
 
 End RcuCoupled.

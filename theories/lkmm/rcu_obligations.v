@@ -367,7 +367,7 @@ Module RcuObligations.
   Definition atom_valid (G : graph) (a : rcu_atom) : Prop :=
     match a with
     | AtomGp g => is_gp G g
-    | AtomRscs u l => rcu_rscsi G u l
+    | AtomRscs u l => graph_rcu_rscsi G u l
     end.
 
   (** A finite, nonempty sequence of valid atoms whose adjacent endpoints are

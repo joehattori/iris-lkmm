@@ -4,6 +4,7 @@ theories/lkmm/prelude.v
 theories/lkmm/events.v
 theories/lkmm/execution.v
 theories/lkmm/memory_relations.v
+theories/lkmm/rcu_matching.v
 theories/lkmm/rcu_graph.v
 theories/lkmm/rcu_mono.v
 theories/lkmm/rcu_obligations.v

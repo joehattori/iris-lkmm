@@ -1,12 +1,13 @@
 From Stdlib Require Import Arith List Relations.Relation_Operators.
-From stdpp Require Import base tactics.
+From stdpp Require Import base gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_graph rcu_mono.
 Import ListNotations.
 
 (** Incremental construction of the finite RCU graph kernel.
 
-    A mutation contributes exactly one event, base-relation edge, or matched
-    critical section.  Link commitments record witnesses for
+    A mutation contributes exactly one event or base-relation edge.  RCU
+    critical sections are recomputed from the canonical event structure.
+    Link commitments record witnesses for
     [po? ; hb* ; pb* ; prop ; po] only after their components are present.
     The [rb_delta] premise is a local monitor obligation: it describes the
     newly exposed [rb] pairs and rejects only reflexive new pairs.  It does
@@ -16,77 +17,50 @@ Module RcuBuilder.
 
   Record labeled_event := LabeledEvent {
     le_id : event_id;
-    le_label : label
+    le_event : event
   }.
 
   Definition edge := (event_id * event_id)%type.
 
-  Fixpoint lookup_label (evs : list labeled_event) (e : event_id) : label :=
-    match evs with
-    | [] => LRead
-    | ev :: evs' =>
-        if Nat.eq_dec ev.(le_id) e then ev.(le_label)
-        else lookup_label evs' e
-    end.
-
   Definition edge_rel (edges : list edge) : relation := fun x y => In (x, y) edges.
 
   Record raw_graph := RawGraph {
-    raw_events : list labeled_event;
-    raw_po : list edge;
+    raw_events : event_structure;
     raw_hb : list edge;
     raw_prop : list edge;
-    raw_pb : list edge;
-    raw_critical_sections : list critical_section
+    raw_pb : list edge
   }.
 
   Definition graph_of_raw (r : raw_graph) : graph :=
     {|
-      events := map le_id r.(raw_events);
-      label_of := lookup_label r.(raw_events);
-      po := edge_rel r.(raw_po);
+      events := r.(raw_events);
       hb := edge_rel r.(raw_hb);
       prop := edge_rel r.(raw_prop);
-      pb := edge_rel r.(raw_pb);
-      critical_sections := r.(raw_critical_sections)
+      pb := edge_rel r.(raw_pb)
     |}.
 
-  Definition empty_raw : raw_graph := RawGraph [] [] [] [] [] [].
+  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
-    RawGraph (ev :: r.(raw_events)) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
-
-  Definition add_po (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) (e :: r.(raw_po)) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
+    RawGraph (<[ev.(le_id) := ev.(le_event)]> r.(raw_events))
+      r.(raw_hb) r.(raw_prop) r.(raw_pb).
 
   Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_po) (e :: r.(raw_hb))
-      r.(raw_prop) r.(raw_pb) r.(raw_critical_sections).
+    RawGraph r.(raw_events) (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
 
   Definition add_prop (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      (e :: r.(raw_prop)) r.(raw_pb) r.(raw_critical_sections).
+    RawGraph r.(raw_events) r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
 
   Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) (e :: r.(raw_pb)) r.(raw_critical_sections).
-
-  Definition add_section (r : raw_graph)
-      (cs : critical_section) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_po) r.(raw_hb)
-      r.(raw_prop) r.(raw_pb) (cs :: r.(raw_critical_sections)).
+    RawGraph r.(raw_events) r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
-      ~ In ev.(le_id) (map le_id r.(raw_events)) ->
+      rcu_trace_tail r.(raw_events) ev.(le_id) ev.(le_event) ->
       raw_step r (add_event r ev)
-  | RawStepPo r e : raw_step r (add_po r e)
   | RawStepHb r e : raw_step r (add_hb r e)
   | RawStepProp r e : raw_step r (add_prop r e)
-  | RawStepPb r e : raw_step r (add_pb r e)
-  | RawStepSection r cs : raw_step r (add_section r cs).
+  | RawStepPb r e : raw_step r (add_pb r e).
 
   Inductive raw_run : raw_graph -> raw_graph -> Prop :=
   | RawRunRefl r : raw_run r r
@@ -107,40 +81,22 @@ Module RcuBuilder.
     - econstructor; [done | by apply IH].
   Qed.
 
-  Lemma lookup_label_fresh ev evs e :
-    ev.(le_id) <> e ->
-    lookup_label (ev :: evs) e = lookup_label evs e.
-  Proof.
-    intros Hneq. simpl. destruct (Nat.eq_dec ev.(le_id) e); congruence.
-  Qed.
-
-  Lemma old_id_neq_fresh ev evs e :
-    ~ In ev.(le_id) (map le_id evs) ->
-    In e (map le_id evs) ->
-    ev.(le_id) <> e.
-  Proof.
-    intros Hfresh Hin Heq. apply Hfresh. by rewrite Heq.
-  Qed.
-
   Lemma raw_step_graph_le r r' :
     raw_step r r' -> graph_le (graph_of_raw r) (graph_of_raw r').
   Proof.
     intros Hstep. destruct Hstep.
     - constructor; simpl.
-      + intros old Hold. by right.
-      + intros old [Hin Hlabel]. split; first by right.
-        change (lookup_label (ev :: r.(raw_events)) old = LSyncRcu).
-        rewrite lookup_label_fresh; first done.
-        by eapply old_id_neq_fresh.
-      + unfold rel_included, edge_rel. intros x y Hxy. done.
-      + unfold rel_included, edge_rel. intros x y Hxy. done.
-      + unfold rel_included, edge_rel. intros x y Hxy. done.
-      + unfold rel_included, edge_rel. intros x y Hxy. done.
-      + intros cs Hcs. done.
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption].
+      + intros old old_event Hlookup. unfold lookup_event in Hlookup |- *.
+        change (r.(raw_events) !! old = Some old_event) in Hlookup.
+        change ((<[ev.(le_id) := ev.(le_event)]> r.(raw_events)) !! old =
+          Some old_event).
+        apply lookup_insert_Some. right. split; last done.
+        intros Heq. pose proof (proj1 H) as Hfresh.
+        unfold lookup_event in Hfresh. congruence.
+      + unfold rel_included, edge_rel. done.
+      + unfold rel_included, edge_rel. done.
+      + unfold rel_included, edge_rel. done.
+      + apply rcu_rscsi_tail_mono. done.
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption].
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
@@ -174,11 +130,11 @@ Module RcuBuilder.
   }.
 
   Definition rcu_link_commitment_valid (G : graph) (k : rcu_link_commitment) : Prop :=
-    optional G.(po) k.(lc_source) k.(lc_optional_po) /\
+    optional (graph_po G) k.(lc_source) k.(lc_optional_po) /\
     rtc G.(hb) k.(lc_optional_po) k.(lc_after_hb) /\
     rtc G.(pb) k.(lc_after_hb) k.(lc_after_pb) /\
     G.(prop) k.(lc_after_pb) k.(lc_after_prop) /\
-    G.(po) k.(lc_after_prop) k.(lc_target).
+    graph_po G k.(lc_after_prop) k.(lc_target).
 
   Lemma rcu_link_commitment_sound G k :
     rcu_link_commitment_valid G k ->

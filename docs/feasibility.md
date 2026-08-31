@@ -22,7 +22,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 | --- | --- | --- |
 | Does normal-RCU `rcu-order` admit an independent constructive representation? | `rcu_order_chain_equiv` relates the CAT-style recursion to a nonempty linked list of GP/inverse-RSCS atoms with signed final balance. `obligation_derivation_iff` proves the generic list/counter characterization. | **Pass.** |
 | Can grace-period waiting be represented incrementally? | `ABeginGp` snapshots exactly the currently open nested reader IDs. `AFinishGp` requires exactly those captured IDs to have closed; readers opened later do not mutate the snapshot. | **Pass.** |
-| Do machine snapshots and completed critical sections refine the chain semantics? | `completed_run_snapshot_chain_bridge` resolves every captured ID to a completed matched section and constructs either valid two-atom chain orientation when its graph link is present. | **Pass.** |
+| Do machine snapshots and completed critical sections refine the chain semantics? | `operational_event_integrity` proves the machine's stack and closed-section cache agree with matching computed from canonical events. `completed_run_snapshot_chain_bridge` resolves captured IDs and constructs either valid two-atom chain orientation when its graph link is present. | **Pass.** |
 | Can `po?;hb*;pb*;prop;po` links be committed incrementally? | `rcu_link_commitment` stores the four intermediate events. `rcu_link_commitment_sound`/`rcu_link_commitment_complete` prove exact correspondence with `rcu_link`; `commit_ready_rcu_link` and monotonicity make commitments local and persistent under graph extension. | **Pass.** |
 | Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. It checks only delta irreflexivity. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
 | Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
@@ -41,7 +41,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
   target is absent from `initial_builder` and from `builder_step`.
 - The coupled semantics permits delayed commitments explicitly.  Machine
   execution can proceed while the graph builder catches up; completion
-  requires exact agreement on emitted events and matched sections.
+  requires exact agreement on canonical event maps and complete computed matching.
 - The Iris GP token is registered in an authoritative ghost map.  Completion
   changes it from pending to a persistent done entry, rather than manufacturing
   an unrelated certificate.  Reader exit consumes the reader's exclusive
@@ -70,8 +70,9 @@ commitment, but normal RCU does not force that pivot.
 
 - The CAT/Bell definitions are manually transcribed from Linux v6.18; no
   verified CAT translation is claimed.
-- `po`, `hb`, `prop`, and `pb` are still the selected abstract graph-kernel
-  relations, not the complete LKMM derivation.
+- `po` is derived from canonical agent/index positions.  `hb`, `prop`, and
+  `pb` remain selected abstract graph-kernel relations rather than the full
+  LKMM derivation.
 - Candidate completeness uses propositional excluded middle to partition
   successor `rb` pairs into old and new pairs.  This is a proof-level choice,
   not operational state or a final-graph oracle.  A reflected finite checker

@@ -1,14 +1,14 @@
 # Prototype scope
 
 The feasibility kernel includes finite event identifiers, read/write labels,
-normal-RCU lock/unlock and grace-period labels, program order, abstract
-`hb`/`prop`/`pb`, matched nested critical sections, `rcu-link`,
+normal-RCU lock/unlock and grace-period labels, canonical program order,
+abstract `hb`/`prop`/`pb`, computed nested critical sections, `rcu-link`,
 `rcu-order`, `rcu-fence`, `rb`, and `rb` irreflexivity.
 It also includes finite GP/inverse-RSCS chains, signed obligation balances,
 and their proved equivalence to recursive `rcu-order`.
 The operational scope includes emitted-event integrity, a finite graph view
-parameterized by abstract memory relations, completed snapshot coverage, and
-the proved coverage-to-chain refinement.  It now also includes an incremental
+over canonical events and abstract `hb`/`prop`/`pb`, completed snapshot
+coverage, and the proved coverage-to-chain refinement.  It now also includes an incremental
 finite graph builder with explicit `rcu-link` witnesses and `rb` deltas, a
 proof of `rb` irreflexivity for every builder run, an independent declarative
 candidate type, and finite candidate scheduling completeness from a fixed
