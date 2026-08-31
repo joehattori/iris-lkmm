@@ -1,6 +1,7 @@
 From Stdlib Require Import Arith Lia List ZArith.
-From stdpp Require Import base gmap tactics.
+From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_graph rcu_obligations.
+From iris_lkmm.lang Require Import lkmm_lang.
 From iris_lkmm.operational Require Import rcu_machine.
 Import ListNotations.
 
@@ -9,7 +10,7 @@ Import ListNotations.
     parameters: this file connects snapshots, events, and matched sections,
     but deliberately does not manufacture [rcu_link] witnesses. *)
 Module RcuRefinement.
-  Import RcuGraph RcuObligations RcuMachine.
+  Import RcuGraph RcuObligations LkmmLang RcuMachine.
 
   Definition generated_has (E : event_structure) (e : event_id) (lab : label) : Prop :=
     exists agent index,

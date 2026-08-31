@@ -2,6 +2,8 @@
 
 The prototype language has fixed agents and five instructions: `read`,
 `write`, `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu`.
+Its syntax and canonical event-label translation live in `lkmm_lang.v`; the
+operational state and transitions in `rcu_machine.v` consume that language.
 It is intentionally smaller than the planned LKMM-Core language.
 
 Each ordinary instruction appends a fresh event.  Lock events are pushed onto

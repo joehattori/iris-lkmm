@@ -1,6 +1,7 @@
-From Stdlib Require Import Arith List ZArith.
-From stdpp Require Import base tactics.
-From iris_lkmm.lkmm Require Import rcu_graph.
+From Stdlib Require Import Arith List.
+From stdpp Require Import tactics.
+From iris_lkmm.lkmm Require Import rcu_matching.
+From iris_lkmm.lang Require Import lkmm_lang.
 Import ListNotations.
 
 (** A deliberately small event-generating machine for the feasibility gate.
@@ -9,26 +10,7 @@ Import ListNotations.
     exactly when those sections have closed.  Readers opened after begin are
     absent from the snapshot and therefore cannot delay that grace period. *)
 Module RcuMachine.
-  Import RcuGraph.
-
-  Definition agent := nat.
-
-  Inductive label :=
-  | LRead | LWrite | LRcuLock | LRcuUnlock | LSyncRcu.
-
-  Inductive instruction :=
-  | IRead | IWrite | IRcuLock | IRcuUnlock | ISynchronizeRcu.
-
-  Definition program := agent -> list instruction.
-
-  Definition canonical_label (lab : label) : event_label :=
-    match lab with
-    | LRead => LMemory AccessRead AccessOnce NotRmw 0 0%Z
-    | LWrite => LMemory AccessWrite AccessOnce NotRmw 0 0%Z
-    | LRcuLock => LBarrier BarrierRcuLock
-    | LRcuUnlock => LBarrier BarrierRcuUnlock
-    | LSyncRcu => LBarrier BarrierSyncRcu
-    end.
+  Import RcuMatching LkmmLang.
 
   Record gp_certificate := GpCertificate {
     gc_event : event_id;

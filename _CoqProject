@@ -8,6 +8,7 @@ theories/lkmm/rcu_matching.v
 theories/lkmm/rcu_graph.v
 theories/lkmm/rcu_mono.v
 theories/lkmm/rcu_obligations.v
+theories/lang/lkmm_lang.v
 theories/operational/rcu_machine.v
 theories/operational/rcu_machine_safety.v
 theories/operational/rcu_refinement.v

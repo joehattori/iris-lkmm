@@ -1,5 +1,5 @@
 From Stdlib Require Import List.
-From stdpp Require Import fin_map_dom gmap.
+From stdpp Require Import gmap.
 From iris.base_logic Require Import invariants.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.operational Require Import

@@ -1,16 +1,17 @@
 From Stdlib Require Import Arith Lia List ZArith Relations.Relation_Operators.
 From iris_lkmm.lkmm Require Import execution rcu_graph.
 From iris_lkmm.lkmm Require Import rcu_obligations.
+From iris_lkmm.lang Require Import lkmm_lang.
 From iris_lkmm.operational Require Import rcu_machine.
 From iris_lkmm.operational Require Import rcu_refinement.
 From iris_lkmm.operational Require Import rcu_builder.
 From iris_lkmm.operational Require Import rcu_candidate.
 From iris_lkmm.operational Require Import rcu_coupled.
-From stdpp Require Import base sets tactics.
+From stdpp Require Import sets tactics.
 Import ListNotations.
 
 Module RcuGateExamples.
-  Import LkmmExecution RcuGraph RcuObligations RcuMachine RcuRefinement.
+  Import LkmmExecution RcuGraph RcuObligations LkmmLang RcuMachine RcuRefinement.
   Import RcuBuilder RcuCandidate.
   Import RcuCoupled.
 

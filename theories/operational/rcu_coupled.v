@@ -1,6 +1,7 @@
 From Stdlib Require Import List.
-From stdpp Require Import base tactics.
+From stdpp Require Import sets tactics.
 From iris_lkmm.lkmm Require Import rcu_graph.
+From iris_lkmm.lang Require Import lkmm_lang.
 From iris_lkmm.operational Require Import
   rcu_machine rcu_machine_safety rcu_refinement rcu_builder rcu_candidate.
 Import ListNotations.
@@ -14,7 +15,7 @@ Import ListNotations.
     delayed-commitment design from the semantic architecture, not a final-graph
     oracle. *)
 Module RcuCoupled.
-  Import RcuGraph RcuMachine RcuMachineSafety RcuRefinement.
+  Import RcuGraph LkmmLang RcuMachine RcuMachineSafety RcuRefinement.
   Import RcuBuilder RcuCandidate.
 
   Definition machine_matches_raw (m : RcuMachine.state) (r : raw_graph) : Prop :=

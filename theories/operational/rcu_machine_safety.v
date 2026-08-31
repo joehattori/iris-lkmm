@@ -1,13 +1,14 @@
 From Stdlib Require Import Arith Lia List.
-From stdpp Require Import base fin_map_dom gmap sets tactics.
-From iris_lkmm.lkmm Require Import rcu_graph.
+From stdpp Require Import fin_map_dom gmap sets tactics.
+From iris_lkmm.lkmm Require Import rcu_matching.
+From iris_lkmm.lang Require Import lkmm_lang.
 From iris_lkmm.operational Require Import rcu_machine.
 Import ListNotations.
 
 (** Safety facts connecting operational reader stacks to the finite-set
     disjointness premise of the Iris grace-period completion rule. *)
 Module RcuMachineSafety.
-  Import RcuGraph RcuMachine.
+  Import RcuMatching LkmmLang RcuMachine.
 
   Definition stack_unique (stacks : agent -> list event_id) : Prop :=
     (forall a, List.NoDup (stacks a)) /\
