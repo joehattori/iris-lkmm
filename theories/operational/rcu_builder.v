@@ -1,11 +1,11 @@
 From Stdlib Require Import Arith List Relations.Relation_Operators.
-From stdpp Require Import base gmap tactics.
+From stdpp Require Import base gmap sets tactics.
 From iris_lkmm.lkmm Require Import rcu_graph rcu_mono.
 Import ListNotations.
 
 (** Incremental construction of the finite RCU graph kernel.
 
-    A mutation contributes exactly one event or base-relation edge.  RCU
+    A mutation contributes exactly one event or finite/base-relation edge.  RCU
     critical sections are recomputed from the canonical event structure.
     Link commitments record witnesses for
     [po? ; hb* ; pb* ; prop ; po] only after their components are present.
@@ -20,12 +20,11 @@ Module RcuBuilder.
     le_event : event
   }.
 
-  Definition edge := (event_id * event_id)%type.
-
   Definition edge_rel (edges : list edge) : relation := fun x y => In (x, y) edges.
 
   Record raw_graph := RawGraph {
     raw_events : event_structure;
+    raw_rf : list edge;
     raw_hb : list edge;
     raw_prop : list edge;
     raw_pb : list edge
@@ -34,30 +33,35 @@ Module RcuBuilder.
   Definition graph_of_raw (r : raw_graph) : graph :=
     {|
       events := r.(raw_events);
+      rf_edges := list_to_set r.(raw_rf);
       hb := edge_rel r.(raw_hb);
       prop := edge_rel r.(raw_prop);
       pb := edge_rel r.(raw_pb)
     |}.
 
-  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [].
+  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (<[ev.(le_id) := ev.(le_event)]> r.(raw_events))
-      r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_rf) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+
+  Definition add_rf (r : raw_graph) (e : edge) : raw_graph :=
+    RawGraph r.(raw_events) (e :: r.(raw_rf)) r.(raw_hb) r.(raw_prop) r.(raw_pb).
 
   Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
+    RawGraph r.(raw_events) r.(raw_rf) (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
 
   Definition add_prop (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
 
   Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
       rcu_trace_tail r.(raw_events) ev.(le_id) ev.(le_event) ->
       raw_step r (add_event r ev)
+  | RawStepRf r e : raw_step r (add_rf r e)
   | RawStepHb r e : raw_step r (add_hb r e)
   | RawStepProp r e : raw_step r (add_prop r e)
   | RawStepPb r e : raw_step r (add_pb r e).
@@ -76,9 +80,9 @@ Module RcuBuilder.
   Lemma raw_run_trans r1 r2 r3 :
     raw_run r1 r2 -> raw_run r2 r3 -> raw_run r1 r3.
   Proof.
-    intros H12 H23. induction H12 as [r | a b c Hstep Hrun IH].
-    - done.
-    - econstructor; [done | by apply IH].
+    intros H12 H23. induction H12 as [r | a b c Hstep Hrun IH]; first done.
+    econstructor; first done.
+    by apply IH.
   Qed.
 
   Lemma raw_step_graph_le r r' :
@@ -93,16 +97,19 @@ Module RcuBuilder.
         apply lookup_insert_Some. right. split; last done.
         intros Heq. pose proof (proj1 H) as Hfresh.
         unfold lookup_event in Hfresh. congruence.
+      + intros edge Hedge. done.
       + unfold rel_included, edge_rel. done.
       + unfold rel_included, edge_rel. done.
       + unfold rel_included, edge_rel. done.
       + apply rcu_rscsi_tail_mono. done.
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption].
+        solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption].
+        solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption].
+        solve [intros; assumption | intros; right; assumption | set_solver].
+    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption | set_solver].
   Qed.
 
   Lemma raw_run_graph_le r r' :
@@ -237,17 +244,15 @@ Module RcuBuilder.
     destruct Hstep as
       [r r' links seen delta Hraw Hdelta Hlocal |
        r links seen k Hvalid]; simpl in *.
-    - split.
+    - split_and!.
       + intros x y. symmetry. by apply Hdelta.
-      + split.
-        * intros e [Hold | Hnew].
-          -- by apply (Hsafe e).
-          -- by apply (Hlocal e).
-        * intros k Hin. eapply rcu_link_commitment_valid_mono.
-          -- by eapply raw_step_graph_le.
-          -- by apply Hlinks.
-    - split; first done.
-      split; first done.
+      + intros e [Hold | Hnew].
+        * by apply (Hsafe e).
+        * by apply (Hlocal e).
+      + intros k Hin. eapply rcu_link_commitment_valid_mono.
+        * by eapply raw_step_graph_le.
+        * by apply Hlinks.
+    - split_and!; try done.
       intros k' [-> | Hin]; [done | by apply Hlinks].
   Qed.
 
@@ -256,9 +261,8 @@ Module RcuBuilder.
     builder_run s s' ->
     builder_invariant s'.
   Proof.
-    intros Hinv Hrun. induction Hrun.
-    - done.
-    - apply IHHrun. by eapply builder_step_preserves_invariant.
+    intros Hinv Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply builder_step_preserves_invariant.
   Qed.
 
   Theorem completed_builder_run_rb_irreflexive s :

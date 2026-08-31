@@ -9,6 +9,7 @@ Module RcuMono.
     graph_le_events :
       forall eid ev, lookup_event G.(events) eid = Some ev ->
         lookup_event H.(events) eid = Some ev;
+    graph_le_rf : G.(rf_edges) ⊆ H.(rf_edges);
     graph_le_hb : rel_included G.(hb) H.(hb);
     graph_le_prop : rel_included G.(prop) H.(prop);
     graph_le_pb : rel_included G.(pb) H.(pb);
@@ -21,9 +22,10 @@ Module RcuMono.
   Lemma graph_le_trans G H K :
     graph_le G H -> graph_le H K -> graph_le G K.
   Proof.
-    intros [GE GHB GPR GPB GCS] [HE HHB HPR HPB HCS].
+    intros [GE GRF GHB GPR GPB GCS] [HE HRF HHB HPR HPB HCS].
     constructor.
     - intros eid ev Hlookup. apply HE. by apply GE.
+    - intros edge Hedge. apply HRF. by apply GRF.
     - intros x y Hxy. apply HHB. by apply GHB.
     - intros x y Hxy. apply HPR. by apply GPR.
     - intros x y Hxy. apply HPB. by apply GPB.

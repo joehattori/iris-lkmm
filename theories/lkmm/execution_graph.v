@@ -3,18 +3,21 @@ From iris_lkmm.lkmm Require Import execution.
 (** Minimal relation graph shared by the feasibility prototype.
 
     This record is independent of RCU, but it is not yet the final LKMM
-    candidate-execution type: [hb], [prop], and [pb] are supplied abstractly
-    rather than derived from finite base relations. *)
+    candidate-execution type.  [rf_edges] is a finite candidate choice;
+    [hb], [prop], and [pb] remain supplied abstractly rather than derived
+    from all required finite base relations. *)
 Module LkmmExecutionGraph.
   Export LkmmExecution.
 
   Record graph := Graph {
     events : event_structure;
+    rf_edges : edge_set;
     hb : relation;
     prop : relation;
     pb : relation
   }.
 
-  Definition in_graph (G : graph) (eid : event_id) : Prop :=
-    in_event_structure G.(events) eid.
+  Definition in_graph (G : graph) (eid : event_id) : Prop := in_event_structure G.(events) eid.
+
+  Definition graph_po (G : graph) : relation := po G.(events).
 End LkmmExecutionGraph.

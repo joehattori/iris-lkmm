@@ -13,6 +13,12 @@ Module LkmmExecution.
 
   Definition event_structure := gmap event_id event.
 
+  Definition edge := (event_id * event_id)%type.
+  Definition edge_set := gset edge.
+
+  Definition edge_relation (edges : edge_set) : relation :=
+    fun source target => (source, target) ∈ edges.
+
   Definition empty_event_structure : event_structure := ∅.
 
   Definition lookup_event (E : event_structure) (eid : event_id) : option event := E !! eid.

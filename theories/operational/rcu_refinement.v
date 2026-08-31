@@ -332,13 +332,15 @@ Module RcuRefinement.
   Qed.
 
   Record abstract_relations := AbstractRelations {
+    ar_rf_edges : edge_set;
     ar_hb : relation;
     ar_prop : relation;
     ar_pb : relation
   }.
 
   Definition graph_of_state (rels : abstract_relations) (s : state) : graph :=
-    Graph s.(generated) rels.(ar_hb) rels.(ar_prop) rels.(ar_pb).
+    Graph s.(generated) rels.(ar_rf_edges)
+      rels.(ar_hb) rels.(ar_prop) rels.(ar_pb).
 
   Lemma generated_has_in_graph rels s e lab :
     generated_has s.(generated) e lab ->

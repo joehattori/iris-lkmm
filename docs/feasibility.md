@@ -70,9 +70,9 @@ commitment, but normal RCU does not force that pivot.
 
 - The CAT/Bell definitions are manually transcribed from Linux v6.18; no
   verified CAT translation is claimed.
-- `po` is derived from canonical agent/index positions.  `hb`, `prop`, and
-  `pb` remain selected abstract graph-kernel relations rather than the full
-  LKMM derivation.
+- `po` is derived from canonical agent/index positions.  The graph carries
+  finite candidate `rf` edges, while `hb`, `prop`, and `pb` remain selected
+  abstract graph-kernel relations rather than the full LKMM derivation.
 - Candidate completeness uses propositional excluded middle to partition
   successor `rb` pairs into old and new pairs.  This is a proof-level choice,
   not operational state or a final-graph oracle.  A reflected finite checker

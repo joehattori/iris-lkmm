@@ -11,8 +11,6 @@ Module RcuGraph.
   Definition is_gp (G : graph) : event_id -> Prop :=
     event_has_barrier_kind G.(events) BarrierSyncRcu.
 
-  Definition graph_po (G : graph) : relation := po G.(events).
-
   (** [rcu-rscsi] is the inverse of the matching relation computed by the
       Bell file: it runs from the unlock back to its matching lock. *)
   Definition graph_rcu_rscsi (G : graph) : relation := RcuMatching.rcu_rscsi G.(events).

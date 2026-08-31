@@ -33,9 +33,10 @@ sufficient to take the finish transition.  Neither theorem invokes
 ## Independent graph-chain invariant
 
 `execution_graph.v` defines the RCU-independent feasibility graph containing
-canonical events and abstract `hb`, `prop`, and `pb` relations.  It is a
-minimal shared graph view, not yet the final LKMM candidate-execution type.
-`rcu_graph.v` adds the normal-RCU classifications and consistency condition.
+canonical events, a finite candidate `rf` edge set, and abstract `hb`, `prop`,
+and `pb` relations.  It is a minimal shared graph view, not yet the final LKMM
+candidate-execution type.  `rcu_graph.v` adds the normal-RCU classifications
+and consistency condition.
 
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
@@ -64,8 +65,8 @@ and closed-section cache agree with the canonical stack matcher.
 
 `graph_of_state` uses the machine's canonical event map directly.  Program
 order, GP classification, `Marked`, and inverse critical-section matching are
-derived from that map; only `hb`, `prop`, and `pb` are supplied by the
-`abstract_relations` parameter.
+derived from that map; the finite `rf` candidate and abstract `hb`, `prop`,
+and `pb` relations are supplied by the `abstract_relations` parameter.
 
 `certificate_covers s cert cs` says that:
 
@@ -199,7 +200,8 @@ the operational theorem and Iris update directly.
 ## Deliberate limitations
 
 - Reads and writes emit labels but do not yet choose values or construct
-  `rf`, `co`, dependency, `hb`, `prop`, or `pb` edges.
+  memory-relation edges.  The graph and candidate layers can carry finite
+  `rf` edges, but do not yet validate them or use them to derive `prop`.
 - The coupled `minimal_program_graph` covers the gate language's canonical
   events and computed RCU sections.  It is not the future full LKMM-Core
   `ProgramGraph`, which must also cover values, reads-from, coherence,

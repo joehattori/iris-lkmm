@@ -11,12 +11,6 @@ From iris_lkmm.lkmm Require Import execution.
 Module LkmmMemoryRelations.
   Export LkmmExecution.
 
-  Definition edge := (event_id * event_id)%type.
-  Definition edge_set := gset edge.
-
-  Definition edge_relation (edges : edge_set) : relation :=
-    fun source target => (source, target) ∈ edges.
-
   Definition rf (edges : edge_set) : relation := edge_relation edges.
 
   (** The finite edge set stores the complete transitive coherence order,

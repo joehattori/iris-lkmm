@@ -13,12 +13,12 @@ Import ListNotations.
 Module RcuCandidate.
   Import RcuGraph RcuMono RcuBuilder.
 
-  Definition edge_endpoints_in
-      (ids : list event_id) (edges : list edge) : Prop :=
+  Definition edge_endpoints_in (ids : list event_id) (edges : list edge) : Prop :=
     forall x y, In (x, y) edges -> In x ids /\ In y ids.
 
   Record finite_candidate := FiniteCandidate {
     fc_events : list labeled_event;
+    fc_rf : list edge;
     fc_hb : list edge;
     fc_prop : list edge;
     fc_pb : list edge
@@ -46,9 +46,16 @@ Module RcuCandidate.
     events_in_canonical_order C.(fc_events) /\
     event_structure_wf (load_events C.(fc_events)).(raw_events) /\
     rcu_matching_complete (load_events C.(fc_events)).(raw_events) /\
+    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_rf) /\
     edge_endpoints_in (map le_id C.(fc_events)) C.(fc_hb) /\
     edge_endpoints_in (map le_id C.(fc_events)) C.(fc_prop) /\
     edge_endpoints_in (map le_id C.(fc_events)) C.(fc_pb).
+
+  Fixpoint load_rf (edges : list edge) (r : raw_graph) : raw_graph :=
+    match edges with
+    | [] => r
+    | e :: edges' => add_rf (load_rf edges' r) e
+    end.
 
   Fixpoint load_hb (edges : list edge) (r : raw_graph) : raw_graph :=
     match edges with
@@ -68,6 +75,10 @@ Module RcuCandidate.
     | e :: edges' => add_pb (load_pb edges' r) e
     end.
 
+  Lemma load_rf_events edges r :
+    (load_rf edges r).(raw_events) = r.(raw_events).
+  Proof. induction edges; simpl; done. Qed.
+
   Lemma load_hb_events edges r :
     (load_hb edges r).(raw_events) = r.(raw_events).
   Proof. induction edges; simpl; done. Qed.
@@ -83,12 +94,14 @@ Module RcuCandidate.
   Definition candidate_raw (C : finite_candidate) : raw_graph :=
     load_pb C.(fc_pb)
       (load_prop C.(fc_prop)
-        (load_hb C.(fc_hb) (load_events C.(fc_events)))).
+        (load_hb C.(fc_hb)
+          (load_rf C.(fc_rf) (load_events C.(fc_events))))).
 
   Lemma candidate_raw_events C :
     (candidate_raw C).(raw_events) = (load_events C.(fc_events)).(raw_events).
   Proof.
-    unfold candidate_raw. rewrite load_pb_events, load_prop_events, load_hb_events. done.
+    unfold candidate_raw.
+    rewrite load_pb_events, load_prop_events, load_hb_events, load_rf_events. done.
   Qed.
 
   Definition candidate_graph (C : finite_candidate) : graph := graph_of_raw (candidate_raw C).
@@ -102,6 +115,14 @@ Module RcuCandidate.
     eapply raw_run_trans.
     - by apply IH.
     - apply raw_run_single. by apply RawStepEvent.
+  Qed.
+
+  Lemma load_rf_schedule edges r :
+    raw_run r (load_rf edges r).
+  Proof.
+    induction edges as [|e edges IH]; simpl; first constructor.
+    eapply raw_run_trans; first apply IH.
+    apply raw_run_single. apply RawStepRf.
   Qed.
 
   Lemma load_hb_schedule edges r :
@@ -135,6 +156,7 @@ Module RcuCandidate.
     intros (_ & Horder & _).
     unfold candidate_raw.
     eapply raw_run_trans; first by apply load_events_schedule.
+    eapply raw_run_trans; first apply load_rf_schedule.
     eapply raw_run_trans; first apply load_hb_schedule.
     eapply raw_run_trans; first apply load_prop_schedule.
     apply load_pb_schedule.
