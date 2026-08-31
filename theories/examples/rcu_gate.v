@@ -58,7 +58,7 @@ Module RcuGateExamples.
   Qed.
 
   Definition permissive_relations : abstract_relations :=
-    AbstractRelations ∅ ∅
+    AbstractRelations ∅ ∅ ∅
       (fun _ _ => False) (fun _ _ => True) (fun _ _ => False).
 
   Definition reader_cert := GpCertificate 3 [0].
@@ -158,7 +158,7 @@ Module RcuGateExamples.
       {[0 := EAgent 0 0 (canonical_label LSyncRcu);
         1 := EAgent 0 1 (canonical_label LRead);
         2 := EAgent 0 2 (canonical_label LRead)]}
-      [] [] [] [(0, 1)] [].
+      [] [] [] [] [(0, 1)] [].
 
   Definition rcu_link_witness : rcu_link_commitment := RcuLinkCommitment 0 0 0 0 1 2.
 
@@ -184,7 +184,7 @@ Module RcuGateExamples.
     apply incremental_link_witness_is_valid.
   Qed.
 
-  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [].
+  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [] [].
 
   Example empty_candidate_well_formed :
     candidate_well_formed empty_candidate.
@@ -194,6 +194,7 @@ Module RcuGateExamples.
     - done.
     - apply empty_event_structure_wf.
     - vm_compute. split_and!; reflexivity.
+    - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
@@ -224,7 +225,7 @@ Module RcuGateExamples.
        LabeledEvent 2 (EAgent 0 2 (canonical_label LRcuUnlock));
        LabeledEvent 1 (EAgent 0 1 (canonical_label LRead));
        LabeledEvent 0 (EAgent 0 0 (canonical_label LRcuLock))]
-      [] [] [] [] [].
+      [] [] [] [] [] [].
 
   Example one_reader_candidate_well_formed :
     candidate_well_formed one_reader_candidate.
@@ -238,6 +239,7 @@ Module RcuGateExamples.
       replace (raw_events (load_events (fc_events one_reader_candidate)))
         with s5.(generated) by (vm_compute; reflexivity). done.
     - vm_compute. split_and!; reflexivity.
+    - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.

@@ -4,8 +4,8 @@ For the feasibility prototype, the trusted boundary includes:
 
 - the manual reading and transcription of the cited Linux v6.18 CAT/Bell
   definitions;
-- the input graph's finite canonical event map, finite candidate `rf` and `co`
-  edges, and abstract `hb`, `prop`, and `pb` relations;
+- the input graph's finite canonical event map, finite candidate `rf`, `co`,
+  and `rmw` edges, and abstract `hb`, `prop`, and `pb` relations;
 - the claim that the small instruction language represents the intended
   client operations;
 - propositional excluded middle in the finite candidate completeness proof,
