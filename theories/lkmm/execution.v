@@ -37,9 +37,19 @@ Module LkmmExecution.
       lookup_event E eid2 = Some (EAgent agent index label2) ->
       eid1 = eid2.
 
+  Definition event_structure_included (E1 E2 : event_structure) : Prop :=
+    forall eid ev, lookup_event E1 eid = Some ev -> lookup_event E2 eid = Some ev.
+
   Local Definition event_satisfies (pred : event -> Prop)
       (E : event_structure) (eid : event_id) : Prop :=
     exists ev, lookup_event E eid = Some ev /\ pred ev.
+
+  Local Lemma event_satisfies_mono pred E1 E2 eid :
+    event_structure_included E1 E2 ->
+    event_satisfies pred E1 eid -> event_satisfies pred E2 eid.
+  Proof.
+    intros HE (ev & Hlookup & Hpred). exists ev. split; [by eapply HE | done].
+  Qed.
 
   Definition event_is_read (E : event_structure) (eid : event_id) : Prop :=
     event_satisfies is_read E eid.
@@ -54,6 +64,17 @@ Module LkmmExecution.
   Local Definition event_attribute {A} (project : event -> option A)
       (E : event_structure) (eid : event_id) : option A :=
     lookup_event E eid ≫= project.
+
+  Local Lemma event_attribute_mono {A} (project : event -> option A)
+      E1 E2 eid (value : A) :
+    event_structure_included E1 E2 ->
+    event_attribute project E1 eid = Some value ->
+    event_attribute project E2 eid = Some value.
+  Proof.
+    intros HE Hattribute. unfold event_attribute in Hattribute |- *.
+    destruct (lookup_event E1 eid) as [ev |] eqn:Hlookup; last discriminate.
+    rewrite (HE eid ev Hlookup). done.
+  Qed.
 
   Definition event_has_access_kind (E : event_structure) (kind : access_kind)
       (eid : event_id) : Prop :=
@@ -80,6 +101,14 @@ Module LkmmExecution.
       exists value,
         event_attribute project E eid1 = Some value /\
         event_attribute project E eid2 = Some value.
+
+  Lemma same_attribute_mono {A} (project : event -> option A) E1 E2 :
+    event_structure_included E1 E2 ->
+    rel_included (same_attribute project E1) (same_attribute project E2).
+  Proof.
+    intros HE eid1 eid2 (value & Hvalue1 & Hvalue2). exists value.
+    split; by eapply event_attribute_mono.
+  Qed.
 
   Global Instance same_attribute_decision {A} `{EqDecision A}
       (project : event -> option A) E eid1 eid2 :
@@ -125,6 +154,138 @@ Module LkmmExecution.
       apply (proj1 (elem_of_dom E eid)) in Hin. exact Hin.
     - intros Hlookup.
       apply (proj2 (elem_of_dom E eid)). exact Hlookup.
+  Qed.
+
+  Lemma in_event_structure_mono E1 E2 :
+    event_structure_included E1 E2 ->
+    forall eid, in_event_structure E1 eid -> in_event_structure E2 eid.
+  Proof.
+    intros HE eid Hin. apply in_event_structure_lookup_iff in Hin as (ev & Hlookup).
+    apply in_event_structure_lookup_iff. exists ev. by eapply HE.
+  Qed.
+
+  Local Lemma event_satisfies_reflect pred E1 E2 eid :
+    event_structure_included E1 E2 ->
+    in_event_structure E1 eid ->
+    event_satisfies pred E2 eid -> event_satisfies pred E1 eid.
+  Proof.
+    intros HE Hin (ev2 & Hlookup2 & Hpred).
+    apply in_event_structure_lookup_iff in Hin as (ev1 & Hlookup1).
+    pose proof (HE eid ev1 Hlookup1) as Hlookup1'.
+    assert (ev2 = ev1) as -> by congruence. by exists ev1.
+  Qed.
+
+  Lemma event_is_read_mono E1 E2 eid :
+    event_structure_included E1 E2 -> event_is_read E1 eid -> event_is_read E2 eid.
+  Proof. apply event_satisfies_mono. Qed.
+
+  Lemma event_is_read_reflect E1 E2 eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_is_read E2 eid -> event_is_read E1 eid.
+  Proof. apply event_satisfies_reflect. Qed.
+
+  Lemma event_is_write_mono E1 E2 eid :
+    event_structure_included E1 E2 -> event_is_write E1 eid -> event_is_write E2 eid.
+  Proof. apply event_satisfies_mono. Qed.
+
+  Lemma event_is_write_reflect E1 E2 eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_is_write E2 eid -> event_is_write E1 eid.
+  Proof. apply event_satisfies_reflect. Qed.
+
+  Lemma event_is_memory_mono E1 E2 eid :
+    event_structure_included E1 E2 -> event_is_memory E1 eid -> event_is_memory E2 eid.
+  Proof. apply event_satisfies_mono. Qed.
+
+  Lemma event_is_memory_reflect E1 E2 eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_is_memory E2 eid -> event_is_memory E1 eid.
+  Proof. apply event_satisfies_reflect. Qed.
+
+  Local Lemma event_attribute_reflect {A} (project : event -> option A)
+      E1 E2 eid (value : A) :
+    event_structure_included E1 E2 ->
+    in_event_structure E1 eid ->
+    event_attribute project E2 eid = Some value ->
+    event_attribute project E1 eid = Some value.
+  Proof.
+    intros HE Hin Hattribute.
+    apply in_event_structure_lookup_iff in Hin as (ev & Hlookup).
+    unfold event_attribute in Hattribute |- *.
+    rewrite Hlookup. rewrite (HE eid ev Hlookup) in Hattribute. done.
+  Qed.
+
+  Lemma event_has_access_kind_mono E1 E2 kind eid :
+    event_structure_included E1 E2 ->
+    event_has_access_kind E1 kind eid -> event_has_access_kind E2 kind eid.
+  Proof. apply event_attribute_mono. Qed.
+
+  Lemma event_has_access_kind_reflect E1 E2 kind eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_has_access_kind E2 kind eid -> event_has_access_kind E1 kind eid.
+  Proof. apply event_attribute_reflect. Qed.
+
+  Lemma event_has_access_mode_mono E1 E2 mode eid :
+    event_structure_included E1 E2 ->
+    event_has_access_mode E1 mode eid -> event_has_access_mode E2 mode eid.
+  Proof. apply event_attribute_mono. Qed.
+
+  Lemma event_has_access_mode_reflect E1 E2 mode eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_has_access_mode E2 mode eid -> event_has_access_mode E1 mode eid.
+  Proof. apply event_attribute_reflect. Qed.
+
+  Lemma event_is_rmw_marked_mono E1 E2 eid :
+    event_structure_included E1 E2 ->
+    event_is_rmw_marked E1 eid -> event_is_rmw_marked E2 eid.
+  Proof. apply event_attribute_mono. Qed.
+
+  Lemma event_is_rmw_marked_reflect E1 E2 eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_is_rmw_marked E2 eid -> event_is_rmw_marked E1 eid.
+  Proof. apply event_attribute_reflect. Qed.
+
+  Lemma event_has_barrier_kind_mono E1 E2 kind eid :
+    event_structure_included E1 E2 ->
+    event_has_barrier_kind E1 kind eid -> event_has_barrier_kind E2 kind eid.
+  Proof. apply event_attribute_mono. Qed.
+
+  Lemma event_has_barrier_kind_reflect E1 E2 kind eid :
+    event_structure_included E1 E2 -> in_event_structure E1 eid ->
+    event_has_barrier_kind E2 kind eid -> event_has_barrier_kind E1 kind eid.
+  Proof. apply event_attribute_reflect. Qed.
+
+  Lemma same_attribute_reflect {A} (project : event -> option A) E1 E2 eid1 eid2 :
+    event_structure_included E1 E2 ->
+    in_event_structure E1 eid1 -> in_event_structure E1 eid2 ->
+    same_attribute project E2 eid1 eid2 -> same_attribute project E1 eid1 eid2.
+  Proof.
+    intros HE Hin1 Hin2 (value & Hvalue1 & Hvalue2). exists value.
+    split; eapply event_attribute_reflect; done.
+  Qed.
+
+  Lemma same_agent_reflect E1 E2 eid1 eid2 :
+    event_structure_included E1 E2 ->
+    in_event_structure E1 eid1 -> in_event_structure E1 eid2 ->
+    same_agent E2 eid1 eid2 -> same_agent E1 eid1 eid2.
+  Proof. apply same_attribute_reflect. Qed.
+
+  Lemma ext_mono E1 E2 eid1 eid2 :
+    event_structure_included E1 E2 ->
+    in_event_structure E1 eid1 -> in_event_structure E1 eid2 ->
+    ext E1 eid1 eid2 -> ext E2 eid1 eid2.
+  Proof.
+    intros HE Hin1 Hin2 Hext Hsame. apply Hext.
+    by eapply same_agent_reflect.
+  Qed.
+
+  Lemma po_mono E1 E2 :
+    event_structure_included E1 E2 -> rel_included (po E1) (po E2).
+  Proof.
+    intros HE eid1 eid2
+      (agent & index1 & index2 & label1 & label2 & Hlookup1 & Hlookup2 & Hlt).
+    exists agent, index1, index2, label1, label2.
+    split_and!; try done; by eapply HE.
   Qed.
 
   Lemma lookup_event_in E eid ev :

@@ -3,8 +3,9 @@ From stdpp Require Import tactics.
 From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_matching.
 
 (** The finite, normal-RCU-only graph kernel used by the feasibility gate.
-    The shared graph record supplies abstract memory-model relations; this
-    file adds only the normal-RCU classifications and consistency condition. *)
+    The shared graph record supplies base memory-model relations and derives
+    [prop]; this file adds only the normal-RCU classifications and consistency
+    condition. *)
 Module RcuGraph.
   Export LkmmExecutionGraph RcuMatching.
 
@@ -21,7 +22,7 @@ Module RcuGraph.
       optional (graph_po G) x a /\
       rtc G.(hb) a b /\
       rtc G.(pb) b c /\
-      G.(prop) c d /\
+      graph_prop G c d /\
       graph_po G d y.
 
   (** Direct manual transcription of the normal-RCU disjuncts of the
@@ -126,7 +127,7 @@ Module RcuGraph.
   Definition rb (G : graph) : relation :=
     rel_seq
       (rel_seq
-        (rel_seq (rel_seq G.(prop) (rcu_fence G)) (rtc G.(hb)))
+        (rel_seq (rel_seq (graph_prop G) (rcu_fence G)) (rtc G.(hb)))
         (rtc G.(pb)))
       (rel_id_on (graph_marked G)).
 

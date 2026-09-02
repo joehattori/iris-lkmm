@@ -1,38 +1,36 @@
 From stdpp Require Import base tactics.
-From iris_lkmm.lkmm Require Import rcu_graph.
+From iris_lkmm.lkmm Require Import memory_relations rcu_graph.
 
 (** Monotonicity of the normal-RCU kernel under finite graph extension. *)
 Module RcuMono.
   Import RcuGraph.
 
   Record graph_le (G H : graph) : Prop := GraphLe {
-    graph_le_events :
-      forall eid ev, lookup_event G.(events) eid = Some ev ->
-        lookup_event H.(events) eid = Some ev;
+    graph_le_events : event_structure_included G.(events) H.(events);
     graph_le_rf : G.(rf_edges) ⊆ H.(rf_edges);
     graph_le_co : G.(co_edges) ⊆ H.(co_edges);
     graph_le_rmw : G.(rmw_edges) ⊆ H.(rmw_edges);
     graph_le_hb : rel_included G.(hb) H.(hb);
-    graph_le_prop : rel_included G.(prop) H.(prop);
     graph_le_pb : rel_included G.(pb) H.(pb);
     graph_le_rscsi : rel_included (graph_rcu_rscsi G) (graph_rcu_rscsi H)
   }.
 
   Lemma graph_le_refl G : graph_le G G.
-  Proof. constructor; try unfold rel_included; intros; done. Qed.
+  Proof.
+    constructor; try unfold event_structure_included, rel_included; intros; done.
+  Qed.
 
   Lemma graph_le_trans G H K :
     graph_le G H -> graph_le H K -> graph_le G K.
   Proof.
-    intros [GE GRF GCO GRMW GHB GPR GPB GCS]
-      [HE HRF HCO HRMW HHB HPR HPB HCS].
+    intros [GE GRF GCO GRMW GHB GPB GCS]
+      [HE HRF HCO HRMW HHB HPB HCS].
     constructor.
     - intros eid ev Hlookup. apply HE. by apply GE.
     - intros edge Hedge. apply HRF. by apply GRF.
     - intros edge Hedge. apply HCO. by apply GCO.
     - intros edge Hedge. apply HRMW. by apply GRMW.
     - intros x y Hxy. apply HHB. by apply GHB.
-    - intros x y Hxy. apply HPR. by apply GPR.
     - intros x y Hxy. apply HPB. by apply GPB.
     - intros x y Hxy. apply HCS. by apply GCS.
   Qed.
@@ -58,6 +56,16 @@ Module RcuMono.
     intros GH x y (agent & index1 & index2 & label1 & label2 & Hx & Hy & Hlt).
     exists agent, index1, index2, label1, label2. split_and!; try done;
       by eapply graph_le_events.
+  Qed.
+
+  Lemma graph_prop_mono G H :
+    graph_le G H -> rel_included (graph_prop G) (graph_prop H).
+  Proof.
+    intros GH. apply LkmmMemoryRelations.prop_mono.
+    - intros eid ev Hlookup. by eapply graph_le_events.
+    - by eapply graph_le_rmw.
+    - by eapply graph_le_rf.
+    - by eapply graph_le_co.
   Qed.
 
   Lemma graph_le_marked G H :
@@ -92,7 +100,7 @@ Module RcuMono.
     - eapply optional_mono; [by eapply graph_le_po | done].
     - eapply rtc_mono; [by eapply graph_le_hb | done].
     - eapply rtc_mono; [by eapply graph_le_pb | done].
-    - by eapply graph_le_prop.
+    - by eapply graph_prop_mono.
     - by eapply graph_le_po.
   Qed.
 
@@ -149,7 +157,7 @@ Module RcuMono.
     exists c. split.
     - exists b. split.
       + exists a. split.
-        * by eapply graph_le_prop.
+        * by eapply graph_prop_mono.
         * by eapply rcu_fence_mono.
       + eapply rtc_mono; [by eapply graph_le_hb | done].
     - eapply rtc_mono; [by eapply graph_le_pb | done].

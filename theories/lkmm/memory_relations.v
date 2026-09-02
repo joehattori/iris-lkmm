@@ -317,6 +317,296 @@ Module LkmmMemoryRelations.
         (optional (rfe E rf_edges)))
       (rel_id_on (marked E)).
 
+  Section PropMonotonicity.
+    Context (E1 E2 : event_structure) (rmw1 rmw2 rf1 rf2 co1 co2 : edge_set).
+    Context (HE : event_structure_included E1 E2).
+    Context (HRMW : rmw1 ⊆ rmw2) (HRF : rf1 ⊆ rf2) (HCO : co1 ⊆ co2).
+
+    Local Lemma edge_relation_mono edges1 edges2 :
+      edges1 ⊆ edges2 -> rel_included (edge_relation edges1) (edge_relation edges2).
+    Proof. intros Hedges x y Hxy. by apply Hedges. Qed.
+
+    Local Lemma marked_mono eid : marked E1 eid -> marked E2 eid.
+    Proof.
+      intros [Hin Hnot_plain]. split; first by eapply in_event_structure_mono.
+      intros [Hmode Hnot_marked]. apply Hnot_plain. split.
+      - by eapply event_has_access_mode_reflect.
+      - intros Hmarked. apply Hnot_marked. by eapply event_is_rmw_marked_mono.
+    Qed.
+
+    Local Lemma not_failed_rmw_mono eid :
+      in_event_structure E1 eid ->
+      ~ failed_rmw E1 rmw1 eid -> ~ failed_rmw E2 rmw2 eid.
+    Proof.
+      intros Hin Hnot_failed [Hmarked Houtside]. apply Hnot_failed. split.
+      - by eapply event_is_rmw_marked_reflect.
+      - intros [Hdomain | Hrange]; apply Houtside.
+        + left. destruct Hdomain as (target & Hedge). exists target. by apply HRMW.
+        + right. destruct Hrange as (source & Hedge). exists source. by apply HRMW.
+    Qed.
+
+    Local Lemma acquire_mono eid :
+      acquire E1 rmw1 eid -> acquire E2 rmw2 eid.
+    Proof.
+      intros (Hmode & Hnot_write & Hnot_failed).
+      apply event_has_access_mode_lookup in Hmode as (ev & Hlookup & Hmode).
+      assert (in_event_structure E1 eid) as Hin by eauto using lookup_event_in.
+      split_and!.
+      - apply event_has_access_mode_lookup. exists ev. split; [by eapply HE | done].
+      - intros Hwrite. apply Hnot_write. by eapply event_has_access_kind_reflect.
+      - by eapply not_failed_rmw_mono.
+    Qed.
+
+    Local Lemma release_mono eid :
+      release E1 rmw1 eid -> release E2 rmw2 eid.
+    Proof.
+      intros (Hmode & Hnot_read & Hnot_failed).
+      apply event_has_access_mode_lookup in Hmode as (ev & Hlookup & Hmode).
+      assert (in_event_structure E1 eid) as Hin by eauto using lookup_event_in.
+      split_and!.
+      - apply event_has_access_mode_lookup. exists ev. split; [by eapply HE | done].
+      - intros Hread. apply Hnot_read. by eapply event_has_access_kind_reflect.
+      - by eapply not_failed_rmw_mono.
+    Qed.
+
+    Local Lemma mb_event_mono eid :
+      mb_event E1 rmw1 eid -> mb_event E2 rmw2 eid.
+    Proof.
+      intros [Htag Hnot_failed].
+      assert (in_event_structure E1 eid) as Hin.
+      { destruct Htag as [Hmode | Hbarrier].
+        - apply event_has_access_mode_lookup in Hmode as (ev & Hlookup & _).
+          by eapply lookup_event_in.
+        - apply event_has_barrier_kind_lookup in Hbarrier as (ev & Hlookup & _).
+          by eapply lookup_event_in. }
+      split.
+      - destruct Htag as [Hmode | Hbarrier].
+        + left. by eapply event_has_access_mode_mono.
+        + right. by eapply event_has_barrier_kind_mono.
+      - by eapply not_failed_rmw_mono.
+    Qed.
+
+    Local Lemma fencerel_mono kind :
+      rel_included (fencerel E1 kind) (fencerel E2 kind).
+    Proof.
+      unfold fencerel. apply rel_seq_mono; last by apply po_mono.
+      apply rel_seq_mono; first by apply po_mono.
+      apply rel_id_on_mono. intros eid Hbarrier.
+      by eapply event_has_barrier_kind_mono.
+    Qed.
+
+    Local Lemma wmb_mono : rel_included (wmb E1) (wmb E2).
+    Proof.
+      unfold wmb. apply rel_seq_mono.
+      - apply rel_seq_mono.
+        + apply rel_id_on_mono. intros eid Hwrite. by eapply event_is_write_mono.
+        + apply fencerel_mono.
+      - apply rel_id_on_mono. intros eid Hwrite. by eapply event_is_write_mono.
+    Qed.
+
+    Local Lemma po_rel_mono :
+      rel_included (po_rel E1 rmw1) (po_rel E2 rmw2).
+    Proof.
+      unfold po_rel. apply rel_seq_mono.
+      - apply rel_seq_mono.
+        + apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+        + by apply po_mono.
+      - apply rel_id_on_mono. apply release_mono.
+    Qed.
+
+    Local Lemma gp_mono : rel_included (gp E1) (gp E2).
+    Proof.
+      unfold gp. apply rel_seq_mono.
+      - apply rel_seq_mono; first by apply po_mono.
+        apply rel_id_on_mono. intros eid Hbarrier.
+        by eapply event_has_barrier_kind_mono.
+      - apply optional_mono. by apply po_mono.
+    Qed.
+
+    Local Lemma mb_mono : rel_included (mb E1 rmw1) (mb E2 rmw2).
+    Proof.
+      unfold mb. apply rel_union_mono.
+      {
+        apply rel_seq_mono.
+        - apply rel_seq_mono.
+          + apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+          + apply fencerel_mono.
+        - apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+      }
+      apply rel_union_mono.
+      {
+        apply rel_seq_mono.
+        - apply rel_seq_mono.
+          + apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+          + by apply po_mono.
+        - apply rel_intersection_mono.
+          + apply rel_id_on_mono. apply mb_event_mono.
+          + apply rel_id_on_mono. intros eid Hread. by eapply event_is_read_mono.
+      }
+      apply rel_union_mono.
+      {
+        apply rel_seq_mono.
+        - apply rel_seq_mono.
+          + apply rel_intersection_mono.
+            * apply rel_id_on_mono. apply mb_event_mono.
+            * apply rel_id_on_mono. intros eid Hwrite. by eapply event_is_write_mono.
+          + by apply po_mono.
+        - apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+      }
+      apply rel_union_mono.
+      {
+        apply rel_seq_mono.
+        {
+          apply rel_seq_mono.
+          {
+            apply rel_seq_mono.
+            {
+              apply rel_seq_mono.
+              - apply rel_id_on_mono. intros eid Hmemory.
+                by eapply event_is_memory_mono.
+              - apply fencerel_mono.
+            }
+            apply rel_id_on_mono. intros eid Hmarked.
+            by eapply event_is_rmw_marked_mono.
+          }
+          apply optional_mono. by apply po_mono.
+        }
+        apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+      }
+      apply rel_seq_mono.
+      {
+        apply rel_seq_mono.
+        {
+          apply rel_seq_mono.
+          {
+            apply rel_seq_mono.
+            - apply rel_id_on_mono. intros eid Hmemory.
+              by eapply event_is_memory_mono.
+            - apply optional_mono. by apply po_mono.
+          }
+          apply rel_id_on_mono. intros eid Hmarked.
+          by eapply event_is_rmw_marked_mono.
+        }
+        apply fencerel_mono.
+      }
+      apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
+    Qed.
+
+    Local Lemma strong_fence_mono :
+      rel_included (strong_fence E1 rmw1) (strong_fence E2 rmw2).
+    Proof. apply rel_union_mono; [apply mb_mono | apply gp_mono]. Qed.
+
+    Local Lemma overwrite_mono :
+      rel_included (overwrite rf1 co1) (overwrite rf2 co2).
+    Proof.
+      unfold overwrite, fr. apply rel_union_mono.
+      - by apply edge_relation_mono.
+      - apply rel_seq_mono.
+        + apply rel_inverse_mono. by apply edge_relation_mono.
+        + by apply edge_relation_mono.
+    Qed.
+
+    Local Lemma rmw_sequence_mono :
+      rel_included (rmw_sequence rf1 rmw1) (rmw_sequence rf2 rmw2).
+    Proof.
+      apply rtc_mono, rel_seq_mono; by apply edge_relation_mono.
+    Qed.
+
+    Local Lemma rfe_mono eid1 eid2 :
+      in_event_structure E1 eid1 -> in_event_structure E1 eid2 ->
+      rfe E1 rf1 eid1 eid2 -> rfe E2 rf2 eid1 eid2.
+    Proof.
+      intros Hin1 Hin2 [Hrf Hext]. split.
+      - by apply HRF.
+      - by eapply ext_mono.
+    Qed.
+
+    Local Lemma a_cumul_mono_on (r1 r2 : relation) :
+      rel_included r1 r2 ->
+      forall eid1 eid2,
+        in_event_structure E1 eid1 ->
+        a_cumul E1 rf1 r1 eid1 eid2 -> a_cumul E2 rf2 r2 eid1 eid2.
+    Proof.
+      intros Hr eid1 eid2 Hin1 (middle & Hprefix & Hrelation).
+      exists middle. split; last by apply Hr.
+      destruct Hprefix as [-> | (target & Hrfe & [-> Hmarked])].
+      - by left.
+      - destruct Hmarked as [Hin_middle Hnot_plain].
+        right. exists middle. split.
+        + apply rfe_mono; done.
+        + split; first done. apply marked_mono. by split.
+    Qed.
+
+    Local Lemma cumul_fence_mono :
+      rel_included (cumul_fence E1 rmw1 rf1) (cumul_fence E2 rmw2 rf2).
+    Proof.
+      intros eid1 eid2 (middle & Hprefix & Hsequence). exists middle.
+      split; last by apply rmw_sequence_mono.
+      apply rel_seq_id_on_r in Hprefix as [Hfence Hmarked2].
+      apply rel_seq_id_on_l in Hfence as [Hmarked1 Hfence].
+      apply rel_seq_id_on_r. split; last by apply marked_mono.
+      apply rel_seq_id_on_l. split; first by apply marked_mono.
+      destruct Hfence as [Hcumul | Hwmb].
+      - left. eapply a_cumul_mono_on; last done.
+        + apply rel_union_mono; [apply strong_fence_mono | apply po_rel_mono].
+        + destruct Hmarked1 as [Hin _]. done.
+      - right. by apply wmb_mono.
+    Qed.
+
+    Local Lemma cumul_fence_source_marked eid1 eid2 :
+      cumul_fence E1 rmw1 rf1 eid1 eid2 -> marked E1 eid1.
+    Proof.
+      intros (middle & Hprefix & _).
+      apply rel_seq_id_on_r in Hprefix as [Hfence _].
+      by apply rel_seq_id_on_l in Hfence as [Hmarked _].
+    Qed.
+
+    Local Lemma rtc_cumul_fence_source_marked eid1 eid2 :
+      rtc (cumul_fence E1 rmw1 rf1) eid1 eid2 ->
+      marked E1 eid2 -> marked E1 eid1.
+    Proof.
+      intros Hrtc. induction Hrtc.
+      - intros _. by eapply cumul_fence_source_marked.
+      - done.
+      - intros Hmarked. apply IHHrtc1, IHHrtc2, Hmarked.
+    Qed.
+
+    Lemma prop_mono :
+      rel_included (prop E1 rmw1 rf1 co1) (prop E2 rmw2 rf2 co2).
+    Proof.
+      intros source target Hprop.
+      apply rel_seq_id_on_r in Hprop as [Hprop Hmarked_target].
+      destruct Hprop as (after_cumul & Hbefore_rfe & Hrfe).
+      apply rel_seq_id_on_r in Hbefore_rfe as [Hbefore_cumul Hmarked_after].
+      destruct Hbefore_cumul as (before_cumul & Hbefore_overwrite & Hcumul).
+      apply rel_seq_id_on_l in Hbefore_overwrite as [Hmarked_source Hoverwrite].
+      assert (marked E1 before_cumul) as Hmarked_before.
+      { by eapply rtc_cumul_fence_source_marked. }
+      assert (in_event_structure E1 source) as Hin_source.
+      { destruct Hmarked_source; done. }
+      assert (in_event_structure E1 before_cumul) as Hin_before.
+      { destruct Hmarked_before; done. }
+      assert (in_event_structure E1 after_cumul) as Hin_after.
+      { destruct Hmarked_after; done. }
+      assert (in_event_structure E1 target) as Hin_target.
+      { destruct Hmarked_target; done. }
+      apply rel_seq_id_on_r. split; last by apply marked_mono.
+      exists after_cumul. split.
+      - apply rel_seq_id_on_r. split; last by apply marked_mono.
+        exists before_cumul. split.
+        + apply rel_seq_id_on_l. split; first by apply marked_mono.
+          destruct Hoverwrite as [-> | [Hoverwrite Hext]].
+          * by left.
+          * right. split; first by apply overwrite_mono.
+            by eapply ext_mono.
+        + eapply rtc_mono; [apply cumul_fence_mono | done].
+      - destruct Hrfe as [-> | Hrfe].
+        + by left.
+        + right. by apply rfe_mono.
+    Qed.
+
+  End PropMonotonicity.
+
   (** Linux v6.18: [hb = [Marked] ; (ppo | rfe | ((prop \ id) & int)) ; [Marked]]. *)
   Definition hb (E : event_structure)
       (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : relation :=

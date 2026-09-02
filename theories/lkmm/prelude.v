@@ -57,6 +57,36 @@ Module LkmmPrelude.
     rel_included r1 r2 -> rel_included r2 r3 -> rel_included r1 r3.
   Proof. intros H12 H23 x y Hxy. apply H23, H12, Hxy. Qed.
 
+  Lemma rel_id_on_mono pred1 pred2 :
+    (forall x, pred1 x -> pred2 x) ->
+    rel_included (rel_id_on pred1) (rel_id_on pred2).
+  Proof. intros Hpred x y [-> Hx]. split; [done | by apply Hpred]. Qed.
+
+  Lemma rel_union_mono r1 r2 s1 s2 :
+    rel_included r1 s1 -> rel_included r2 s2 ->
+    rel_included (rel_union r1 r2) (rel_union s1 s2).
+  Proof.
+    intros H1 H2 x y [Hxy | Hxy].
+    - left. by apply H1.
+    - right. by apply H2.
+  Qed.
+
+  Lemma rel_intersection_mono r1 r2 s1 s2 :
+    rel_included r1 s1 -> rel_included r2 s2 ->
+    rel_included (rel_intersection r1 r2) (rel_intersection s1 s2).
+  Proof. intros H1 H2 x y [Hr1 Hr2]. split; [by apply H1 | by apply H2]. Qed.
+
+  Lemma rel_seq_mono r1 r2 s1 s2 :
+    rel_included r1 s1 -> rel_included r2 s2 ->
+    rel_included (rel_seq r1 r2) (rel_seq s1 s2).
+  Proof.
+    intros H1 H2 x z (y & Hxy & Hyz). exists y. split; [by apply H1 | by apply H2].
+  Qed.
+
+  Lemma rel_inverse_mono r1 r2 :
+    rel_included r1 r2 -> rel_included (rel_inverse r1) (rel_inverse r2).
+  Proof. intros Hr x y Hxy. by apply Hr. Qed.
+
   Lemma rel_inverse_involutive r x y :
     rel_inverse (rel_inverse r) x y <-> r x y.
   Proof. done. Qed.

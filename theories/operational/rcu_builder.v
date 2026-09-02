@@ -28,7 +28,6 @@ Module RcuBuilder.
     raw_co : list edge;
     raw_rmw : list edge;
     raw_hb : list edge;
-    raw_prop : list edge;
     raw_pb : list edge
   }.
 
@@ -39,39 +38,34 @@ Module RcuBuilder.
       co_edges := list_to_set r.(raw_co);
       rmw_edges := list_to_set r.(raw_rmw);
       hb := edge_rel r.(raw_hb);
-      prop := edge_rel r.(raw_prop);
       pb := edge_rel r.(raw_pb)
     |}.
 
-  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [] [] [].
+  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (<[ev.(le_id) := ev.(le_event)]> r.(raw_events))
-      r.(raw_rf) r.(raw_co) r.(raw_rmw) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_rf) r.(raw_co) r.(raw_rmw) r.(raw_hb) r.(raw_pb).
 
   Definition add_rf (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) (e :: r.(raw_rf)) r.(raw_co)
-      r.(raw_rmw) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_rmw) r.(raw_hb) r.(raw_pb).
 
   Definition add_co (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) (e :: r.(raw_co))
-      r.(raw_rmw) r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_rmw) r.(raw_hb) r.(raw_pb).
 
   Definition add_rmw (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) (e :: r.(raw_rmw))
-      r.(raw_hb) r.(raw_prop) r.(raw_pb).
+      r.(raw_hb) r.(raw_pb).
 
   Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
-      (e :: r.(raw_hb)) r.(raw_prop) r.(raw_pb).
-
-  Definition add_prop (r : raw_graph) (e : edge) : raw_graph :=
-    RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
-      r.(raw_hb) (e :: r.(raw_prop)) r.(raw_pb).
+      (e :: r.(raw_hb)) r.(raw_pb).
 
   Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
-      r.(raw_hb) r.(raw_prop) (e :: r.(raw_pb)).
+      r.(raw_hb) (e :: r.(raw_pb)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
@@ -81,7 +75,6 @@ Module RcuBuilder.
   | RawStepCo r e : raw_step r (add_co r e)
   | RawStepRmw r e : raw_step r (add_rmw r e)
   | RawStepHb r e : raw_step r (add_hb r e)
-  | RawStepProp r e : raw_step r (add_prop r e)
   | RawStepPb r e : raw_step r (add_pb r e).
 
   Inductive raw_run : raw_graph -> raw_graph -> Prop :=
@@ -120,19 +113,21 @@ Module RcuBuilder.
       + intros edge Hedge. done.
       + unfold rel_included, edge_rel. done.
       + unfold rel_included, edge_rel. done.
-      + unfold rel_included, edge_rel. done.
       + apply rcu_rscsi_tail_mono. done.
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+    - constructor; simpl; try unfold event_structure_included, rel_included;
+        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+    - constructor; simpl; try unfold event_structure_included, rel_included;
+        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+    - constructor; simpl; try unfold event_structure_included, rel_included;
+        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+    - constructor; simpl; try unfold event_structure_included, rel_included;
+        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
-        solve [intros; assumption | intros; right; assumption | set_solver].
-    - constructor; simpl; try unfold rel_included; try unfold edge_rel;
+    - constructor; simpl; try unfold event_structure_included, rel_included;
+        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
   Qed.
 
@@ -164,7 +159,7 @@ Module RcuBuilder.
     optional (graph_po G) k.(lc_source) k.(lc_optional_po) /\
     rtc G.(hb) k.(lc_optional_po) k.(lc_after_hb) /\
     rtc G.(pb) k.(lc_after_hb) k.(lc_after_pb) /\
-    G.(prop) k.(lc_after_pb) k.(lc_after_prop) /\
+    graph_prop G k.(lc_after_pb) k.(lc_after_prop) /\
     graph_po G k.(lc_after_prop) k.(lc_target).
 
   Lemma rcu_link_commitment_sound G k :
@@ -196,7 +191,7 @@ Module RcuBuilder.
     - eapply optional_mono; [by eapply graph_le_po | done].
     - eapply rtc_mono; [by eapply graph_le_hb | done].
     - eapply rtc_mono; [by eapply graph_le_pb | done].
-    - by eapply graph_le_prop.
+    - by eapply graph_prop_mono.
     - by eapply graph_le_po.
   Qed.
 
@@ -243,9 +238,11 @@ Module RcuBuilder.
     ~ rb (graph_of_raw empty_raw) x y.
   Proof.
     intros Hrb. unfold rb in Hrb.
-    apply rel_seq_id_on_r in Hrb as [Hprefix _].
-    destruct Hprefix as (c & (b & (a & Hprop & _) & _) & _).
-    inversion Hprop.
+    apply rel_seq_id_on_r in Hrb as [_ Hmarked].
+    unfold graph_marked, graph_of_raw, empty_raw in Hmarked. cbn in Hmarked.
+    destruct Hmarked as [Hin _].
+    apply in_event_structure_lookup_iff in Hin as (ev & Hlookup).
+    inversion Hlookup.
   Qed.
 
   Lemma initial_builder_invariant :

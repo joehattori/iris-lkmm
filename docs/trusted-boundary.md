@@ -5,7 +5,7 @@ For the feasibility prototype, the trusted boundary includes:
 - the manual reading and transcription of the cited Linux v6.18 CAT/Bell
   definitions;
 - the input graph's finite canonical event map, finite candidate `rf`, `co`,
-  and `rmw` edges, and abstract `hb`, `prop`, and `pb` relations;
+  and `rmw` edges, and abstract `hb` and `pb` relations;
 - the claim that the small instruction language represents the intended
   client operations;
 - propositional excluded middle in the finite candidate completeness proof,
@@ -22,7 +22,8 @@ the recursive/independent-chain equivalence, the generic
 list/counter characterization, operational event integrity, and the
 snapshot-to-chain refinement conditional on explicit `rcu-link` witnesses.
 It also checks monotonicity of the RCU graph relations, persistence and
-soundness of incremental link commitments, the `rb` monitor invariant,
+soundness of incremental link commitments, monotonicity of derived propagation,
+the `rb` monitor invariant,
 irreflexivity for every builder run, and finite candidate scheduling
 completeness.  The coupled layer checks program-machine projection,
 program-scoped soundness/completeness, reader-stack uniqueness, and the

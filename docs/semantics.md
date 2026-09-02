@@ -34,9 +34,10 @@ sufficient to take the finish transition.  Neither theorem invokes
 
 `execution_graph.v` defines the RCU-independent feasibility graph containing
 canonical events, finite candidate `rf`, `co`, and `rmw` edge sets, and abstract
-`hb`, `prop`, and `pb` relations.  It is a minimal shared graph view, not yet the
-final LKMM candidate-execution type.  `rcu_graph.v` adds the normal-RCU
-classifications and consistency condition.
+`hb` and `pb` relations.  Its `prop` relation is derived from the canonical events
+and finite candidate edges.  It is a minimal shared graph view, not yet the final
+LKMM candidate-execution type.  `rcu_graph.v` adds the normal-RCU classifications
+and consistency condition.
 
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
@@ -66,7 +67,8 @@ and closed-section cache agree with the canonical stack matcher.
 `graph_of_state` uses the machine's canonical event map directly.  Program
 order, GP classification, `Marked`, and inverse critical-section matching are
 derived from that map; the finite `rf`, `co`, and `rmw` candidates and abstract
-`hb`, `prop`, and `pb` relations are supplied by the `abstract_relations` parameter.
+`hb` and `pb` relations are supplied by the `abstract_relations` parameter.
+Propagation is derived from the event map and candidate `rf`, `co`, and `rmw` edges.
 
 `certificate_covers s cert cs` says that:
 
@@ -90,14 +92,14 @@ construction is handled by the graph builder below.
 ## Incremental graph builder
 
 `rcu_builder.v` represents the finite graph as a canonical event map and
-explicit `rf`, `co`, `rmw`, `hb`, `prop`, and `pb` edge lists.  A raw mutation
+explicit `rf`, `co`, `rmw`, `hb`, and `pb` edge lists.  A raw mutation
 adds exactly one of:
 
 - a fresh canonical event at a per-agent tail position; or
-- one `rf`, `co`, `rmw`, `hb`, `prop`, or `pb` edge.
+- one `rf`, `co`, `rmw`, `hb`, or `pb` edge.
 
-Program order and RCU matching are recomputed from the event map and are not
-builder transitions.
+Program order, propagation, and RCU matching are derived from the graph and are
+not builder transitions.
 
 A `rcu_link_commitment` records all four intermediate events witnessing
 `po? ; hb* ; pb* ; prop ; po`.  `rcu_link_commitment_sound` proves that a
@@ -124,7 +126,7 @@ Consequently, `completed_builder_run_rb_irreflexive` proves
 ## Independent candidates and finite scheduling
 
 `finite_candidate` is a declarative record of event-ID/canonical-event pairs
-and six edge lists.  It contains no operational state,
+and five edge lists.  It contains no operational state,
 delta, transition list, or schedule.  `candidate_well_formed` requires unique
 event identifiers, canonical per-agent ordering, `event_structure_wf`,
 complete RCU matching, and relation endpoints in the event set.
@@ -202,7 +204,8 @@ the operational theorem and Iris update directly.
 
 - Reads and writes emit labels but do not yet choose values or construct
   memory-relation edges.  The graph and candidate layers can carry finite
-  `rf` edges, but do not yet validate them or use them to derive `prop`.
+  `rf`, `co`, and `rmw` edges and derive `prop` from them, but do not yet
+  generate or validate those candidate edges.
 - The coupled `minimal_program_graph` covers the gate language's canonical
   events and computed RCU sections.  It is not the future full LKMM-Core
   `ProgramGraph`, which must also cover values, reads-from, coherence,
