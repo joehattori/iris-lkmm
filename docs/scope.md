@@ -35,5 +35,7 @@ The separate LKMM-Core milestone now includes finite structured programs,
 register-origin dependency provenance, memory and RMW event generation, a
 base-only `core_candidate`, and the declarative `program_graph` relation.
 `lkmm_consistent` derives the selected relational consistency constraints from
-that candidate.  This layer is not yet connected to the incremental builder,
-the Iris WP, or a source language.
+that candidate.  `lkmm_machine.v` adds Core-driven execution with normal-RCU
+snapshot waiting, a projection into Core runs, and reader/certificate safety
+proofs.  This machine is not yet connected to the incremental builder,
+the Iris WP, or a source language; the existing gate machine remains separate.

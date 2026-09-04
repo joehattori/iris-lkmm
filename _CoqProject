@@ -12,6 +12,7 @@ theories/lkmm/rcu_obligations.v
 theories/lang/lkmm_lang.v
 theories/lang/lkmm_core.v
 theories/lang/program_graph.v
+theories/operational/lkmm_machine.v
 theories/operational/rcu_machine.v
 theories/operational/rcu_machine_safety.v
 theories/operational/rcu_refinement.v

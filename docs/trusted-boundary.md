@@ -38,6 +38,11 @@ Rocq also checks LKMM-Core event allocation, exact RMW/dependency agreement in
 `program_graph`, and all relational well-formedness conditions for an accepted
 core candidate.  The program run generates RMW and dependency relations; `rf`
 and `co` remain finite candidate choices rather than trusted program inputs.
+For the Core-driven RCU machine, Rocq checks run projection into Core,
+absence of unmatched unlocks, preservation of completed-section witnesses,
+and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
+uses the canonical matcher.  These results do not yet connect the new machine
+to the builder's consistency invariant or to the existing Iris bridge.
 The finite adjacent-unmatched Bell iteration remains a manual Rocq
 transcription; its regression agrees with the stack matcher, but this is not
 a verified CAT interpreter.  Rocq does **not** establish equivalence with CAT

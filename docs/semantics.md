@@ -38,6 +38,39 @@ normal-RCU consistency over an adapter whose `hb` and `pb` are derived from the
 candidate's dependency edges.  The existing abstract-`hb`/`pb` feasibility
 graph remains intact for the already-proved gate results.
 
+## Core-driven RCU machine
+
+`operational/lkmm_machine.v` executes LKMM-Core with the gate's snapshot-based
+RCU waiting protocol.  Its state contains the Core execution state, a finite
+map of pending grace-period snapshots, and completion certificates.  Open
+reader stacks and completed sections are obtained from the canonical matcher
+over the generated events; they are not independently maintained caches.
+
+Ordinary instructions reuse `core_step`, including silent control-flow steps,
+register provenance, and two-event RMW emission.  RCU lock and unlock steps
+emit the corresponding Core events, with unlock requiring a nonempty reader
+stack for that agent.  Synchronization begins by capturing all currently
+unmatched lock IDs, without advancing Core execution.  It finishes only after
+each captured lock has a matched unlock, then emits Core's synchronization
+event and records a certificate.  A pending agent can only finish its GP;
+other agents may continue, without changing that agent's snapshot.  An empty
+snapshot is still a pending GP and must take its finish step.
+
+`run_core_projection` erases GP-begin actions and proves that every machine
+run projects to a Core run.  `run_rcu_safety` proves the absence of unmatched
+unlocks and the persistence of closed-section witnesses for every completed
+certificate.  `completed_snapshot_clear` proves that captured readers of
+completed GPs are absent from the current open-reader snapshot.  Completion
+also requires all Core threads to finish, no pending GPs, and complete RCU
+matching; execution prefixes may still contain open readers.
+
+This is an event-generating operational component, not yet the full LKMM
+operational semantics.  It does not choose `rf` or `co`, enforce memory-model
+consistency, or replace the gate's coupled machine, builder, and Iris bridge.
+Core's declarative trace semantics and `program_graph` remain unchanged.
+
+## Gate machine waiting protocol
+
 Each ordinary instruction appends a fresh event.  Lock events are pushed onto
 a per-agent stack; unlock events pop the stack and append a matched critical
 section.  This handles nested read-side sections syntactically, without alias
