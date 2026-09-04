@@ -4,7 +4,39 @@ The prototype language has fixed agents and five instructions: `read`,
 `write`, `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu`.
 Its syntax and canonical event-label translation live in `lkmm_lang.v`; the
 operational state and transitions in `rcu_machine.v` consume that language.
-It is intentionally smaller than the planned LKMM-Core language.
+It remains intentionally smaller than the LKMM-Core language in
+`lkmm_core.v`.
+
+## LKMM-Core and concrete program graphs
+
+`lkmm_core.v` adds a separate finite, loop-free language with registers,
+structured sequencing and conditionals, memory accesses, RMW operations,
+fences, and normal-RCU operations.  Expressions evaluate to an integer and
+the set of read-event origins that contributed to it.  Those origins generate
+the finite direct address, data, and control dependency relations; an active
+structured-control frame contributes only while its selected branch executes.
+
+The core small-step machine assigns every emitted event a fresh global ID and
+a fresh per-agent index.  Loads and RMW reads nondeterministically choose an
+observed value.  Successful RMWs emit their marked read and write together and
+record the pairing; failed `cmpxchg` emits only its marked read.  Initial writes
+are generated from the finite initial-memory map in ascending location order.
+The allocation invariant proves unique per-agent positions and globally fresh
+event IDs for every core run.
+
+`program_graph.v` defines the base-only `core_candidate` and the declarative
+`program_graph` relation.  A program graph contains a complete core run whose
+events, RMW pairs, and direct dependencies exactly equal the candidate fields.
+The candidate's `rf` and `co` relations are not machine state: they range over
+all finite choices satisfying their relational well-formedness predicates.
+This connects nondeterministically observed read values to writes while still
+allowing future writes to justify earlier observations.
+
+`lkmm_consistent` is deliberately separate from `program_graph`.  It conjoins
+coherence, atomicity, happens-before acyclicity, propagation acyclicity, and
+normal-RCU consistency over an adapter whose `hb` and `pb` are derived from the
+candidate's dependency edges.  The existing abstract-`hb`/`pb` feasibility
+graph remains intact for the already-proved gate results.
 
 Each ordinary instruction appends a fresh event.  Lock events are pushed onto
 a per-agent stack; unlock events pop the stack and append a matched critical
@@ -202,14 +234,13 @@ the operational theorem and Iris update directly.
 
 ## Deliberate limitations
 
-- Reads and writes emit labels but do not yet choose values or construct
-  memory-relation edges.  The graph and candidate layers can carry finite
-  `rf`, `co`, and `rmw` edges and derive `prop` from them, but do not yet
-  generate or validate those candidate edges.
-- The coupled `minimal_program_graph` covers the gate language's canonical
-  events and computed RCU sections.  It is not the future full LKMM-Core
-  `ProgramGraph`, which must also cover values, reads-from, coherence,
-  dependencies, and RMW behavior.
+- The feasibility-gate machine still emits only its five minimal labels.  The
+  separate LKMM-Core machine handles values, generated RMW pairs, and direct
+  dependency provenance but is not yet integrated with the incremental graph
+  builder or Iris WP.
+- `program_graph` accepts finite well-formed `rf` and `co` choices; it does not
+  compute a single choice from the program.  Quantification over candidates is
+  therefore required when stating a property for every allowed execution.
 - The completeness proof uses propositional excluded middle to partition an
   `rb` relation into old and new pairs.  A reflected finite checker could
   later replace this classical proof step.

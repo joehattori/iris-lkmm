@@ -29,25 +29,42 @@ CAT restricted identities `[S]` are represented uniformly by
 | `linux-kernel.cat:97-103` | `A-cumul`, `rmw-sequence`, `cumul-fence`, and `prop` | `a_cumul`, `rmw_sequence`, `cumul_fence`, `prop` | Direct relational translation using restricted identities, optional relations, and reflexive-transitive closures. `ext` is the complement of `same_agent`; the lock-only `po-unlock-lock-po` branch is omitted. |
 | `linux-kernel.cat:105-110` | `hb` and `acyclic hb as happens-before` | `hb`, `happens_before` | Uses `same_agent` for `int`; the internal `prop` branch removes identity edges before contributing to happens-before. |
 | `linux-kernel.cat:112-118` | `pb` and `acyclic pb as propagation` | `pb`, `propagation` | Direct composition of `prop`, `strong_fence`, the reflexive-transitive closure of `hb`, and a final `Marked` restriction. |
-| `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `LMemory` with the corresponding `access_kind` and `access_mode` | `smp_store_mb` will generate an `ONCE` write followed by an `MB` barrier when the language layer is added. |
+| `linux-kernel.def:9-17` | `READ_ONCE`, `WRITE_ONCE`, release/acquire accesses, and `smp_store_mb` | `SLoad`, `SStore`, and `smp_store_mb` | LKMM-Core emits `LMemory` events with the corresponding access modes; `smp_store_mb` elaborates to an ONCE store followed by an MB fence. |
 | `linux-kernel.def:20-22` | `smp_mb`, `smp_rmb`, and `smp_wmb` | `BarrierMb`, `BarrierRmb`, `BarrierWmb` | Direct barrier constructors. |
-| `linux-kernel.def:23-24` | `smp_mb__before_atomic` and `smp_mb__after_atomic` | `BarrierBeforeAtomic`, `BarrierAfterAtomic` | Direct barrier constructors; program-layer generation remains deferred. |
-| `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `RmwMarked` memory events with the corresponding `access_mode` | The `rmw` relation pairs the read and write of a successful operation; a failed conditional RMW has only its marked read event. |
-| `linux-kernel.def:47-50` | `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu` | `BarrierRcuLock`, `BarrierRcuUnlock`, `BarrierSyncRcu` | Direct normal-RCU barrier constructors. `synchronize_rcu_expedited` has the same upstream tag but remains outside the selected language. |
-| `linux-kernel.def:66-70` | examples of non-returning atomic RMW operations | `AccessNoreturn`, `noreturn` | Records the syntactic annotation and applies Bell's semantic exclusion of writes. |
+| `linux-kernel.def:23-24` | `smp_mb__before_atomic` and `smp_mb__after_atomic` | `SFence FenceBeforeAtomic`, `SFence FenceAfterAtomic` | LKMM-Core emits the corresponding barrier event. |
+| `linux-kernel.def:31-38` | relaxed, acquire, release, and full-barrier `xchg`/`cmpxchg` | `SXchg`, `SCmpxchg` | A successful operation emits paired marked events; failed `cmpxchg` emits only its marked read. |
+| `linux-kernel.def:47-50` | `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu` | `SRcuReadLock`, `SRcuReadUnlock`, `SSynchronizeRcu` | Direct normal-RCU instructions. `synchronize_rcu_expedited` remains outside the selected language. |
+| `linux-kernel.def:66-70` | examples of non-returning atomic RMW operations | `SAtomicNoReturn`, `AccessNoreturn`, `noreturn` | The core instruction emits a paired update; Bell's semantic class excludes its write endpoint. |
 
 Initial writes are represented explicitly by `EInitWrite`.  Locations are
 abstract natural-number identifiers and values are mathematical integers;
 machine-word overflow is not modeled at this layer.  Unannotated memory
 accesses use `AccessPlain`; compiler `barrier`, lock operations, and SRCU have
 no constructors.  Before/after-atomic barriers are represented in the
-relational vocabulary, while program-layer generation remains deferred.
+relational vocabulary and LKMM-Core.
 Address, data, and control dependencies are graph relations, not event labels;
 `direct_addr`, `direct_data`, and `direct_ctrl` expose their finite provenance
 edge sets through relational views.
 
 The existing feasibility kernel retains its five-label graph vocabulary until
 the later RCU compatibility-view commit.
+
+## LKMM-Core program correspondence
+
+`theories/lang/lkmm_core.v` gives the selected operations a finite,
+register-based program syntax and nondeterministic small-step semantics.  A
+register value carries the read-event origins that produced it, so address,
+stored-value, atomic-argument, and structured-control dependencies are emitted
+as explicit direct edges.  Successful RMW instructions emit adjacent marked
+read/write events and their pairing in one transition; failed `cmpxchg` emits
+only the marked read.
+
+`theories/lang/program_graph.v` relates a complete run to one `core_candidate`.
+Events, RMW pairs, and direct dependencies must equal the generated fields.
+`rf` and `co` remain finite candidate choices constrained by `rf_wf` and
+`co_wf`; `lkmm_consistent` applies the selected CAT constraints separately.
+The adapter to the feasibility RCU kernel derives `hb` and `pb` from the same
+candidate rather than accepting them as additional core-candidate fields.
 
 ## Canonical event structures and program order
 
@@ -80,9 +97,9 @@ The feasibility kernel uses this canonical `po` directly from its event map.
 and `direct_ctrl` provenance as three distinct finite edge sets.  Their
 well-formedness predicates require a program-order source read and
 respectively a memory, write, or write target.  Edge membership records
-provenance explicitly; the later LKMM-Core program-graph correspondence must
-justify that provenance from syntactic data and control flow rather than
-reconstructing it by alias analysis.
+provenance explicitly.  LKMM-Core generates those edges from register origins,
+address/value evaluation, and structured control flow rather than
+reconstructing them by alias analysis.
 
 The public `addr`, `data`, and `ctrl` relations are the extended Bell views,
 each prepending `carry_dep = (direct_data ; rfi)*` to the corresponding direct
@@ -164,9 +181,9 @@ The predicate `rmw_wf` makes this pairing functional and injective, and
 requires every marked write to have a read partner.  It deliberately does not
 require every marked read to have a write partner, so a lone marked read can
 represent a failed conditional RMW.  The event vocabulary does not retain the
-operation or operand needed to validate the written value, nor does it
-distinguish conditional from unconditional RMW syntax; those checks belong to
-the later LKMM-Core program-graph correspondence.
+operation or operand needed to validate the written value.  LKMM-Core retains
+that information while executing and requires its generated pairing to equal
+the candidate `rmw` field.
 
 The separate `atomicity` consistency predicate rejects an `rmw` edge when its
 read-to-write endpoints are also related by `fre ; coe`; it is not folded into

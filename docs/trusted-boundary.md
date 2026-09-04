@@ -8,6 +8,9 @@ For the feasibility prototype, the trusted boundary includes:
   and `rmw` edges, and abstract `hb` and `pb` relations;
 - the claim that the small instruction language represents the intended
   client operations;
+- the mapping from LKMM-Core constructors to the selected Linux v6.18
+  operations, pending differential testing and a later source-to-core
+  refinement;
 - propositional excluded middle in the finite candidate completeness proof,
   used only to partition successor `rb` pairs into already-seen and new
   pairs.  The builder soundness theorem is constructive and closed under
@@ -31,8 +34,12 @@ snapshot-clear premise for completed GP certificates.  Iris checks exclusive
 reader entry/exit, registered pending/done GP transitions, monotone epoch
 advancement, persistence of completion certificates, arbitrary-frame
 preservation, and the direct completed-machine-GP reclamation rule.
+Rocq also checks LKMM-Core event allocation, exact RMW/dependency agreement in
+`program_graph`, and all relational well-formedness conditions for an accepted
+core candidate.  The program run generates RMW and dependency relations; `rf`
+and `co` remain finite candidate choices rather than trusted program inputs.
 The finite adjacent-unmatched Bell iteration remains a manual Rocq
 transcription; its regression agrees with the stack matcher, but this is not
 a verified CAT interpreter.  Rocq does **not** establish equivalence with CAT
-syntax, construct the abstract memory relations, establish correspondence
-with Linux C, show `herd7` agreement, or prove full Iris WP adequacy.
+syntax, select a unique `rf` or `co` relation, establish correspondence with
+Linux C, show `herd7` agreement, or prove full Iris WP adequacy.

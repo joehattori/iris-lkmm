@@ -29,4 +29,11 @@ excludes values, locations, graph-level `fr`, barriers, dependencies, RMW
 instruction semantics, SRCU, locks, the full LKMM consistency predicate, Iris
 WP/adequacy, and the `percpu_ref` case study.
 The coupled theorem is the gate-language result, not yet the final full
-LKMM-Core `ProgramGraph` theorem.
+LKMM-Core operational soundness/completeness theorem.
+
+The separate LKMM-Core milestone now includes finite structured programs,
+register-origin dependency provenance, memory and RMW event generation, a
+base-only `core_candidate`, and the declarative `program_graph` relation.
+`lkmm_consistent` derives the selected relational consistency constraints from
+that candidate.  This layer is not yet connected to the incremental builder,
+the Iris WP, or a source language.
