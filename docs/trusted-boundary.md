@@ -28,11 +28,9 @@ It also checks monotonicity of the RCU graph relations, persistence and
 soundness of incremental link commitments, monotonicity of derived propagation,
 the `rb` monitor invariant,
 irreflexivity for every builder run, and finite candidate scheduling
-completeness.  The gate machine separately proves reader-stack uniqueness and
-the snapshot-clear premise for completed GP certificates.  Iris checks
-exclusive reader entry/exit, registered pending/done GP transitions, monotone epoch
-advancement, persistence of completion certificates, arbitrary-frame
-preservation, and the direct completed-machine-GP reclamation rule.
+completeness.  Iris checks exclusive reader entry/exit, registered pending/done
+GP transitions, monotone epoch advancement, persistence of completion
+certificates, and arbitrary-frame preservation.
 Rocq also checks LKMM-Core event allocation, exact RMW/dependency agreement in
 `program_graph`, and all relational well-formedness conditions for an accepted
 core candidate.  The program run generates RMW and dependency relations; `rf`
@@ -45,9 +43,21 @@ to the builder's RCU consistency invariant.  Every reachable committed event
 and RMW pair comes from the machine; completion requires exact agreement.
 Its scheduling theorem assumes an existing complete snapshot-machine run
 and inherits the candidate scheduler's excluded-middle dependency.  Its
-soundness proof adds no axioms.  The builder still supplies abstract `hb`/`pb`
-and does not enforce `rf_wf`/`co_wf` or full LKMM consistency.  The Core-aware
-coupling is not yet connected to the existing Iris bridge.
+soundness proof adds no axioms.  `coupled_run_program_graph` proves the
+`program_graph` connection under explicit `rf`/`co`/`rmw` and direct-dependency
+well-formedness premises.  These are obligations for callers, not new axioms
+or transition guards; their general derivation from execution is not claimed.
+RCU consistency transfers to the extracted candidate only under explicit
+inclusion of its derived `hb`/`pb` in the builder's abstract relations.  The
+builder still does not enforce full LKMM consistency.
+
+`lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
+Core-driven GP certificates, including certificates in coupled executions.
+The reclamation rules require authoritative ownership of the current open
+readers and a registered pending-GP token for the captured snapshot.  They do
+not manufacture either from a pure certificate.  No per-step ghost-state
+interpretation or full WP adequacy is established by this bridge.
+
 The finite adjacent-unmatched Bell iteration remains a manual Rocq
 transcription; its regression agrees with the stack matcher, but this is not
 a verified CAT interpreter.  Rocq does **not** establish equivalence with CAT

@@ -66,9 +66,10 @@ matching; execution prefixes may still contain open readers.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model
-consistency, or replace the gate's Iris bridge.  `lkmm_coupled.v` connects it
-to the existing incremental builder as described below.  Core's declarative
-trace semantics and `program_graph` remain unchanged.
+consistency, or maintain Iris resources.  `lkmm_coupled.v` connects it to the
+incremental builder; `lkmm_machine_ghost.v` connects completed GP certificates
+to the Iris completion update, as described below.  Core's declarative trace
+semantics and `program_graph` remain unchanged.
 
 ## Gate machine waiting protocol
 
@@ -250,11 +251,22 @@ The proof may execute the machine first and then commit the graph.  Neither
 the initial state nor the step rules contain the candidate.  This does not
 prove that every consistent `program_graph` admits a snapshot-machine run.
 
-The coupled result is not full LKMM operational soundness: the builder does
-not validate `rf_wf`/`co_wf`, commit the generated dependency sets, derive
-`hb`/`pb`, or enforce the non-RCU consistency constraints.  The independent
-`program_graph` and `lkmm_consistent` interfaces remain the targets for that
-later integration.
+`coupled_candidate` extracts the builder's events and finite `rf`/`co`/`rmw`
+sets together with the machine's generated direct dependencies.
+`coupled_run_program_graph` proves that a completed coupled run yields a
+`program_graph` when `coupled_program_graph_obligations` holds: well-formed
+`rf`, `co`, `rmw`, and the three direct dependency relations.  Event-structure
+well-formedness and complete RCU matching follow from the run and completion,
+rather than additional premises.  These obligations are not transition guards.
+
+`coupled_candidate_rcu_consistent` transfers the builder's RCU consistency to
+the candidate's canonical RCU view when its derived `hb` and `pb` are included
+in the builder's abstract relations.  Their equality is sufficient but not
+required.  The coupled result is not full LKMM operational soundness: general
+RMW/dependency well-formedness invariants, validation of `rf`/`co`, coverage of
+derived `hb`/`pb`, and the non-RCU consistency constraints remain separate
+proof obligations.  No theorem yet derives `lkmm_consistent` from an arbitrary
+completed coupled run.
 
 ## Iris reader and grace-period protocol
 
@@ -273,19 +285,26 @@ current open domain, updates the registered GP entry to done, advances the
 MaxNat epoch, and returns a persistent certificate.  `rcu_gp_finish_frame`
 proves the update while preserving an arbitrary client resource `R`.
 
-`rcu_machine_safety.v` proves that reachable stacks have globally unique
-reader IDs and are disjoint from completed sections.  Therefore every stored
-machine GP certificate satisfies the exact snapshot/current-open
-disjointness premise used by the Iris rule.
-`completed_machine_gp_reclamation_frame` in `rcu_machine_ghost.v` composes
-the operational theorem and Iris update directly.
+`lkmm_machine_ghost.v` defines `open_reader_map` from the Core-driven machine's
+current canonical snapshot.  `completed_certificate_enables_iris_finish`
+converts `completed_snapshot_clear` into disjointness between a completed GP's
+captured set and that map's domain.  `completed_machine_gp_reclamation_frame`
+and `completed_coupled_gp_reclamation_frame` compose this fact with the Iris
+update, preserving an arbitrary client frame.  A completed GP certificate is
+enough; the whole program need not have finished, and later readers may remain
+active.
+
+Both rules require ownership of the authoritative current-open map and the
+registered pending-GP token for the captured snapshot.  A machine certificate
+does not create those resources.  A ghost-state interpretation maintained by
+all execution steps, primitive WP rules, and adequacy remain to be developed.
 
 ## Deliberate limitations
 
 - The feasibility-gate machine still emits only its five minimal labels.  The
   separate LKMM-Core machine handles values, generated RMW pairs, and direct
-  dependency provenance but is not yet integrated with the incremental graph
-  builder or Iris WP.
+  dependency provenance.  Its builder and Iris completion bridges do not yet
+  supply a full LKMM operational soundness theorem or Iris WP.
 - `program_graph` accepts finite well-formed `rf` and `co` choices; it does not
   compute a single choice from the program.  Quantification over candidates is
   therefore required when stating a property for every allowed execution.

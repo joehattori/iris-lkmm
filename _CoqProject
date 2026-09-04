@@ -14,12 +14,11 @@ theories/lang/lkmm_core.v
 theories/lang/program_graph.v
 theories/operational/lkmm_machine.v
 theories/operational/rcu_machine.v
-theories/operational/rcu_machine_safety.v
 theories/operational/rcu_refinement.v
 theories/operational/rcu_builder.v
 theories/operational/rcu_candidate.v
 theories/operational/lkmm_coupled.v
 theories/logic/rcu_ghost.v
-theories/logic/rcu_machine_ghost.v
+theories/logic/lkmm_machine_ghost.v
 theories/examples/rcu_gate.v
 theories/examples/rcu_ghost_gate.v

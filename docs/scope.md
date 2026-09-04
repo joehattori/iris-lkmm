@@ -20,7 +20,9 @@ candidate scheduling theorems.
 The Iris feasibility scope includes exclusive reader tokens, authoritative
 pending/done GP registrations, a MaxNat completion epoch, a framed
 reclamation update, and a proved bridge from completed machine certificates
-to that update's snapshot-clear premise.
+to that update's snapshot-clear premise.  This bridge applies to Core-driven
+machine and coupled runs, with explicit authoritative ownership and a
+registered pending-GP token.
 
 The incremental prototype includes fixed concurrent agents and the five
 gate-language instructions.  It carries finite `rf`, `co`, and `rmw`
@@ -38,7 +40,12 @@ snapshot waiting, a projection into Core runs, and reader/certificate safety
 proofs.  `lkmm_coupled.v` connects this machine to the incremental RCU builder
 with generated-event/RMW provenance guards and exact agreement at completion.
 It proves Core-run projection, RCU consistency, snapshot safety, and relative
-scheduling for candidates backed by complete snapshot-machine runs.  Builder
-`rf`/`co` well-formedness, dependency commitment, derived `hb`/`pb`, full LKMM
-operational soundness/completeness, and the Iris/source-language connections
-remain outside this coupling.  The existing gate machine remains separate.
+scheduling for candidates backed by complete snapshot-machine runs.
+`coupled_run_program_graph` connects completed runs to `program_graph` under
+explicit relation well-formedness obligations.  The extracted candidate uses
+machine-generated direct dependencies; the builder does not commit those
+sets.  RCU consistency transfers to the candidate when the builder covers its
+derived `hb`/`pb`.  Discharging these obligations generally, full LKMM
+operational soundness/completeness, Iris WP/adequacy, and source-language
+refinement remain outside this coupling.  The existing gate machine remains
+separate.

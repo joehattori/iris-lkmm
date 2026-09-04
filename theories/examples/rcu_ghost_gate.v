@@ -1,10 +1,13 @@
+From Stdlib Require Import List.
 From stdpp Require Import fin_map_dom gmap sets.
 From iris.base_logic Require Import invariants.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.logic Require Import rcu_ghost.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost.
+Import ListNotations.
 
 Module RcuGhostGateExamples.
-  Import RcuGhost.
+  Import RcuGhost LkmmMachine LkmmCoupled LkmmMachineGhost.
 
   Section lifecycle.
     Context `{!rcuG Σ}.
@@ -49,6 +52,38 @@ Module RcuGhostGateExamples.
       change (rcu_auth γ reader0_closed gp7_done_map 1) with "Hauth".
       iModIntro. iExists γ. rewrite /lifecycle_result.
       iFrame "Hauth". iExact "Hdone".
+    Qed.
+
+    (** A later reader remains active when the captured nested readers finish.
+        The coupled GP certificate justifies completion without consuming that
+        later reader's token or requiring the whole program to finish. *)
+    Example coupled_gp_preserves_later_reader :
+      exists actions s,
+        coupled_run MachineTests.program (initial_coupled MachineTests.program) actions s /\
+        In (GpCertificate 6 [2; 1]) s.(coupled_machine).(gp_certificates) /\
+        open_readers s.(coupled_machine) 2 = [4] /\
+        forall γ gps epoch gid start,
+          rcu_auth γ (open_reader_map s.(coupled_machine)) gps epoch ∗
+            gp_pending γ gid (list_to_set [2; 1]) start ∗ reader_token γ 4 ==∗
+          rcu_auth γ (open_reader_map s.(coupled_machine))
+              (<[gid := GpDone (list_to_set [2; 1]) start (S epoch)]> gps) (S epoch) ∗
+            gp_done γ gid (list_to_set [2; 1]) start (S epoch) ∗ reader_token γ 4.
+    Proof.
+      destruct MachineTests.nested_snapshot_waiting as
+        (waiting & finished & final & Hprefix & _ & _ & _ & _ & Hgp & _ & Hlate & Hcerts & _).
+      pose proof (lift_machine_run _ _ _ _
+        (initial_coupled MachineTests.program).(coupled_builder) Hprefix) as Hprefix_lift.
+      pose proof (lift_machine_run _ _ _ _
+        (initial_coupled MachineTests.program).(coupled_builder) Hgp) as Hgp_lift.
+      pose proof (coupled_run_trans _ _ _ _ _ _ Hprefix_lift Hgp_lift) as Hrun.
+      eexists _, (CoupledState finished
+        (initial_coupled MachineTests.program).(coupled_builder)).
+      split_and!; try done.
+      - simpl. rewrite Hcerts. by left.
+      - intros γ gps epoch gid start.
+        eapply completed_coupled_gp_reclamation_frame
+          with (cert := GpCertificate 6 [2; 1]); first exact Hrun.
+        simpl. rewrite Hcerts. by left.
     Qed.
 
   End lifecycle.

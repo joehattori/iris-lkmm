@@ -28,7 +28,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 | Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
 | Can program execution be coupled to delayed builder commitments? | `LkmmCoupled.coupled_operational_soundness` proves complete Core-run projection, exact event/RMW agreement, RCU consistency, allocation well-formedness, and reader/certificate safety. `consistent_program_candidate_is_schedulable` proves relative scheduling given a complete snapshot-machine run with matching events and RMW pairs. | **Pass.** |
 | Does the operational state support a compositional Iris reclamation rule? | `rcu_ghost.v` gives readers exclusive ghost-map entries, registers immutable GP snapshots, and advances an authoritative MaxNat epoch on completion. `rcu_gp_finish_frame` preserves an arbitrary client frame and returns a persistent done certificate. | **Pass.** |
-| Is the Iris completion premise related to actual completed machine GPs? | `machine_run_stack_safe` proves unique open IDs and disjoint open/closed sections. `completed_run_certificate_enables_iris_finish` derives snapshot/current-open disjointness. `completed_machine_gp_reclamation_frame` composes that fact directly with the framed Iris update. | **Pass.** |
+| Is the Iris completion premise related to actual completed machine GPs? | `completed_certificate_enables_iris_finish` derives snapshot/current-open disjointness from Core-driven machine runs. `completed_coupled_gp_reclamation_frame` connects coupled GP certificates to the framed Iris update, given authoritative ownership and a registered pending-GP token. | **Pass.** |
 
 ## Why the result is non-vacuous
 
@@ -81,7 +81,14 @@ commitment, but normal RCU does not force that pivot.
   can later remove the classical dependency.
 - Coupled scheduling assumes a complete Core-driven snapshot-machine run.
   It does not prove that every consistent `program_graph` admits such a run.
-  The Iris bridge still uses the separate five-instruction gate machine.
+- `coupled_run_program_graph` requires explicit well-formedness obligations
+  for `rf`, `co`, `rmw`, and direct dependencies.  Transferring RCU consistency
+  to the candidate's derived view additionally requires its `hb`/`pb` to be
+  included in the builder's abstract relations.  Neither bridge establishes
+  full LKMM consistency.
+- The Iris bridge uses Core-driven machine and coupled runs, but its
+  authoritative state and pending-GP token are explicit resource premises.
+  There is not yet a ghost-state interpretation maintained by every step.
 - Grace-period liveness remains out of scope.
 - Full WP adequacy, full LKMM operational soundness/completeness, litmus
   differential testing, and the `percpu_ref` case study are next-phase work,
