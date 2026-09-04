@@ -28,10 +28,9 @@ It also checks monotonicity of the RCU graph relations, persistence and
 soundness of incremental link commitments, monotonicity of derived propagation,
 the `rb` monitor invariant,
 irreflexivity for every builder run, and finite candidate scheduling
-completeness.  The coupled layer checks program-machine projection,
-program-scoped soundness/completeness, reader-stack uniqueness, and the
-snapshot-clear premise for completed GP certificates.  Iris checks exclusive
-reader entry/exit, registered pending/done GP transitions, monotone epoch
+completeness.  The gate machine separately proves reader-stack uniqueness and
+the snapshot-clear premise for completed GP certificates.  Iris checks
+exclusive reader entry/exit, registered pending/done GP transitions, monotone epoch
 advancement, persistence of completion certificates, arbitrary-frame
 preservation, and the direct completed-machine-GP reclamation rule.
 Rocq also checks LKMM-Core event allocation, exact RMW/dependency agreement in

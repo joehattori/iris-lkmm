@@ -18,7 +18,6 @@ theories/operational/rcu_machine_safety.v
 theories/operational/rcu_refinement.v
 theories/operational/rcu_builder.v
 theories/operational/rcu_candidate.v
-theories/operational/rcu_coupled.v
 theories/operational/lkmm_coupled.v
 theories/logic/rcu_ghost.v
 theories/logic/rcu_machine_ghost.v

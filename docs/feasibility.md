@@ -11,9 +11,9 @@ not required by the normal-RCU prototype.
 This verdict is about the project architecture in `AGENTS.md`: it establishes
 that the difficult normal-RCU recursion admits an independent constructive
 representation, finite graph consistency can be maintained incrementally,
-consistent program candidates can be scheduled without a final graph in the
-initial state, and completed grace periods support a compositional Iris
-reclamation update.  It is not a claim that the full LKMM model, full
+machine-compatible consistent candidates can be scheduled without a final
+graph in the initial state, and completed grace periods support a compositional
+Iris reclamation update.  It is not a claim that the full LKMM model, full
 LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 
 ## Gate results
@@ -26,7 +26,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 | Can `po?;hb*;pb*;prop;po` links be committed incrementally? | `rcu_link_commitment` stores the four intermediate events. `rcu_link_commitment_sound`/`rcu_link_commitment_complete` prove exact correspondence with `rcu_link`; `commit_ready_rcu_link` and monotonicity make commitments local and persistent under graph extension. | **Pass.** |
 | Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. It checks only delta irreflexivity. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
 | Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
-| Does the result extend to the minimal program machine? | `rcu_coupled.v` defines an interleaving product of machine steps and delayed builder commitments. `coupled_operational_soundness` proves minimal `ProgramGraph`, CAT-style RCU consistency, certificate soundness, event integrity, and stack safety. `consistent_program_candidate_is_schedulable` proves program-scoped completeness. | **Pass.** |
+| Can program execution be coupled to delayed builder commitments? | `LkmmCoupled.coupled_operational_soundness` proves complete Core-run projection, exact event/RMW agreement, RCU consistency, allocation well-formedness, and reader/certificate safety. `consistent_program_candidate_is_schedulable` proves relative scheduling given a complete snapshot-machine run with matching events and RMW pairs. | **Pass.** |
 | Does the operational state support a compositional Iris reclamation rule? | `rcu_ghost.v` gives readers exclusive ghost-map entries, registers immutable GP snapshots, and advances an authoritative MaxNat epoch on completion. `rcu_gp_finish_frame` preserves an arbitrary client frame and returns a persistent done certificate. | **Pass.** |
 | Is the Iris completion premise related to actual completed machine GPs? | `machine_run_stack_safe` proves unique open IDs and disjoint open/closed sections. `completed_run_certificate_enables_iris_finish` derives snapshot/current-open disjointness. `completed_machine_gp_reclamation_frame` composes that fact directly with the framed Iris update. | **Pass.** |
 
@@ -41,7 +41,8 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
   target is absent from `initial_builder` and from `builder_step`.
 - The coupled semantics permits delayed commitments explicitly.  Machine
   execution can proceed while the graph builder catches up; completion
-  requires exact agreement on canonical event maps and complete computed matching.
+  requires finished Core threads, no pending GPs, complete computed matching,
+  and exact agreement on canonical event maps and generated RMW pairs.
 - The Iris GP token is registered in an authoritative ghost map.  Completion
   changes it from pending to a persistent done entry, rather than manufacturing
   an unrelated certificate.  Reader exit consumes the reader's exclusive
@@ -78,36 +79,13 @@ commitment, but normal RCU does not force that pivot.
   successor `rb` pairs into old and new pairs.  This is a proof-level choice,
   not operational state or a final-graph oracle.  A reflected finite checker
   can later remove the classical dependency.
+- Coupled scheduling assumes a complete Core-driven snapshot-machine run.
+  It does not prove that every consistent `program_graph` admits such a run.
+  The Iris bridge still uses the separate five-instruction gate machine.
 - Grace-period liveness remains out of scope.
 - Full WP adequacy, full LKMM operational soundness/completeness, litmus
   differential testing, and the `percpu_ref` case study are next-phase work,
   not feasibility-gate requirements.
-
-## Retiring the gate-language coupling
-
-`lkmm_coupled.v` supplies the Core-aware replacement without changing the old
-gate machine or its proofs.  Remove `rcu_coupled.v` once:
-
-1. The replacement covers the coupling guarantees still needed by the gate:
-   machine/builder projections, completed-run RCU soundness, snapshot-clear
-   safety, and relative candidate scheduling.  These are proved in
-   `LkmmCoupled`; completion additionally checks that Core execution has ended
-   and that generated RMW pairs are exactly committed.
-2. The remaining consumer, `one_reader_candidate_matches_machine` in
-   `examples/rcu_gate.v`, no longer depends on `RcuCoupled.machine_matches_raw`.
-   Migrate that check to Core or state its gate-machine event-map equality
-   directly.  Do not silently reinterpret the old prefix-level completion
-   notion as complete Core execution.
-3. Gate documentation cites the replacement evidence and explicitly retires
-   the old language-specific coupled API.  If preservation of that API is
-   required, first prove an embedding rather than merely renaming theorems.
-4. Remove the old import and `_CoqProject` entry, confirm there are no remaining
-   consumers, and pass a clean full build, `make check`, and admission/diff audits.
-
-Removing this one file does not require deleting `rcu_machine.v`, migrating
-its independent Iris bridge, or proving full LKMM `ProgramGraph`
-soundness/completeness.  Those are separate milestones; the Core coupling's
-relative scheduling theorem does not discharge them.
 
 ## Reproduction
 

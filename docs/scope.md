@@ -13,9 +13,9 @@ coverage, and the proved coverage-to-chain refinement.  It now also includes an 
 finite graph builder with explicit `rcu-link` witnesses and `rb` deltas, a
 proof of `rb` irreflexivity for every builder run, an independent declarative
 candidate type, and finite candidate scheduling completeness from a fixed
-empty initial builder.  The program machine and builder are combined by an
-asynchronous delayed-commitment semantics with program-scoped soundness and
-completeness theorems.
+empty initial builder.  The Core-driven machine and builder are combined by
+an asynchronous delayed-commitment semantics with RCU soundness and relative
+candidate scheduling theorems.
 
 The Iris feasibility scope includes exclusive reader tokens, authoritative
 pending/done GP registrations, a MaxNat completion epoch, a framed
@@ -28,8 +28,6 @@ candidates but does not yet generate or validate them.  It deliberately
 excludes values, locations, graph-level `fr`, barriers, dependencies, RMW
 instruction semantics, SRCU, locks, the full LKMM consistency predicate, Iris
 WP/adequacy, and the `percpu_ref` case study.
-The coupled theorem is the gate-language result, not yet the final full
-LKMM-Core operational soundness/completeness theorem.
 
 The separate LKMM-Core milestone now includes finite structured programs,
 register-origin dependency provenance, memory and RMW event generation, a

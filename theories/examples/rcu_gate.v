@@ -6,14 +6,12 @@ From iris_lkmm.operational Require Import rcu_machine.
 From iris_lkmm.operational Require Import rcu_refinement.
 From iris_lkmm.operational Require Import rcu_builder.
 From iris_lkmm.operational Require Import rcu_candidate.
-From iris_lkmm.operational Require Import rcu_coupled.
 From stdpp Require Import sets tactics.
 Import ListNotations.
 
 Module RcuGateExamples.
   Import LkmmExecution RcuGraph RcuObligations LkmmLang RcuMachine RcuRefinement.
   Import RcuBuilder RcuCandidate.
-  Import RcuCoupled.
 
   Definition agents : list agent := [0; 1].
 
@@ -284,7 +282,7 @@ Module RcuGateExamples.
   Qed.
 
   Example one_reader_candidate_matches_machine :
-    machine_matches_raw s5 (candidate_raw one_reader_candidate).
-  Proof. vm_compute. split; reflexivity. Qed.
+    (candidate_raw one_reader_candidate).(raw_events) = s5.(generated).
+  Proof. reflexivity. Qed.
 
 End RcuGateExamples.

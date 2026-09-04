@@ -218,30 +218,6 @@ candidate or its future choices could be preloaded.  The proof is a
 candidate-directed existence proof, as operational completeness normally is;
 the transition relation itself never receives the final candidate.
 
-## Gate-language coupled execution
-
-`rcu_coupled.v` combines program-machine steps and graph-builder steps as an
-asynchronous product.  A machine step changes only the machine state; a
-builder step changes only the graph state.  A completed execution requires
-the builder and machine canonical event maps to agree and requires the
-computed RCU matching to contain no unmatched lock or unlock event.
-
-This makes delayed commitment explicit: execution need not guess its final
-graph initially, and graph facts need not be committed in lockstep with
-instruction execution.  `coupled_operational_soundness` projects any
-completed product run to:
-
-- a run of the minimal program (`minimal_program_graph`);
-- an `rcu_consistent` committed graph;
-- sound GP certificates;
-- emitted-event integrity; and
-- unique, disjoint reader-stack safety.
-
-Conversely, `consistent_program_candidate_is_schedulable` combines any
-machine-compatible, well-formed, RCU-consistent finite candidate with its
-machine run and builder schedule to obtain a completed coupled run.  The
-initial coupled state contains neither that candidate nor its choices.
-
 ## Core-aware delayed commitments
 
 `lkmm_coupled.v` couples `LkmmMachine.state` to the existing `builder_state`.
@@ -278,7 +254,7 @@ The coupled result is not full LKMM operational soundness: the builder does
 not validate `rf_wf`/`co_wf`, commit the generated dependency sets, derive
 `hb`/`pb`, or enforce the non-RCU consistency constraints.  The independent
 `program_graph` and `lkmm_consistent` interfaces remain the targets for that
-later integration.  The old gate-language coupling is retained during migration.
+later integration.
 
 ## Iris reader and grace-period protocol
 
