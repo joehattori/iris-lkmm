@@ -66,8 +66,9 @@ matching; execution prefixes may still contain open readers.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model
-consistency, or replace the gate's coupled machine, builder, and Iris bridge.
-Core's declarative trace semantics and `program_graph` remain unchanged.
+consistency, or replace the gate's Iris bridge.  `lkmm_coupled.v` connects it
+to the existing incremental builder as described below.  Core's declarative
+trace semantics and `program_graph` remain unchanged.
 
 ## Gate machine waiting protocol
 
@@ -217,7 +218,7 @@ candidate or its future choices could be preloaded.  The proof is a
 candidate-directed existence proof, as operational completeness normally is;
 the transition relation itself never receives the final candidate.
 
-## Coupled delayed-commitment execution
+## Gate-language coupled execution
 
 `rcu_coupled.v` combines program-machine steps and graph-builder steps as an
 asynchronous product.  A machine step changes only the machine state; a
@@ -240,6 +241,44 @@ Conversely, `consistent_program_candidate_is_schedulable` combines any
 machine-compatible, well-formed, RCU-consistent finite candidate with its
 machine run and builder schedule to obtain a completed coupled run.  The
 initial coupled state contains neither that candidate nor its choices.
+
+## Core-aware delayed commitments
+
+`lkmm_coupled.v` couples `LkmmMachine.state` to the existing `builder_state`.
+A machine action advances Core execution or its snapshot-waiting protocol;
+a builder action retains the existing local `rb` delta check and additionally
+requires `generated_prefix` for its successor.  This guard requires every
+committed event to occur unchanged in the generated map and every committed
+RMW pair to belong to Core's generated RMW set.  `coupled_run_generated_prefix`
+proves that these conditions hold throughout every reachable run, including
+after later machine actions.
+
+The machine starts from `initial_state P`, including the program's initial
+writes; the builder still starts empty.  Commitments may lag behind emission.
+In particular, the builder can load events in canonical RCU trace order rather
+than global emission order.  `rf` and `co` are independent builder choices,
+not machine-generated edges.  `hb` and `pb` retain the gate's abstract interface.
+
+`coupled_complete` requires completed Core threads, no pending GPs, complete
+RCU matching, exact event-map agreement, and exact RMW-set agreement.  Its
+`coupled_operational_soundness` theorem gives a complete Core run, those exact
+agreements, the builder's RCU consistency, allocation well-formedness, no
+unmatched unlocks, and sound completion certificates.  The coupled
+snapshot-clear theorem preserves the captured-reader guarantee under arbitrary
+interleaving of machine and builder actions.
+
+`consistent_program_candidate_is_schedulable` proves relative scheduling:
+given a complete snapshot-machine run and a well-formed, RCU-consistent finite
+candidate with the same events and RMW pairs, there is a completed coupled run.
+The proof may execute the machine first and then commit the graph.  Neither
+the initial state nor the step rules contain the candidate.  This does not
+prove that every consistent `program_graph` admits a snapshot-machine run.
+
+The coupled result is not full LKMM operational soundness: the builder does
+not validate `rf_wf`/`co_wf`, commit the generated dependency sets, derive
+`hb`/`pb`, or enforce the non-RCU consistency constraints.  The independent
+`program_graph` and `lkmm_consistent` interfaces remain the targets for that
+later integration.  The old gate-language coupling is retained during migration.
 
 ## Iris reader and grace-period protocol
 

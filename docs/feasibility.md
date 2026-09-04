@@ -83,6 +83,32 @@ commitment, but normal RCU does not force that pivot.
   differential testing, and the `percpu_ref` case study are next-phase work,
   not feasibility-gate requirements.
 
+## Retiring the gate-language coupling
+
+`lkmm_coupled.v` supplies the Core-aware replacement without changing the old
+gate machine or its proofs.  Remove `rcu_coupled.v` once:
+
+1. The replacement covers the coupling guarantees still needed by the gate:
+   machine/builder projections, completed-run RCU soundness, snapshot-clear
+   safety, and relative candidate scheduling.  These are proved in
+   `LkmmCoupled`; completion additionally checks that Core execution has ended
+   and that generated RMW pairs are exactly committed.
+2. The remaining consumer, `one_reader_candidate_matches_machine` in
+   `examples/rcu_gate.v`, no longer depends on `RcuCoupled.machine_matches_raw`.
+   Migrate that check to Core or state its gate-machine event-map equality
+   directly.  Do not silently reinterpret the old prefix-level completion
+   notion as complete Core execution.
+3. Gate documentation cites the replacement evidence and explicitly retires
+   the old language-specific coupled API.  If preservation of that API is
+   required, first prove an embedding rather than merely renaming theorems.
+4. Remove the old import and `_CoqProject` entry, confirm there are no remaining
+   consumers, and pass a clean full build, `make check`, and admission/diff audits.
+
+Removing this one file does not require deleting `rcu_machine.v`, migrating
+its independent Iris bridge, or proving full LKMM `ProgramGraph`
+soundness/completeness.  Those are separate milestones; the Core coupling's
+relative scheduling theorem does not discharge them.
+
 ## Reproduction
 
 ```sh

@@ -41,8 +41,14 @@ and `co` remain finite candidate choices rather than trusted program inputs.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
-uses the canonical matcher.  These results do not yet connect the new machine
-to the builder's consistency invariant or to the existing Iris bridge.
+uses the canonical matcher.  The Core-aware coupling connects these results
+to the builder's RCU consistency invariant.  Every reachable committed event
+and RMW pair comes from the machine; completion requires exact agreement.
+Its scheduling theorem assumes an existing complete snapshot-machine run
+and inherits the candidate scheduler's excluded-middle dependency.  Its
+soundness proof adds no axioms.  The builder still supplies abstract `hb`/`pb`
+and does not enforce `rf_wf`/`co_wf` or full LKMM consistency.  The Core-aware
+coupling is not yet connected to the existing Iris bridge.
 The finite adjacent-unmatched Bell iteration remains a manual Rocq
 transcription; its regression agrees with the stack matcher, but this is not
 a verified CAT interpreter.  Rocq does **not** establish equivalence with CAT
