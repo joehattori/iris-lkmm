@@ -37,8 +37,7 @@ allowing future writes to justify earlier observations.
 `lkmm_consistent` is deliberately separate from `program_graph`.  It conjoins
 coherence, atomicity, happens-before acyclicity, propagation acyclicity, and
 normal-RCU consistency over an adapter whose `hb` and `pb` are derived from the
-candidate's dependency edges.  The feasibility graph uses abstract `hb` and
-`pb` relations for the gate results.
+candidate's dependency edges.  The feasibility graph uses the same derivation.
 
 ## Core-driven RCU machine
 
@@ -101,11 +100,11 @@ sufficient to take the finish transition.  Neither theorem invokes
 ## Independent graph-chain invariant
 
 `execution_graph.v` defines the RCU-independent feasibility graph containing
-canonical events, finite candidate `rf`, `co`, and `rmw` edge sets, and abstract
-`hb` and `pb` relations.  Its `prop` relation is derived from the canonical events
-and finite candidate edges.  It is a minimal shared graph view, not yet the final
-LKMM candidate-execution type.  `rcu_graph.v` defines the normal-RCU
-classifications and consistency condition.
+canonical events and finite candidate `rf`, `co`, `rmw`, and direct dependency
+edge sets.  Its `prop`, `hb`, and `pb` relations are derived from those fields.
+It is a minimal shared graph view, not yet the final LKMM candidate-execution
+type.  `rcu_graph.v` defines the normal-RCU classifications and consistency
+condition.
 
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
@@ -134,9 +133,10 @@ and closed-section cache agree with the canonical stack matcher.
 
 `graph_of_state` uses the machine's canonical event map directly.  Program
 order, GP classification, `Marked`, and inverse critical-section matching are
-derived from that map; the finite `rf`, `co`, and `rmw` candidates and abstract
-`hb` and `pb` relations are supplied by the `abstract_relations` parameter.
-Propagation is derived from the event map and candidate `rf`, `co`, and `rmw` edges.
+derived from that map; the finite `rf`, `co`, `rmw`, and direct dependency
+relations are supplied by the `candidate_relations` parameter.
+Propagation, `hb`, and `pb` are derived from the event map and those candidate
+relations.
 
 `certificate_covers s cert cs` says that:
 
@@ -160,14 +160,14 @@ construction is handled by the graph builder below.
 ## Incremental graph builder
 
 `rcu_builder.v` represents the finite graph as a canonical event map and
-explicit `rf`, `co`, `rmw`, `hb`, and `pb` edge lists.  A raw mutation
-adds exactly one of:
+explicit `rf`, `co`, `rmw`, and direct address/data/control edge lists.  A raw
+mutation adds exactly one of:
 
 - a fresh canonical event at a per-agent tail position; or
-- one `rf`, `co`, `rmw`, `hb`, or `pb` edge.
+- one base-relation or direct-dependency edge.
 
-Program order, propagation, and RCU matching are derived from the graph and are
-not builder transitions.
+Program order, propagation, `hb`, `pb`, and RCU matching are derived from the
+graph and are not builder transitions.
 
 A `rcu_link_commitment` records all four intermediate events witnessing
 `po? ; hb* ; pb* ; prop ; po`.  `rcu_link_commitment_sound` proves that a
@@ -184,11 +184,12 @@ rb(new graph) = seen-rb ∪ delta
 irreflexive(delta)
 ```
 
-An `rf`, `co`, or `rmw` mutation must leave the resulting partial relation
-structurally well formed.  An `rf` prefix has well-formed edges and is
-functional; an `rmw` prefix has well-formed edges and is functional and
-injective; a `co` prefix has well-formed edges and is acyclic.  These
-properties are preserved by every builder run from `initial_builder`.
+Every relation mutation must leave the resulting partial relation structurally
+well formed.  An `rf` prefix has well-formed edges and is functional; an `rmw`
+prefix has well-formed edges and is functional and injective; a `co` prefix has
+well-formed edges and is acyclic.  Direct dependency prefixes require their
+read/access shape and program-order provenance.  These properties are preserved
+by every builder run from `initial_builder`.
 Read-from totality, marked-write totality, and the total/transitive coherence
 order remain completion properties of a full LKMM candidate.
 
@@ -202,11 +203,11 @@ Consequently, `completed_builder_run_rb_irreflexive` proves
 ## Independent candidates and finite scheduling
 
 `finite_candidate` is a declarative record of event-ID/canonical-event pairs
-and five edge lists.  It contains no operational state,
+and six edge lists.  It contains no operational state,
 delta, transition list, or schedule.  `candidate_well_formed` requires unique
 event identifiers, canonical per-agent ordering, `event_structure_wf`,
 complete RCU matching, structurally well-formed `rf`/`co`/`rmw` prefixes, and
-abstract `hb`/`pb` endpoints in the event set.
+well-formed direct address/data/control dependencies.
 
 `candidate_has_raw_schedule` enumerates those finite components one at a
 time.  `lift_safe_raw_schedule` turns that enumeration into builder steps by
@@ -236,18 +237,20 @@ A machine action advances Core execution or its snapshot-waiting protocol;
 a builder action performs the local `rb` delta check and requires
 `generated_prefix` for its successor.  This guard requires every
 committed event to occur unchanged in the generated map and every committed
-RMW pair to belong to Core's generated RMW set.  `coupled_run_generated_prefix`
-proves that these conditions hold throughout every reachable run, including
-after later machine actions.
+RMW or dependency edge to belong to its Core-generated set.
+`coupled_run_generated_prefix` proves that these conditions hold throughout
+every reachable run, including after later machine actions.
 
 The machine starts from `initial_state P`, including the program's initial
 writes; the builder starts empty.  Commitments may lag behind emission.
 In particular, the builder can load events in canonical RCU trace order rather
 than global emission order.  `rf` and `co` are independent builder choices,
-not machine-generated edges.  `hb` and `pb` use the gate's abstract interface.
+not machine-generated edges.  Direct dependencies are generated by Core and
+committed by the builder; `hb` and `pb` are derived from the committed graph.
 
 `coupled_complete` requires completed Core threads, no pending GPs, complete
-RCU matching, exact event-map agreement, and exact RMW-set agreement.  Its
+RCU matching, exact event-map agreement, and exact agreement for RMW and all
+three direct-dependency sets.  Its
 `coupled_operational_soundness` theorem gives a complete Core run, those exact
 agreements, the builder's RCU consistency, allocation well-formedness, no
 unmatched unlocks, and sound completion certificates.  The coupled
@@ -256,24 +259,23 @@ interleaving of machine and builder actions.
 
 `consistent_program_candidate_is_schedulable` proves relative scheduling:
 given a complete snapshot-machine run and a well-formed, RCU-consistent finite
-candidate with the same events and RMW pairs, there is a completed coupled run.
+candidate with the same events, RMW pairs, and direct dependencies, there is a
+completed coupled run.
 The proof may execute the machine first and then commit the graph.  Neither
 the initial state nor the step rules contain the candidate.  This does not
 prove that every consistent `program_graph` admits a snapshot-machine run.
 
-`coupled_candidate` extracts the builder's events and finite `rf`/`co`/`rmw`
-sets together with the machine's generated direct dependencies.
+`coupled_candidate` extracts every event and relation field from the builder.
 `coupled_run_program_graph` proves that a completed coupled run yields a
 `program_graph` when `coupled_program_graph_obligations` supplies well-formed
 `rf` and `co`.  Event-structure, generated `rmw`, and direct-dependency
 well-formedness follow from Core execution; complete RCU matching follows from
 coupled completion.  The two remaining obligations are not transition guards.
 
-`coupled_candidate_rcu_consistent` transfers the builder's RCU consistency to
-the candidate's canonical RCU view when its derived `hb` and `pb` are included
-in the builder's abstract relations.  Their equality is sufficient but not
-required.  The coupled result is not full LKMM operational soundness:
-validation of `rf`/`co`, coverage of derived `hb`/`pb`, and the non-RCU
+`coupled_candidate_rcu_consistent` transfers the builder's RCU consistency
+directly to the candidate's canonical RCU view because they contain the same
+committed fields and derive the same `hb` and `pb`.  The coupled result is not
+full LKMM operational soundness: validation of `rf`/`co` and the non-RCU
 consistency constraints remain separate proof obligations.  No theorem yet
 derives `lkmm_consistent` from an arbitrary completed coupled run.
 

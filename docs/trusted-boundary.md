@@ -4,8 +4,8 @@ For the feasibility prototype, the trusted boundary includes:
 
 - the manual reading and transcription of the cited Linux v6.18 CAT/Bell
   definitions;
-- the input graph's finite canonical event map, finite candidate `rf`, `co`,
-  and `rmw` edges, and abstract `hb` and `pb` relations;
+- the input graph's finite canonical event map and finite candidate `rf`, `co`,
+  `rmw`, and direct dependency edges;
 - the claim that the small instruction language represents the intended
   client operations;
 - the mapping from LKMM-Core constructors to the selected Linux v6.18
@@ -26,8 +26,8 @@ list/counter characterization, operational event integrity, and the
 snapshot-to-chain refinement conditional on explicit `rcu-link` witnesses.
 It also checks monotonicity of the RCU graph relations, persistence and
 soundness of incremental link commitments, monotonicity of derived propagation,
-the `rb` monitor invariant, structural validity of every committed
-`rf`/`co`/`rmw` prefix, irreflexivity for every builder run, and finite
+the `rb` monitor invariant, structural validity of every committed base and
+direct-dependency prefix, irreflexivity for every builder run, and finite
 candidate scheduling completeness.  Iris checks exclusive reader entry/exit,
 registered pending/done GP transitions, monotone epoch advancement,
 persistence of completion certificates, and arbitrary-frame preservation.
@@ -39,8 +39,9 @@ For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
 uses the canonical matcher.  The Core-aware coupling connects these results
-to the builder's RCU consistency invariant.  Every reachable committed event
-and RMW pair comes from the machine; completion requires exact agreement.
+to the builder's RCU consistency invariant.  Every reachable committed event,
+RMW pair, and dependency edge comes from the machine; completion requires exact
+agreement.
 Its scheduling theorem assumes a complete snapshot-machine run
 and inherits the candidate scheduler's excluded-middle dependency.  Its
 soundness proof adds no axioms.  `coupled_run_program_graph` proves the
@@ -48,9 +49,9 @@ soundness proof adds no axioms.  `coupled_run_program_graph` proves the
 RMW and direct-dependency well-formedness are derived from the projected Core
 run.  The remaining premises are obligations for callers, not new axioms or
 transition guards.
-RCU consistency transfers to the extracted candidate only under explicit
-inclusion of its derived `hb`/`pb` in the builder's abstract relations.  The
-builder does not enforce full LKMM consistency.
+RCU consistency transfers to the extracted candidate because the builder and
+candidate share the same fields and derive the same `hb` and `pb`.  The builder
+does not enforce full LKMM consistency.
 
 `lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
 Core-driven GP certificates, including certificates in coupled executions.

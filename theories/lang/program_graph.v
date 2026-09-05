@@ -1080,8 +1080,9 @@ Module LkmmProgramGraph.
       C.(candidate_rf)
       C.(candidate_co)
       C.(candidate_rmw)
-      (candidate_hb C)
-      (candidate_pb C).
+      C.(candidate_direct_addr)
+      C.(candidate_direct_data)
+      C.(candidate_direct_ctrl).
 
   Definition core_candidate_wf (C : core_candidate) : Prop :=
     event_structure_wf C.(candidate_events) /\

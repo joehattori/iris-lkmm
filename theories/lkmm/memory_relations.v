@@ -326,7 +326,7 @@ Module LkmmMemoryRelations.
       edges1 ⊆ edges2 -> rel_included (edge_relation edges1) (edge_relation edges2).
     Proof. intros Hedges x y Hxy. by apply Hedges. Qed.
 
-    Local Lemma marked_mono eid : marked E1 eid -> marked E2 eid.
+    Lemma marked_mono eid : marked E1 eid -> marked E2 eid.
     Proof.
       intros [Hin Hnot_plain]. split; first by eapply in_event_structure_mono.
       intros [Hmode Hnot_marked]. apply Hnot_plain. split.
@@ -395,7 +395,7 @@ Module LkmmMemoryRelations.
       by eapply event_has_barrier_kind_mono.
     Qed.
 
-    Local Lemma wmb_mono : rel_included (wmb E1) (wmb E2).
+    Lemma wmb_mono : rel_included (wmb E1) (wmb E2).
     Proof.
       unfold wmb. apply rel_seq_mono.
       - apply rel_seq_mono.
@@ -412,6 +412,16 @@ Module LkmmMemoryRelations.
         + apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
         + by apply po_mono.
       - apply rel_id_on_mono. apply release_mono.
+    Qed.
+
+    Local Lemma acq_po_mono :
+      rel_included (acq_po E1 rmw1) (acq_po E2 rmw2).
+    Proof.
+      unfold acq_po. apply rel_seq_mono.
+      - apply rel_seq_mono.
+        + apply rel_id_on_mono. apply acquire_mono.
+        + by apply po_mono.
+      - apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
     Qed.
 
     Local Lemma gp_mono : rel_included (gp E1) (gp E2).
@@ -492,9 +502,38 @@ Module LkmmMemoryRelations.
       apply rel_id_on_mono. intros eid Hmemory. by eapply event_is_memory_mono.
     Qed.
 
-    Local Lemma strong_fence_mono :
+    Lemma strong_fence_mono :
       rel_included (strong_fence E1 rmw1) (strong_fence E2 rmw2).
     Proof. apply rel_union_mono; [apply mb_mono | apply gp_mono]. Qed.
+
+    Local Lemma r4_rmb_mono :
+      forall eid, r4_rmb E1 eid -> r4_rmb E2 eid.
+    Proof.
+      intros eid [Hread Hnot_noreturn]. split; first by eapply event_is_read_mono.
+      destruct Hread as (read_event & Hlookup & Hread).
+      assert (in_event_structure E1 eid) as Hin by eauto using lookup_event_in.
+      intros [Hmode Hnot_write]. apply Hnot_noreturn. split.
+      - by eapply event_has_access_mode_reflect.
+      - intros Hwrite. apply Hnot_write. by eapply event_has_access_kind_mono.
+    Qed.
+
+    Local Lemma rmb_mono : rel_included (rmb E1) (rmb E2).
+    Proof.
+      unfold rmb. apply rel_seq_mono.
+      - apply rel_seq_mono.
+        + apply rel_id_on_mono. apply r4_rmb_mono.
+        + apply fencerel_mono.
+      - apply rel_id_on_mono. apply r4_rmb_mono.
+    Qed.
+
+    Lemma fence_mono :
+      rel_included (fence E1 rmw1) (fence E2 rmw2).
+    Proof.
+      unfold fence, nonrw_fence. apply rel_union_mono.
+      - apply rel_union_mono; first apply strong_fence_mono.
+        apply rel_union_mono; [apply po_rel_mono | apply acq_po_mono].
+      - apply rel_union_mono; [apply wmb_mono | apply rmb_mono].
+    Qed.
 
     Local Lemma overwrite_mono :
       rel_included (overwrite rf1 co1) (overwrite rf2 co2).
@@ -512,7 +551,7 @@ Module LkmmMemoryRelations.
       apply rtc_mono, rel_seq_mono; by apply edge_relation_mono.
     Qed.
 
-    Local Lemma rfe_mono eid1 eid2 :
+    Lemma rfe_mono eid1 eid2 :
       in_event_structure E1 eid1 -> in_event_structure E1 eid2 ->
       rfe E1 rf1 eid1 eid2 -> rfe E2 rf2 eid1 eid2.
     Proof.
@@ -638,6 +677,156 @@ Module LkmmMemoryRelations.
         (rtc (hb E rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges)))
       (rel_id_on (marked E)).
 
+  Section HbPbMonotonicity.
+    Context (E1 E2 : event_structure).
+    Context (rmw1 rmw2 rf1 rf2 co1 co2 data1 data2 addr1 addr2 ctrl1 ctrl2 : edge_set).
+    Context (HE : event_structure_included E1 E2).
+    Context (HRMW : rmw1 ⊆ rmw2) (HRF : rf1 ⊆ rf2) (HCO : co1 ⊆ co2).
+    Context (HDATA : data1 ⊆ data2) (HADDR : addr1 ⊆ addr2) (HCTRL : ctrl1 ⊆ ctrl2).
+
+    Local Lemma base_relation_mono edges1 edges2 :
+      edges1 ⊆ edges2 -> rel_included (edge_relation edges1) (edge_relation edges2).
+    Proof. intros Hedges source target Hedge. by apply Hedges. Qed.
+
+    Local Lemma rfi_mono : rel_included (rfi E1 rf1) (rfi E2 rf2).
+    Proof.
+      intros source target [Hrf Hagent]. split; first by apply HRF.
+      by eapply same_attribute_mono.
+    Qed.
+
+    Local Lemma carry_dep_mono :
+      rel_included (carry_dep E1 rf1 data1) (carry_dep E2 rf2 data2).
+    Proof.
+      apply rtc_mono, rel_seq_mono; last apply rfi_mono.
+      by apply base_relation_mono.
+    Qed.
+
+    Local Lemma addr_mono :
+      rel_included (addr E1 rf1 data1 addr1) (addr E2 rf2 data2 addr2).
+    Proof.
+      apply rel_seq_mono; first apply carry_dep_mono.
+      by apply base_relation_mono.
+    Qed.
+
+    Local Lemma data_mono :
+      rel_included (data E1 rf1 data1) (data E2 rf2 data2).
+    Proof.
+      apply rel_seq_mono; first apply carry_dep_mono.
+      by apply base_relation_mono.
+    Qed.
+
+    Local Lemma ctrl_mono :
+      rel_included (ctrl E1 rf1 data1 ctrl1) (ctrl E2 rf2 data2 ctrl2).
+    Proof.
+      apply rel_seq_mono; first apply carry_dep_mono.
+      by apply base_relation_mono.
+    Qed.
+
+    Local Lemma dep_mono :
+      rel_included (dep E1 rf1 data1 addr1) (dep E2 rf2 data2 addr2).
+    Proof. apply rel_union_mono; [apply addr_mono | apply data_mono]. Qed.
+
+    Local Lemma plain_mono eid : plain E1 eid -> plain E2 eid.
+    Proof.
+      intros [Hmode Hnot_rmw].
+      assert (in_event_structure E1 eid) as Hin.
+      { apply event_has_access_mode_lookup in Hmode as (ev & Hlookup & _).
+        by eapply lookup_event_in. }
+      split; first by eapply event_has_access_mode_mono.
+      intros Hrmw. apply Hnot_rmw. by eapply event_is_rmw_marked_reflect.
+    Qed.
+
+    Local Lemma rwdep_mono :
+      rel_included (rwdep E1 rf1 data1 addr1 ctrl1)
+        (rwdep E2 rf2 data2 addr2 ctrl2).
+    Proof.
+      apply rel_seq_mono.
+      - apply rel_union_mono; [apply dep_mono | apply ctrl_mono].
+      - apply rel_id_on_mono. intros eid Hwrite. by eapply event_is_write_mono.
+    Qed.
+
+    Local Lemma overwrite_all_mono :
+      rel_included (overwrite rf1 co1) (overwrite rf2 co2).
+    Proof.
+      unfold overwrite, fr. apply rel_union_mono.
+      - by apply base_relation_mono.
+      - apply rel_seq_mono.
+        + apply rel_inverse_mono. by apply base_relation_mono.
+        + by apply base_relation_mono.
+    Qed.
+
+    Local Lemma to_w_mono :
+      rel_included (to_w E1 rf1 co1 data1 addr1 ctrl1)
+        (to_w E2 rf2 co2 data2 addr2 ctrl2).
+    Proof.
+      unfold to_w. apply rel_union_mono; first apply rwdep_mono.
+      apply rel_union_mono.
+      - apply rel_intersection_mono; first apply overwrite_all_mono.
+        by apply same_attribute_mono.
+      - apply rel_seq_mono; last by apply wmb_mono.
+        apply rel_seq_mono; first apply addr_mono.
+        apply rel_id_on_mono. apply plain_mono.
+    Qed.
+
+    Local Lemma to_r_mono :
+      rel_included (to_r E1 rf1 data1 addr1) (to_r E2 rf2 data2 addr2).
+    Proof.
+      unfold to_r. apply rel_union_mono.
+      - apply rel_seq_mono; first apply addr_mono.
+        apply rel_id_on_mono. intros eid Hread. by eapply event_is_read_mono.
+      - apply rel_seq_mono; last apply rfi_mono.
+        apply rel_seq_mono; first apply dep_mono.
+        apply rel_id_on_mono. intros eid Hmarked. by eapply marked_mono.
+    Qed.
+
+    Local Lemma ppo_mono :
+      rel_included (ppo E1 rmw1 rf1 co1 data1 addr1 ctrl1)
+        (ppo E2 rmw2 rf2 co2 data2 addr2 ctrl2).
+    Proof.
+      unfold ppo. apply rel_union_mono; first apply to_r_mono.
+      apply rel_union_mono; first apply to_w_mono.
+      apply rel_intersection_mono; first by apply fence_mono.
+      by apply same_attribute_mono.
+    Qed.
+
+    Lemma hb_mono :
+      rel_included (hb E1 rmw1 rf1 co1 data1 addr1 ctrl1)
+        (hb E2 rmw2 rf2 co2 data2 addr2 ctrl2).
+    Proof.
+      intros source target Hhb.
+      apply rel_seq_id_on_r in Hhb as [Hbody Hmarked_target].
+      apply rel_seq_id_on_l in Hbody as [Hmarked_source Hbody].
+      assert (in_event_structure E1 source) as Hin_source.
+      { by destruct Hmarked_source. }
+      assert (in_event_structure E1 target) as Hin_target.
+      { by destruct Hmarked_target. }
+      apply rel_seq_id_on_r. split; last by eapply marked_mono.
+      apply rel_seq_id_on_l. split; first by eapply marked_mono.
+      destruct Hbody as [Hppo | [Hrfe | Hprop]].
+      - left. by apply ppo_mono.
+      - right. left. by eapply rfe_mono.
+      - right. right. destruct Hprop as [[Hprop Hnot_id] Hagent]. split.
+        + split; [by eapply prop_mono | done].
+        + by eapply same_attribute_mono.
+    Qed.
+
+    Lemma pb_mono :
+      rel_included (pb E1 rmw1 rf1 co1 data1 addr1 ctrl1)
+        (pb E2 rmw2 rf2 co2 data2 addr2 ctrl2).
+    Proof.
+      unfold pb. apply rel_seq_mono.
+      {
+        apply rel_seq_mono.
+        - apply rel_seq_mono.
+          + by eapply prop_mono.
+          + by apply strong_fence_mono.
+        - apply rtc_mono. apply hb_mono.
+      }
+      apply rel_id_on_mono. intros eid Hmarked. by eapply marked_mono.
+    Qed.
+
+  End HbPbMonotonicity.
+
   (** Linux v6.18: [acyclic pb as propagation]. *)
   Definition propagation (E : event_structure)
       (rmw_edges rf_edges co_edges data_edges addr_edges ctrl_edges : edge_set) : Prop :=
@@ -698,6 +887,57 @@ Module LkmmMemoryRelations.
     direct_ctrl_wf E edges ->
     direct_ctrl edges read write -> direct_ctrl_edge_wf E read write.
   Proof. intros Hedges Hctrl. by eapply Hedges. Qed.
+
+  Lemma direct_addr_empty_wf E : direct_addr_wf E ∅.
+  Proof. intros read access Hedge. set_solver. Qed.
+
+  Lemma direct_data_empty_wf E : direct_data_wf E ∅.
+  Proof. intros read write Hedge. set_solver. Qed.
+
+  Lemma direct_ctrl_empty_wf E : direct_ctrl_wf E ∅.
+  Proof. intros read write Hedge. set_solver. Qed.
+
+  Lemma direct_addr_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> direct_addr_wf E edges2 -> direct_addr_wf E edges1.
+  Proof. intros Hin Hwf read access Hedge. apply Hwf, Hin, Hedge. Qed.
+
+  Lemma direct_data_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> direct_data_wf E edges2 -> direct_data_wf E edges1.
+  Proof. intros Hin Hwf read write Hedge. apply Hwf, Hin, Hedge. Qed.
+
+  Lemma direct_ctrl_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> direct_ctrl_wf E edges2 -> direct_ctrl_wf E edges1.
+  Proof. intros Hin Hwf read write Hedge. apply Hwf, Hin, Hedge. Qed.
+
+  Lemma direct_addr_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 -> direct_addr_wf E1 edges -> direct_addr_wf E2 edges.
+  Proof.
+    intros HE Hwf read access Hedge.
+    destruct (Hwf read access Hedge) as (Hread & Hmemory & Hpo). split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_memory_mono.
+    - by eapply po_mono.
+  Qed.
+
+  Lemma direct_data_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 -> direct_data_wf E1 edges -> direct_data_wf E2 edges.
+  Proof.
+    intros HE Hwf read write Hedge.
+    destruct (Hwf read write Hedge) as (Hread & Hwrite & Hpo). split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_write_mono.
+    - by eapply po_mono.
+  Qed.
+
+  Lemma direct_ctrl_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 -> direct_ctrl_wf E1 edges -> direct_ctrl_wf E2 edges.
+  Proof.
+    intros HE Hwf read write Hedge.
+    destruct (Hwf read write Hedge) as (Hread & Hwrite & Hpo). split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_write_mono.
+    - by eapply po_mono.
+  Qed.
 
   Definition rf_edge_wf (E : event_structure) (write read : event_id) : Prop :=
     exists write_event read_event val,

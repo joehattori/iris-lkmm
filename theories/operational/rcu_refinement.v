@@ -6,9 +6,9 @@ From iris_lkmm.operational Require Import rcu_machine.
 Import ListNotations.
 
 (** Refinement from the event-generating RCU machine to the independent
-    chain/obligation semantics.  The abstract memory relations remain
-    parameters: this file connects snapshots, events, and matched sections,
-    but deliberately does not manufacture [rcu_link] witnesses. *)
+    chain/obligation semantics.  Candidate memory relations remain parameters:
+    this file connects snapshots, events, and matched sections, but deliberately
+    does not manufacture [rcu_link] witnesses. *)
 Module RcuRefinement.
   Import RcuGraph RcuObligations LkmmLang RcuMachine.
 
@@ -331,17 +331,18 @@ Module RcuRefinement.
     apply event_integrity_initial.
   Qed.
 
-  Record abstract_relations := AbstractRelations {
+  Record candidate_relations := CandidateRelations {
     ar_rf_edges : edge_set;
     ar_co_edges : edge_set;
     ar_rmw_edges : edge_set;
-    ar_hb : relation;
-    ar_pb : relation
+    ar_direct_addr_edges : edge_set;
+    ar_direct_data_edges : edge_set;
+    ar_direct_ctrl_edges : edge_set
   }.
 
-  Definition graph_of_state (rels : abstract_relations) (s : state) : graph :=
+  Definition graph_of_state (rels : candidate_relations) (s : state) : graph :=
     Graph s.(generated) rels.(ar_rf_edges) rels.(ar_co_edges) rels.(ar_rmw_edges)
-      rels.(ar_hb) rels.(ar_pb).
+      rels.(ar_direct_addr_edges) rels.(ar_direct_data_edges) rels.(ar_direct_ctrl_edges).
 
   Lemma generated_has_in_graph rels s e lab :
     generated_has s.(generated) e lab ->

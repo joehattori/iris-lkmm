@@ -2,14 +2,14 @@
 
 The feasibility kernel includes finite event identifiers, read/write labels,
 normal-RCU lock/unlock and grace-period labels, canonical program order,
-finite candidate `rf`, `co`, and `rmw`, derived `prop`, abstract `hb`/`pb`, computed
-nested critical sections, `rcu-link`, `rcu-order`, `rcu-fence`, `rb`, and
-`rb` irreflexivity.
+finite candidate `rf`, `co`, `rmw`, and direct dependencies, derived `prop`,
+`hb`, and `pb`, computed nested critical sections, `rcu-link`, `rcu-order`,
+`rcu-fence`, `rb`, and `rb` irreflexivity.
 It also includes finite GP/inverse-RSCS chains, signed obligation balances,
 and their proved equivalence to recursive `rcu-order`.
 The operational scope includes emitted-event integrity, a finite graph view
-over canonical events, derived `prop`, and abstract `hb`/`pb`, completed snapshot
-coverage, and the proved coverage-to-chain refinement.  It includes an
+over canonical events, derived `prop`/`hb`/`pb`, completed snapshot coverage,
+and the proved coverage-to-chain refinement.  It includes an
 incremental finite graph builder with explicit `rcu-link` witnesses and `rb` deltas, a
 proof of `rb` irreflexivity and structural `rf`/`co`/`rmw` prefix validity for
 every builder run, an independent declarative candidate type, and finite
@@ -27,11 +27,13 @@ registered pending-GP token.
 
 The incremental prototype includes fixed concurrent agents and the five
 gate-language instructions.  It carries finite `rf`, `co`, and `rmw`
-candidates and validates structural prefix obligations at each commitment.
+candidates and generated direct dependencies, and validates structural prefix
+obligations at each commitment.
 It does not choose those relations or enforce their completion-only totality
-conditions.  It deliberately excludes values, locations, graph-level `fr`,
-barriers, dependencies, RMW instruction semantics, SRCU, locks, the full LKMM
-consistency predicate, Iris WP/adequacy, and the `percpu_ref` case study.
+conditions.  The five-instruction gate language itself excludes values,
+locations, barriers, dependency-producing expressions, RMW instructions,
+SRCU, and locks.  Full LKMM operational consistency, Iris WP/adequacy, and the
+`percpu_ref` case study remain outside the prototype.
 
 The LKMM-Core scope includes finite structured programs,
 register-origin dependency provenance, memory and RMW event generation, a
@@ -40,14 +42,15 @@ base-only `core_candidate`, and the declarative `program_graph` relation.
 that candidate.  `lkmm_machine.v` defines Core-driven execution with normal-RCU
 snapshot waiting, a projection into Core runs, and reader/certificate safety
 proofs.  `lkmm_coupled.v` connects this machine to the incremental RCU builder
-with generated-event/RMW provenance guards and exact agreement at completion.
+with generated-event/relation provenance guards and exact agreement at
+completion.
 It proves Core-run projection, RCU consistency, snapshot safety, and relative
 scheduling for candidates backed by complete snapshot-machine runs.
 `coupled_run_program_graph` connects completed runs to `program_graph` under
 explicit `rf`/`co` well-formedness obligations.  Core execution proves
 well-formedness of its generated RMW and direct-dependency relations.  The
-builder does not commit dependency sets.  RCU consistency transfers to the
-candidate when the builder covers its derived `hb`/`pb`.  Validating the base
-choices generally, full LKMM operational soundness/completeness, Iris
+builder commits those generated relations and derives `hb`/`pb` from them.
+Validating the base choices generally, full LKMM operational
+soundness/completeness, Iris
 WP/adequacy, and source-language refinement remain outside this coupling.  The
 gate machine is separate.

@@ -13,16 +13,14 @@ Import ListNotations.
 Module RcuCandidate.
   Import LkmmMemoryRelations RcuGraph RcuMono RcuBuilder.
 
-  Definition edge_endpoints_in (ids : list event_id) (edges : list edge) : Prop :=
-    forall x y, In (x, y) edges -> In x ids /\ In y ids.
-
   Record finite_candidate := FiniteCandidate {
     fc_events : list labeled_event;
     fc_rf : list edge;
     fc_co : list edge;
     fc_rmw : list edge;
-    fc_hb : list edge;
-    fc_pb : list edge
+    fc_direct_addr : list edge;
+    fc_direct_data : list edge;
+    fc_direct_ctrl : list edge
   }.
 
   Fixpoint load_events (evs : list labeled_event) : raw_graph :=
@@ -50,8 +48,12 @@ Module RcuCandidate.
     rf_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_rf)) /\
     co_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_co)) /\
     rmw_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_rmw)) /\
-    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_hb) /\
-    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_pb).
+    direct_addr_wf (load_events C.(fc_events)).(raw_events)
+      (list_to_set C.(fc_direct_addr)) /\
+    direct_data_wf (load_events C.(fc_events)).(raw_events)
+      (list_to_set C.(fc_direct_data)) /\
+    direct_ctrl_wf (load_events C.(fc_events)).(raw_events)
+      (list_to_set C.(fc_direct_ctrl)).
 
   Fixpoint load_rf (edges : list edge) (r : raw_graph) : raw_graph :=
     match edges with
@@ -71,16 +73,22 @@ Module RcuCandidate.
     | e :: edges' => add_rmw (load_rmw edges' r) e
     end.
 
-  Fixpoint load_hb (edges : list edge) (r : raw_graph) : raw_graph :=
+  Fixpoint load_direct_addr (edges : list edge) (r : raw_graph) : raw_graph :=
     match edges with
     | [] => r
-    | e :: edges' => add_hb (load_hb edges' r) e
+    | e :: edges' => add_direct_addr (load_direct_addr edges' r) e
     end.
 
-  Fixpoint load_pb (edges : list edge) (r : raw_graph) : raw_graph :=
+  Fixpoint load_direct_data (edges : list edge) (r : raw_graph) : raw_graph :=
     match edges with
     | [] => r
-    | e :: edges' => add_pb (load_pb edges' r) e
+    | e :: edges' => add_direct_data (load_direct_data edges' r) e
+    end.
+
+  Fixpoint load_direct_ctrl (edges : list edge) (r : raw_graph) : raw_graph :=
+    match edges with
+    | [] => r
+    | e :: edges' => add_direct_ctrl (load_direct_ctrl edges' r) e
     end.
 
   Lemma load_rf_events edges r :
@@ -95,18 +103,25 @@ Module RcuCandidate.
     (load_rmw edges r).(raw_events) = r.(raw_events).
   Proof. induction edges; simpl; done. Qed.
 
-  Lemma load_hb_events edges r :
-    (load_hb edges r).(raw_events) = r.(raw_events).
+  Lemma load_direct_addr_events edges r :
+    (load_direct_addr edges r).(raw_events) = r.(raw_events).
   Proof. induction edges; simpl; done. Qed.
 
-  Lemma load_pb_events edges r :
-    (load_pb edges r).(raw_events) = r.(raw_events).
+  Lemma load_direct_data_events edges r :
+    (load_direct_data edges r).(raw_events) = r.(raw_events).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_direct_ctrl_events edges r :
+    (load_direct_ctrl edges r).(raw_events) = r.(raw_events).
   Proof. induction edges; simpl; done. Qed.
 
   Lemma load_events_relations evs :
     (load_events evs).(raw_rf) = [] /\
     (load_events evs).(raw_co) = [] /\
-    (load_events evs).(raw_rmw) = [].
+    (load_events evs).(raw_rmw) = [] /\
+    (load_events evs).(raw_direct_addr) = [] /\
+    (load_events evs).(raw_direct_data) = [] /\
+    (load_events evs).(raw_direct_ctrl) = [].
   Proof. induction evs; simpl; done. Qed.
 
   Lemma load_rf_edges edges r :
@@ -115,34 +130,71 @@ Module RcuCandidate.
 
   Lemma load_rf_other edges r :
     (load_rf edges r).(raw_co) = r.(raw_co) /\
-    (load_rf edges r).(raw_rmw) = r.(raw_rmw).
+    (load_rf edges r).(raw_rmw) = r.(raw_rmw) /\
+    (load_rf edges r).(raw_direct_addr) = r.(raw_direct_addr) /\
+    (load_rf edges r).(raw_direct_data) = r.(raw_direct_data) /\
+    (load_rf edges r).(raw_direct_ctrl) = r.(raw_direct_ctrl).
   Proof. induction edges; simpl; done. Qed.
 
   Lemma load_co_edges edges r :
     r.(raw_co) = [] -> (load_co edges r).(raw_co) = edges.
   Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
 
-  Lemma load_co_rmw edges r :
-    (load_co edges r).(raw_rmw) = r.(raw_rmw).
+  Lemma load_co_other edges r :
+    (load_co edges r).(raw_rmw) = r.(raw_rmw) /\
+    (load_co edges r).(raw_direct_addr) = r.(raw_direct_addr) /\
+    (load_co edges r).(raw_direct_data) = r.(raw_direct_data) /\
+    (load_co edges r).(raw_direct_ctrl) = r.(raw_direct_ctrl).
   Proof. induction edges; simpl; done. Qed.
 
   Lemma load_rmw_edges edges r :
     r.(raw_rmw) = [] -> (load_rmw edges r).(raw_rmw) = edges.
   Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
 
+  Lemma load_rmw_other edges r :
+    (load_rmw edges r).(raw_direct_addr) = r.(raw_direct_addr) /\
+    (load_rmw edges r).(raw_direct_data) = r.(raw_direct_data) /\
+    (load_rmw edges r).(raw_direct_ctrl) = r.(raw_direct_ctrl).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_direct_addr_edges edges r :
+    r.(raw_direct_addr) = [] ->
+    (load_direct_addr edges r).(raw_direct_addr) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
+  Lemma load_direct_addr_other edges r :
+    (load_direct_addr edges r).(raw_direct_data) = r.(raw_direct_data) /\
+    (load_direct_addr edges r).(raw_direct_ctrl) = r.(raw_direct_ctrl).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_direct_data_edges edges r :
+    r.(raw_direct_data) = [] ->
+    (load_direct_data edges r).(raw_direct_data) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
+  Lemma load_direct_data_ctrl edges r :
+    (load_direct_data edges r).(raw_direct_ctrl) = r.(raw_direct_ctrl).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_direct_ctrl_edges edges r :
+    r.(raw_direct_ctrl) = [] ->
+    (load_direct_ctrl edges r).(raw_direct_ctrl) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
   Definition candidate_raw (C : finite_candidate) : raw_graph :=
-    load_pb C.(fc_pb)
-      (load_hb C.(fc_hb)
-        (load_rmw C.(fc_rmw)
-          (load_co C.(fc_co)
-            (load_rf C.(fc_rf) (load_events C.(fc_events)))))).
+    load_direct_ctrl C.(fc_direct_ctrl)
+      (load_direct_data C.(fc_direct_data)
+        (load_direct_addr C.(fc_direct_addr)
+          (load_rmw C.(fc_rmw)
+            (load_co C.(fc_co)
+              (load_rf C.(fc_rf) (load_events C.(fc_events))))))).
 
   Lemma candidate_raw_events C :
     (candidate_raw C).(raw_events) = (load_events C.(fc_events)).(raw_events).
   Proof.
     unfold candidate_raw.
-    rewrite load_pb_events, load_hb_events, load_rmw_events,
-      load_co_events, load_rf_events. done.
+    rewrite load_direct_ctrl_events, load_direct_data_events,
+      load_direct_addr_events, load_rmw_events, load_co_events, load_rf_events. done.
   Qed.
 
   Definition candidate_graph (C : finite_candidate) : graph := graph_of_raw (candidate_raw C).
@@ -197,28 +249,52 @@ Module RcuCandidate.
     rewrite load_rmw_events, (load_rmw_edges edges r Hempty). exact Hwf.
   Qed.
 
-  Lemma load_hb_schedule edges r :
-    raw_run r (load_hb edges r).
+  Lemma load_direct_addr_schedule edges r :
+    r.(raw_direct_addr) = [] ->
+    direct_addr_wf r.(raw_events) (list_to_set edges) ->
+    raw_run r (load_direct_addr edges r).
   Proof.
-    induction edges as [|e edges IH]; simpl; first constructor.
-    eapply raw_run_trans; first apply IH.
-    apply raw_run_single. apply RawStepHb.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (direct_addr_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply direct_addr_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepDirectAddr.
+    rewrite load_direct_addr_events, (load_direct_addr_edges edges r Hempty). exact Hwf.
   Qed.
 
-  Lemma load_pb_schedule edges r :
-    raw_run r (load_pb edges r).
+  Lemma load_direct_data_schedule edges r :
+    r.(raw_direct_data) = [] ->
+    direct_data_wf r.(raw_events) (list_to_set edges) ->
+    raw_run r (load_direct_data edges r).
   Proof.
-    induction edges as [|e edges IH]; simpl; first constructor.
-    eapply raw_run_trans; first apply IH.
-    apply raw_run_single. apply RawStepPb.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (direct_data_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply direct_data_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepDirectData.
+    rewrite load_direct_data_events, (load_direct_data_edges edges r Hempty). exact Hwf.
+  Qed.
+
+  Lemma load_direct_ctrl_schedule edges r :
+    r.(raw_direct_ctrl) = [] ->
+    direct_ctrl_wf r.(raw_events) (list_to_set edges) ->
+    raw_run r (load_direct_ctrl edges r).
+  Proof.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (direct_ctrl_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply direct_ctrl_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepDirectCtrl.
+    rewrite load_direct_ctrl_events, (load_direct_ctrl_edges edges r Hempty). exact Hwf.
   Qed.
 
   Theorem candidate_has_raw_schedule C :
     candidate_well_formed C ->
     raw_run empty_raw (candidate_raw C).
   Proof.
-    intros (_ & Horder & _ & _ & Hrf & Hco & Hrmw & _).
-    pose proof (load_events_relations C.(fc_events)) as (Hempty_rf & Hempty_co & Hempty_rmw).
+    intros (_ & Horder & _ & _ & Hrf & Hco & Hrmw & Haddr & Hdata & Hctrl).
+    pose proof (load_events_relations C.(fc_events)) as
+      (Hempty_rf & Hempty_co & Hempty_rmw & Hempty_addr & Hempty_data & Hempty_ctrl).
     unfold candidate_raw.
     eapply raw_run_trans; first by apply load_events_schedule.
     eapply raw_run_trans.
@@ -229,11 +305,32 @@ Module RcuCandidate.
       - by rewrite load_rf_events. }
     eapply raw_run_trans.
     { apply load_rmw_schedule.
-      - rewrite load_co_rmw, (proj2 (load_rf_other C.(fc_rf)
-          (load_events C.(fc_events)))). done.
+      - rewrite (proj1 (load_co_other C.(fc_co) _)).
+        rewrite (proj1 (proj2 (load_rf_other C.(fc_rf) _))). exact Hempty_rmw.
       - by rewrite load_co_events, load_rf_events. }
-    eapply raw_run_trans; first apply load_hb_schedule.
-    apply load_pb_schedule.
+    eapply raw_run_trans.
+    { apply (load_direct_addr_schedule C.(fc_direct_addr)).
+      - rewrite (proj1 (load_rmw_other C.(fc_rmw) _)).
+        rewrite (proj1 (proj2 (load_co_other C.(fc_co) _))).
+        rewrite (proj1 (proj2 (proj2 (load_rf_other C.(fc_rf) _)))). exact Hempty_addr.
+      - by rewrite load_rmw_events, load_co_events, load_rf_events. }
+    eapply raw_run_trans.
+    { apply (load_direct_data_schedule C.(fc_direct_data)).
+      - rewrite (proj1 (load_direct_addr_other C.(fc_direct_addr) _)).
+        rewrite (proj1 (proj2 (load_rmw_other C.(fc_rmw) _))).
+        rewrite (proj1 (proj2 (proj2 (load_co_other C.(fc_co) _)))).
+        rewrite (proj1 (proj2 (proj2 (proj2 (load_rf_other C.(fc_rf) _))))).
+        exact Hempty_data.
+      - by rewrite load_direct_addr_events, load_rmw_events, load_co_events, load_rf_events. }
+    apply (load_direct_ctrl_schedule C.(fc_direct_ctrl)).
+    - rewrite load_direct_data_ctrl.
+      rewrite (proj2 (load_direct_addr_other C.(fc_direct_addr) _)).
+      rewrite (proj2 (proj2 (load_rmw_other C.(fc_rmw) _))).
+      rewrite (proj2 (proj2 (proj2 (load_co_other C.(fc_co) _)))).
+      rewrite (proj2 (proj2 (proj2 (proj2 (load_rf_other C.(fc_rf) _))))).
+      exact Hempty_ctrl.
+    - by rewrite load_direct_data_events, load_direct_addr_events,
+        load_rmw_events, load_co_events, load_rf_events.
   Qed.
 
   Definition rb_difference (old new : raw_graph) : relation :=

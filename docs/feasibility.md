@@ -26,7 +26,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 | Can `po?;hb*;pb*;prop;po` links be committed incrementally? | `rcu_link_commitment` stores the four intermediate events. `rcu_link_commitment_sound`/`rcu_link_commitment_complete` prove exact correspondence with `rcu_link`; `commit_ready_rcu_link` and monotonicity make commitments local and persistent under graph extension. | **Pass.** |
 | Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. Base-relation mutations also preserve structural prefix validity without imposing completion-only totality. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
 | Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
-| Can program execution be coupled to delayed builder commitments? | `LkmmCoupled.coupled_operational_soundness` proves complete Core-run projection, exact event/RMW agreement, RCU consistency, allocation well-formedness, and reader/certificate safety. `consistent_program_candidate_is_schedulable` proves relative scheduling given a complete snapshot-machine run with matching events and RMW pairs. | **Pass.** |
+| Can program execution be coupled to delayed builder commitments? | `LkmmCoupled.coupled_operational_soundness` proves complete Core-run projection, exact agreement for events and generated relations, RCU consistency, allocation well-formedness, and reader/certificate safety. `consistent_program_candidate_is_schedulable` proves relative scheduling given a complete snapshot-machine run with matching events, RMW pairs, and dependencies. | **Pass.** |
 | Does the operational state support a compositional Iris reclamation rule? | `rcu_ghost.v` gives readers exclusive ghost-map entries, registers immutable GP snapshots, and advances an authoritative MaxNat epoch on completion. `rcu_gp_finish_frame` preserves an arbitrary client frame and returns a persistent done certificate. | **Pass.** |
 | Is the Iris completion premise related to actual completed machine GPs? | `completed_certificate_enables_iris_finish` derives snapshot/current-open disjointness from Core-driven machine runs. `completed_coupled_gp_reclamation_frame` connects coupled GP certificates to the framed Iris update, given authoritative ownership and a registered pending-GP token. | **Pass.** |
 
@@ -43,7 +43,8 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 - The coupled semantics permits delayed commitments explicitly.  Machine
   execution can proceed while the graph builder catches up; completion
   requires finished Core threads, no pending GPs, complete computed matching,
-  and exact agreement on canonical event maps and generated RMW pairs.
+  and exact agreement on canonical events, generated RMW pairs, and direct
+  dependency provenance.
 - The Iris GP token is registered in an authoritative ghost map.  Completion
   changes it from pending to a persistent done entry, rather than manufacturing
   an unrelated certificate.  Reader exit consumes the reader's exclusive
@@ -73,9 +74,8 @@ commitment, but normal RCU does not force that pivot.
 - The CAT/Bell definitions are manually transcribed from Linux v6.18; no
   verified CAT translation is claimed.
 - `po` is derived from canonical agent/index positions.  The graph carries
-  finite candidate `rf`, `co`, and `rmw` edges and derives `prop` from them,
-  while `hb` and `pb` remain selected abstract graph-kernel relations rather
-  than the full LKMM derivation.
+  finite candidate `rf`, `co`, `rmw`, and direct dependency edges and derives
+  `prop`, `hb`, and `pb` from them.
 - Candidate completeness uses propositional excluded middle to partition
   successor `rb` pairs into old and new pairs.  This is a proof-level choice,
   not operational state or a final-graph oracle.  A reflected finite checker
@@ -84,10 +84,9 @@ commitment, but normal RCU does not force that pivot.
   It does not prove that every consistent `program_graph` admits such a run.
 - `coupled_run_program_graph` requires explicit well-formedness obligations
   only for the builder-chosen `rf` and `co`; Core execution proves the
-  generated `rmw` and direct dependencies well formed.  Transferring RCU
-  consistency to the candidate's derived view additionally requires its
-  `hb`/`pb` to be included in the builder's abstract relations.  Neither bridge
-  establishes full LKMM consistency.
+  generated `rmw` and direct dependencies well formed.  RCU consistency
+  transfers directly because the builder and candidate share the same fields
+  and derived relations.  The bridge does not establish full LKMM consistency.
 - The Iris bridge uses Core-driven machine and coupled runs, but its
   authoritative state and pending-GP token are explicit resource premises.
   There is not yet a ghost-state interpretation maintained by every step.

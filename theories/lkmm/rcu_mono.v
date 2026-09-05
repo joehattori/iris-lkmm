@@ -10,8 +10,9 @@ Module RcuMono.
     graph_le_rf : G.(rf_edges) ⊆ H.(rf_edges);
     graph_le_co : G.(co_edges) ⊆ H.(co_edges);
     graph_le_rmw : G.(rmw_edges) ⊆ H.(rmw_edges);
-    graph_le_hb : rel_included G.(hb) H.(hb);
-    graph_le_pb : rel_included G.(pb) H.(pb);
+    graph_le_direct_addr : G.(direct_addr_edges) ⊆ H.(direct_addr_edges);
+    graph_le_direct_data : G.(direct_data_edges) ⊆ H.(direct_data_edges);
+    graph_le_direct_ctrl : G.(direct_ctrl_edges) ⊆ H.(direct_ctrl_edges);
     graph_le_rscsi : rel_included (graph_rcu_rscsi G) (graph_rcu_rscsi H)
   }.
 
@@ -23,15 +24,16 @@ Module RcuMono.
   Lemma graph_le_trans G H K :
     graph_le G H -> graph_le H K -> graph_le G K.
   Proof.
-    intros [GE GRF GCO GRMW GHB GPB GCS]
-      [HE HRF HCO HRMW HHB HPB HCS].
+    intros [GE GRF GCO GRMW GADDR GDATA GCTRL GCS]
+      [HE HRF HCO HRMW HADDR HDATA HCTRL HCS].
     constructor.
     - intros eid ev Hlookup. apply HE. by apply GE.
     - intros edge Hedge. apply HRF. by apply GRF.
     - intros edge Hedge. apply HCO. by apply GCO.
     - intros edge Hedge. apply HRMW. by apply GRMW.
-    - intros x y Hxy. apply HHB. by apply GHB.
-    - intros x y Hxy. apply HPB. by apply GPB.
+    - intros edge Hedge. apply HADDR. by apply GADDR.
+    - intros edge Hedge. apply HDATA. by apply GDATA.
+    - intros edge Hedge. apply HCTRL. by apply GCTRL.
     - intros x y Hxy. apply HCS. by apply GCS.
   Qed.
 
@@ -68,22 +70,37 @@ Module RcuMono.
     - by eapply graph_le_co.
   Qed.
 
+  Lemma graph_le_hb G H :
+    graph_le G H -> rel_included (graph_hb G) (graph_hb H).
+  Proof.
+    intros GH. apply LkmmMemoryRelations.hb_mono.
+    - by eapply graph_le_events.
+    - by eapply graph_le_rmw.
+    - by eapply graph_le_rf.
+    - by eapply graph_le_co.
+    - by eapply graph_le_direct_data.
+    - by eapply graph_le_direct_addr.
+    - by eapply graph_le_direct_ctrl.
+  Qed.
+
+  Lemma graph_le_pb G H :
+    graph_le G H -> rel_included (graph_pb G) (graph_pb H).
+  Proof.
+    intros GH. apply LkmmMemoryRelations.pb_mono.
+    - by eapply graph_le_events.
+    - by eapply graph_le_rmw.
+    - by eapply graph_le_rf.
+    - by eapply graph_le_co.
+    - by eapply graph_le_direct_data.
+    - by eapply graph_le_direct_addr.
+    - by eapply graph_le_direct_ctrl.
+  Qed.
+
   Lemma graph_le_marked G H :
     graph_le G H -> forall eid, graph_marked G eid -> graph_marked H eid.
   Proof.
-    intros GH eid [Hin Hnot_plain]. split; first by eapply graph_le_in_graph.
-    intros [Hmode Hnot_rmw]. apply Hnot_plain. split.
-    - apply event_has_access_mode_lookup in Hmode as (ev & Hlookup & Hmode).
-      apply event_has_access_mode_lookup. exists ev. split; last done.
-      assert (lookup_event G.(events) eid = Some ev) as HlookupG.
-      { apply in_event_structure_lookup_iff in Hin as (old & Hold).
-        pose proof (graph_le_events G H GH eid old Hold) as HoldH. congruence. }
-      done.
-    - intros Hrmw. apply Hnot_rmw.
-      apply event_is_rmw_marked_lookup in Hrmw as (ev & Hlookup & Hmark).
-      apply event_is_rmw_marked_lookup. exists ev. split; last done.
-      apply in_event_structure_lookup_iff in Hin as (old & Hold).
-      pose proof (graph_le_events G H GH eid old Hold) as HoldH. congruence.
+    intros GH eid Hmarked. eapply LkmmMemoryRelations.marked_mono; last done.
+    by eapply graph_le_events.
   Qed.
 
   Lemma graph_rcu_rscsi_mono G H :

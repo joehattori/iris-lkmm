@@ -6,20 +6,32 @@ From iris_lkmm.operational Require Import lkmm_machine rcu_builder rcu_candidate
 Import ListNotations.
 
 (** Core execution coupled to the incremental RCU gate.  Builder commitments
-    may lag behind execution, but events and RMW pairs must already have been
-    generated.  The builder still chooses [rf]/[co] and abstract [hb]/[pb];
-    neither transition rule consults a completed candidate. *)
+    may lag behind execution, but events, RMW pairs, and dependency provenance
+    must already have been generated.  The builder chooses [rf]/[co], while
+    [hb]/[pb] are derived; neither transition rule consults a completed candidate. *)
 Module LkmmCoupled.
   Import LkmmMachine RcuGraph RcuMono RcuBuilder RcuCandidate.
   Import LkmmProgramGraph LkmmMemoryRelations.
 
   Definition generated_prefix (m : LkmmMachine.state) (r : raw_graph) : Prop :=
     event_structure_included r.(raw_events) m.(machine_core).(core_events) /\
-    (list_to_set r.(raw_rmw) : edge_set) ⊆ m.(machine_core).(core_rmw).
+    (list_to_set r.(raw_rmw) : edge_set) ⊆ m.(machine_core).(core_rmw) /\
+    (list_to_set r.(raw_direct_addr) : edge_set) ⊆
+      m.(machine_core).(core_direct_addr) /\
+    (list_to_set r.(raw_direct_data) : edge_set) ⊆
+      m.(machine_core).(core_direct_data) /\
+    (list_to_set r.(raw_direct_ctrl) : edge_set) ⊆
+      m.(machine_core).(core_direct_ctrl).
 
   Definition machine_matches_raw (m : LkmmMachine.state) (r : raw_graph) : Prop :=
     r.(raw_events) = m.(machine_core).(core_events) /\
-    (list_to_set r.(raw_rmw) : edge_set) = m.(machine_core).(core_rmw).
+    (list_to_set r.(raw_rmw) : edge_set) = m.(machine_core).(core_rmw) /\
+    (list_to_set r.(raw_direct_addr) : edge_set) =
+      m.(machine_core).(core_direct_addr) /\
+    (list_to_set r.(raw_direct_data) : edge_set) =
+      m.(machine_core).(core_direct_data) /\
+    (list_to_set r.(raw_direct_ctrl) : edge_set) =
+      m.(machine_core).(core_direct_ctrl).
 
   Record coupled_state := CoupledState {
     coupled_machine : LkmmMachine.state;
@@ -61,16 +73,15 @@ Module LkmmCoupled.
     LkmmMachine.complete s.(coupled_machine) /\
     machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw).
 
-  (** Base choices come from the builder; dependency provenance comes from
-      the Core run, since the builder does not yet commit dependency edges. *)
+  (** Every candidate relation comes from the builder. *)
   Definition coupled_candidate (s : coupled_state) : core_candidate :=
     CoreCandidate s.(coupled_builder).(bs_raw).(raw_events)
       (list_to_set s.(coupled_builder).(bs_raw).(raw_rf))
       (list_to_set s.(coupled_builder).(bs_raw).(raw_co))
       (list_to_set s.(coupled_builder).(bs_raw).(raw_rmw))
-      s.(coupled_machine).(machine_core).(core_direct_addr)
-      s.(coupled_machine).(machine_core).(core_direct_data)
-      s.(coupled_machine).(machine_core).(core_direct_ctrl).
+      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_addr))
+      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_data))
+      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_ctrl)).
 
   (** These base-relation obligations are not transition guards.  Allocation,
       generated-relation well-formedness, and complete RCU matching follow
@@ -106,9 +117,12 @@ Module LkmmCoupled.
   Local Lemma core_step_generated_mono P core a core' :
     core_step P core a core' -> core_allocation_wf core ->
     event_structure_included core.(core_events) core'.(core_events) /\
-    core.(core_rmw) ⊆ core'.(core_rmw).
+    core.(core_rmw) ⊆ core'.(core_rmw) /\
+    core.(core_direct_addr) ⊆ core'.(core_direct_addr) /\
+    core.(core_direct_data) ⊆ core'.(core_direct_data) /\
+    core.(core_direct_ctrl) ⊆ core'.(core_direct_ctrl).
   Proof.
-    intros Hstep (_ & Hids & _). destruct Hstep; split; cbn;
+    intros Hstep (_ & Hids & _). destruct Hstep; split_and!; cbn;
       try solve [intros eid ev Hlookup; exact Hlookup | set_solver];
       intros eid ev Hlookup; unfold lookup_event in *;
       repeat (apply lookup_insert_Some; right; split;
@@ -118,13 +132,18 @@ Module LkmmCoupled.
   Local Lemma core_run_generated_mono P core actions core' :
     core_run P core actions core' -> core_allocation_wf core ->
     event_structure_included core.(core_events) core'.(core_events) /\
-    core.(core_rmw) ⊆ core'.(core_rmw).
+    core.(core_rmw) ⊆ core'.(core_rmw) /\
+    core.(core_direct_addr) ⊆ core'.(core_direct_addr) /\
+    core.(core_direct_data) ⊆ core'.(core_direct_data) /\
+    core.(core_direct_ctrl) ⊆ core'.(core_direct_ctrl).
   Proof.
     intros Hrun. induction Hrun; intros Hwf.
-    - split; [intros eid ev Hlookup |]; done.
-    - destruct (core_step_generated_mono _ _ _ _ H Hwf) as [HE HRMW].
-      destruct IHHrun as [HE' HRMW']; first by eapply core_step_preserves_allocation.
-      split; last set_solver. intros eid ev Hlookup. by apply HE', HE.
+    - split_and!; try done. intros eid ev Hlookup. exact Hlookup.
+    - destruct (core_step_generated_mono _ _ _ _ H Hwf) as
+        (HE & HRMW & HADDR & HDATA & HCTRL).
+      destruct IHHrun as (HE' & HRMW' & HADDR' & HDATA' & HCTRL');
+        first by eapply core_step_preserves_allocation.
+      split_and!; try set_solver. intros eid ev Hlookup. by apply HE', HE.
   Qed.
 
   Local Lemma step_preserves_generated_prefix P s a s' :
@@ -132,13 +151,15 @@ Module LkmmCoupled.
     generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw) ->
     generated_prefix s'.(coupled_machine) s'.(coupled_builder).(bs_raw).
   Proof.
-    intros Hstep Hwf [HE HRMW]. destruct Hstep; simpl in *; last done.
+    intros Hstep Hwf (HE & HRMW & HADDR & HDATA & HCTRL).
+    destruct Hstep; simpl in *; last done.
     pose proof (step_core_projection _ _ _ _ H) as Hcore.
-    destruct (core_run_generated_mono _ _ _ _ Hcore Hwf) as [HE' HRMW'].
-    split; last set_solver. intros eid ev Hlookup. by apply HE', HE.
+    destruct (core_run_generated_mono _ _ _ _ Hcore Hwf) as
+      (HE' & HRMW' & HADDR' & HDATA' & HCTRL').
+    split_and!; try set_solver. intros eid ev Hlookup. by apply HE', HE.
   Qed.
 
-  (** No reachable builder prefix invents an event or an RMW pair. *)
+  (** No reachable builder prefix invents an event or generated relation. *)
   Theorem coupled_run_generated_prefix P actions s :
     coupled_run P (initial_coupled P) actions s ->
     generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw).
@@ -153,7 +174,7 @@ Module LkmmCoupled.
       eapply core_run_preserves_allocation; [by apply step_core_projection | done]. }
     intros Hrun. eapply Hpreserve; first done.
     - apply core_initial_allocation_wf.
-    - split; last set_solver. intros eid ev Hlookup. discriminate Hlookup.
+    - split_and!; try set_solver. intros eid ev Hlookup. discriminate Hlookup.
   Qed.
 
   Theorem coupled_operational_soundness P actions s :
@@ -193,7 +214,8 @@ Module LkmmCoupled.
   Proof.
     intros Hrun Hcomplete Hobligations.
     destruct (coupled_operational_soundness _ _ _ Hrun Hcomplete)
-      as (Hcore & [Hevents Hrmw_eq] & _ & [Halloc _] & _).
+      as (Hcore & (Hevents & Hrmw_eq & Haddr_eq & Hdata_eq & Hctrl_eq) &
+        _ & [Halloc _] & _).
     pose proof (complete_core_run_generated_relations_wf _ _ _ Hcore) as
       (Hrmw & Haddr & Hdata & Hctrl).
     destruct Hcomplete as [[_ [_ Hmatching]] _].
@@ -208,35 +230,26 @@ Module LkmmCoupled.
           (list_to_set s.(coupled_builder).(bs_raw).(raw_rmw))).
         by rewrite Hevents, Hrmw_eq.
       + change (direct_addr_wf s.(coupled_builder).(bs_raw).(raw_events)
-          s.(coupled_machine).(machine_core).(core_direct_addr)).
-        by rewrite Hevents.
+          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_addr))).
+        by rewrite Hevents, Haddr_eq.
       + change (direct_data_wf s.(coupled_builder).(bs_raw).(raw_events)
-          s.(coupled_machine).(machine_core).(core_direct_data)).
-        by rewrite Hevents.
+          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_data))).
+        by rewrite Hevents, Hdata_eq.
       + change (direct_ctrl_wf s.(coupled_builder).(bs_raw).(raw_events)
-          s.(coupled_machine).(machine_core).(core_direct_ctrl)).
-        by rewrite Hevents.
+          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_ctrl))).
+        by rewrite Hevents, Hctrl_eq.
       + change (rcu_matching_complete s.(coupled_builder).(bs_raw).(raw_events)).
         by rewrite Hevents.
   Qed.
 
-  (** RCU consistency transfers only if the builder covers the candidate's
-      derived [hb]/[pb].  Equality suffices; inclusion is enough by monotonicity. *)
   Theorem coupled_candidate_rcu_consistent P actions s :
     coupled_run P (initial_coupled P) actions s ->
-    rel_included (candidate_hb (coupled_candidate s))
-      (edge_rel s.(coupled_builder).(bs_raw).(raw_hb)) ->
-    rel_included (candidate_pb (coupled_candidate s))
-      (edge_rel s.(coupled_builder).(bs_raw).(raw_pb)) ->
     rcu_consistent (core_candidate_rcu_view (coupled_candidate s)).
   Proof.
-    intros Hrun Hhb Hpb.
+    intros Hrun.
     pose proof (coupled_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
-    pose proof (completed_builder_run_rb_irreflexive _ Hbuilder) as Hconsistent.
-    assert (graph_le (core_candidate_rcu_view (coupled_candidate s))
-      (graph_of_raw s.(coupled_builder).(bs_raw))) as Hle.
-    { constructor; simpl; try done; intros x y Hxy; exact Hxy. }
-    intros eid Hrb. apply (Hconsistent eid). by eapply rb_mono.
+    change (rcu_consistent (graph_of_raw s.(coupled_builder).(bs_raw))).
+    by eapply completed_builder_run_rb_irreflexive.
   Qed.
 
   Lemma lift_machine_run P m actions m' b :
@@ -259,9 +272,12 @@ Module LkmmCoupled.
     graph_le (graph_of_raw r) (graph_of_raw r') ->
     generated_prefix m r' -> generated_prefix m r.
   Proof.
-    intros Hle [HE HRMW]. split.
+    intros Hle (HE & HRMW & HADDR & HDATA & HCTRL). split_and!.
     - intros eid ev Hlookup. apply HE. by eapply (graph_le_events _ _ Hle).
     - intros edge Hedge. apply HRMW. by eapply (graph_le_rmw _ _ Hle).
+    - intros edge Hedge. apply HADDR. by eapply (graph_le_direct_addr _ _ Hle).
+    - intros edge Hedge. apply HDATA. by eapply (graph_le_direct_data _ _ Hle).
+    - intros edge Hedge. apply HCTRL. by eapply (graph_le_direct_ctrl _ _ Hle).
   Qed.
 
   Lemma lift_builder_run P m b b' :
@@ -293,9 +309,12 @@ Module LkmmCoupled.
       as (b & Hbuilder & Hraw & _).
     pose proof (lift_machine_run P _ _ _ initial_builder Hmachine) as Hmachine_lift.
     assert (generated_prefix m b.(bs_raw)) as Hprefix.
-    { rewrite Hraw. destruct Hmatches as [HE HRMW]. split.
+    { rewrite Hraw. destruct Hmatches as (HE & HRMW & HADDR & HDATA & HCTRL). split_and!.
       - rewrite HE. intros eid ev Hlookup. done.
-      - rewrite HRMW. done. }
+      - rewrite HRMW. done.
+      - rewrite HADDR. done.
+      - rewrite HDATA. done.
+      - rewrite HCTRL. done. }
     destruct (lift_builder_run P m _ _ Hbuilder Hprefix) as [builder_actions Hbuilder_lift].
     exists (map CoupledMachineAction machine_actions0 ++ builder_actions), (CoupledState m b).
     split; first by eapply coupled_run_trans.
@@ -314,7 +333,7 @@ Module LkmmCoupled.
         [LabeledEvent 2 (EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z));
          LabeledEvent 1 (EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 0%Z));
          LabeledEvent 0 (EInitWrite 0 0%Z)]
-        [(0, 1)] [(0, 2)] [(1, 2)] [] [].
+        [(0, 1)] [(0, 2)] [(1, 2)] [] [] [].
 
     Local Lemma machine_run :
       LkmmMachine.complete_run program [Execute (CoreObserve 0 0%Z)] finished.
@@ -379,6 +398,7 @@ Module LkmmCoupled.
           unfold rmw, edge_relation in Hrmw1, Hrmw2. simpl in Hrmw1, Hrmw2. set_solver.
       - intros x y Hin. inversion Hin.
       - intros x y Hin. inversion Hin.
+      - intros x y Hin. inversion Hin.
     Qed.
 
     Local Lemma candidate_consistent : rcu_consistent (candidate_graph candidate).
@@ -408,30 +428,33 @@ Module LkmmCoupled.
       split; done.
     Qed.
 
-    (** A builder may lag, but not invent events/pairs or declare completion
-        before the program and both generated collections have caught up. *)
+    (** A builder may lag, but cannot invent generated provenance or declare
+        completion before every generated collection has caught up. *)
     Example provenance_and_completion_guards :
       generated_prefix (LkmmMachine.initial_state program)
         (add_event empty_raw (LabeledEvent 0 (EInitWrite 0 0%Z))) /\
       ~ generated_prefix (LkmmMachine.initial_state program) (candidate_raw candidate) /\
       ~ generated_prefix finished (add_rmw (candidate_raw candidate) (2, 1)) /\
+      ~ generated_prefix finished (add_direct_addr (candidate_raw candidate) (2, 1)) /\
       ~ coupled_complete (initial_coupled program) /\
       ~ coupled_complete (CoupledState finished initial_builder) /\
       ~ coupled_complete (CoupledState finished
-        (BuilderState (RawGraph finished.(machine_core).(core_events) [] [] [] [] [])
+        (BuilderState (RawGraph finished.(machine_core).(core_events) [] [] [] [] [] [])
           [] (fun _ _ => False))).
     Proof.
       split_and!.
-      - split; last set_solver. intros eid ev Hlookup. exact Hlookup.
+      - split_and!; try set_solver. intros eid ev Hlookup. exact Hlookup.
       - intros [HE _]. specialize (HE 1
           (EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 0%Z)) eq_refl).
         discriminate HE.
-      - intros [_ HRMW]. specialize (HRMW (2, 1)). vm_compute in HRMW. naive_solver.
+      - intros (_ & HRMW & _). specialize (HRMW (2, 1)). vm_compute in HRMW. naive_solver.
+      - intros (_ & _ & HADDR & _). specialize (HADDR (2, 1)).
+        vm_compute in HADDR. naive_solver.
       - intros [[Hthreads _] _]. destruct (Hthreads 0 _ eq_refl) as [Hstmt _].
         discriminate Hstmt.
       - intros [_ [HE _]].
         pose proof (f_equal (fun E => lookup_event E 0) HE) as Hlookup. discriminate Hlookup.
-      - intros [_ [_ HRMW]].
+      - intros [_ (_ & HRMW & _)].
         change ((∅ : edge_set) = finished.(machine_core).(core_rmw)) in HRMW.
         assert ((1, 2) ∈ (∅ : edge_set)) by (rewrite HRMW; set_solver). set_solver.
     Qed.
@@ -449,7 +472,7 @@ Module LkmmCoupled.
         {[0 := RegValue 1%Z {[2]}]} ∅ ∅ ∅) ∅ [].
     Definition finite_graph : finite_candidate :=
       FiniteCandidate [LabeledEvent 2 read; LabeledEvent 1 write; LabeledEvent 0 init_write]
-        [(1, 2)] [(0, 1)] [] [] [].
+        [(1, 2)] [(0, 1)] [] [] [] [].
 
     Local Lemma machine_run :
       LkmmMachine.complete_run program [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)]
@@ -508,11 +531,14 @@ Module LkmmCoupled.
         finite_graph_wf finite_graph_consistent) as (b & Hbuilder & Hraw & _).
       destruct machine_run as [Hmachine Hcomplete].
       assert (machine_matches_raw finished b.(bs_raw)) as Hmatches.
-      { rewrite Hraw. split; done. }
+      { rewrite Hraw. split_and!; done. }
       assert (generated_prefix finished b.(bs_raw)) as Hprefix.
-      { destruct Hmatches as [HE HRMW]. split.
+      { destruct Hmatches as (HE & HRMW & HADDR & HDATA & HCTRL). split_and!.
         - rewrite HE. intros eid ev Hlookup. done.
-        - rewrite HRMW. done. }
+        - rewrite HRMW. done.
+        - rewrite HADDR. done.
+        - rewrite HDATA. done.
+        - rewrite HCTRL. done. }
       destruct (lift_builder_run program finished _ _ Hbuilder Hprefix)
         as [builder_actions Hlift].
       assert (coupled_run program (initial_coupled program)
@@ -531,7 +557,7 @@ Module LkmmCoupled.
 
     Example malformed_rf_is_an_explicit_obligation :
       ~ coupled_program_graph_obligations (CoupledState finished
-        (BuilderState (RawGraph sample_events [(1, 1)] [(0, 1)] [] [] [])
+        (BuilderState (RawGraph sample_events [(1, 1)] [(0, 1)] [] [] [] [])
           [] (fun _ _ => False))).
     Proof.
       intros [Hrf _]. destruct Hrf as [Hedges _].

@@ -5,7 +5,8 @@ Import ListNotations.
 
 (** Incremental construction of the finite RCU graph kernel.
 
-    A mutation contributes exactly one event or finite/base-relation edge.  RCU
+    A mutation contributes exactly one event, base-relation edge, or direct
+    dependency edge.  RCU
     critical sections are recomputed from the canonical event structure.
     Link commitments record witnesses for
     [po? ; hb* ; pb* ; prop ; po] only after their components are present.
@@ -20,15 +21,14 @@ Module RcuBuilder.
     le_event : event
   }.
 
-  Definition edge_rel (edges : list edge) : relation := fun x y => In (x, y) edges.
-
   Record raw_graph := RawGraph {
     raw_events : event_structure;
     raw_rf : list edge;
     raw_co : list edge;
     raw_rmw : list edge;
-    raw_hb : list edge;
-    raw_pb : list edge
+    raw_direct_addr : list edge;
+    raw_direct_data : list edge;
+    raw_direct_ctrl : list edge
   }.
 
   Definition graph_of_raw (r : raw_graph) : graph :=
@@ -37,40 +37,49 @@ Module RcuBuilder.
       rf_edges := list_to_set r.(raw_rf);
       co_edges := list_to_set r.(raw_co);
       rmw_edges := list_to_set r.(raw_rmw);
-      hb := edge_rel r.(raw_hb);
-      pb := edge_rel r.(raw_pb)
+      direct_addr_edges := list_to_set r.(raw_direct_addr);
+      direct_data_edges := list_to_set r.(raw_direct_data);
+      direct_ctrl_edges := list_to_set r.(raw_direct_ctrl)
     |}.
 
-  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [] [].
+  Definition empty_raw : raw_graph := RawGraph ∅ [] [] [] [] [] [].
 
   Definition add_event (r : raw_graph) (ev : labeled_event) : raw_graph :=
     RawGraph (<[ev.(le_id) := ev.(le_event)]> r.(raw_events))
-      r.(raw_rf) r.(raw_co) r.(raw_rmw) r.(raw_hb) r.(raw_pb).
+      r.(raw_rf) r.(raw_co) r.(raw_rmw)
+      r.(raw_direct_addr) r.(raw_direct_data) r.(raw_direct_ctrl).
 
   Definition add_rf (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) (e :: r.(raw_rf)) r.(raw_co)
-      r.(raw_rmw) r.(raw_hb) r.(raw_pb).
+      r.(raw_rmw) r.(raw_direct_addr) r.(raw_direct_data) r.(raw_direct_ctrl).
 
   Definition add_co (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) (e :: r.(raw_co))
-      r.(raw_rmw) r.(raw_hb) r.(raw_pb).
+      r.(raw_rmw) r.(raw_direct_addr) r.(raw_direct_data) r.(raw_direct_ctrl).
 
   Definition add_rmw (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) (e :: r.(raw_rmw))
-      r.(raw_hb) r.(raw_pb).
+      r.(raw_direct_addr) r.(raw_direct_data) r.(raw_direct_ctrl).
 
-  Definition add_hb (r : raw_graph) (e : edge) : raw_graph :=
+  Definition add_direct_addr (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
-      (e :: r.(raw_hb)) r.(raw_pb).
+      (e :: r.(raw_direct_addr)) r.(raw_direct_data) r.(raw_direct_ctrl).
 
-  Definition add_pb (r : raw_graph) (e : edge) : raw_graph :=
+  Definition add_direct_data (r : raw_graph) (e : edge) : raw_graph :=
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
-      r.(raw_hb) (e :: r.(raw_pb)).
+      r.(raw_direct_addr) (e :: r.(raw_direct_data)) r.(raw_direct_ctrl).
+
+  Definition add_direct_ctrl (r : raw_graph) (e : edge) : raw_graph :=
+    RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
+      r.(raw_direct_addr) r.(raw_direct_data) (e :: r.(raw_direct_ctrl)).
 
   Definition raw_relations_wf (r : raw_graph) : Prop :=
     rf_prefix_wf r.(raw_events) (list_to_set r.(raw_rf)) /\
     co_prefix_wf r.(raw_events) (list_to_set r.(raw_co)) /\
-    rmw_prefix_wf r.(raw_events) (list_to_set r.(raw_rmw)).
+    rmw_prefix_wf r.(raw_events) (list_to_set r.(raw_rmw)) /\
+    direct_addr_wf r.(raw_events) (list_to_set r.(raw_direct_addr)) /\
+    direct_data_wf r.(raw_events) (list_to_set r.(raw_direct_data)) /\
+    direct_ctrl_wf r.(raw_events) (list_to_set r.(raw_direct_ctrl)).
 
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
@@ -85,8 +94,15 @@ Module RcuBuilder.
   | RawStepRmw r e :
       rmw_prefix_wf r.(raw_events) (list_to_set (e :: r.(raw_rmw))) ->
       raw_step r (add_rmw r e)
-  | RawStepHb r e : raw_step r (add_hb r e)
-  | RawStepPb r e : raw_step r (add_pb r e).
+  | RawStepDirectAddr r e :
+      direct_addr_wf r.(raw_events) (list_to_set (e :: r.(raw_direct_addr))) ->
+      raw_step r (add_direct_addr r e)
+  | RawStepDirectData r e :
+      direct_data_wf r.(raw_events) (list_to_set (e :: r.(raw_direct_data))) ->
+      raw_step r (add_direct_data r e)
+  | RawStepDirectCtrl r e :
+      direct_ctrl_wf r.(raw_events) (list_to_set (e :: r.(raw_direct_ctrl))) ->
+      raw_step r (add_direct_ctrl r e).
 
   Inductive raw_run : raw_graph -> raw_graph -> Prop :=
   | RawRunRefl r : raw_run r r
@@ -122,23 +138,21 @@ Module RcuBuilder.
       + intros edge Hedge. done.
       + intros edge Hedge. done.
       + intros edge Hedge. done.
-      + unfold rel_included, edge_rel. done.
-      + unfold rel_included, edge_rel. done.
+      + intros edge Hedge. done.
+      + intros edge Hedge. done.
+      + intros edge Hedge. done.
       + apply rcu_rscsi_tail_mono. done.
     - constructor; simpl; try unfold event_structure_included, rel_included;
-        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold event_structure_included, rel_included;
-        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold event_structure_included, rel_included;
-        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold event_structure_included, rel_included;
-        try unfold edge_rel;
         solve [intros; assumption | intros; right; assumption | set_solver].
     - constructor; simpl; try unfold event_structure_included, rel_included;
-        try unfold edge_rel;
+        solve [intros; assumption | intros; right; assumption | set_solver].
+    - constructor; simpl; try unfold event_structure_included, rel_included;
         solve [intros; assumption | intros; right; assumption | set_solver].
   Qed.
 
@@ -157,13 +171,17 @@ Module RcuBuilder.
     - apply rf_empty_prefix_wf.
     - apply co_empty_prefix_wf.
     - apply rmw_empty_prefix_wf.
+    - apply direct_addr_empty_wf.
+    - apply direct_data_empty_wf.
+    - apply direct_ctrl_empty_wf.
   Qed.
 
   Lemma raw_step_preserves_relations_wf r r' :
     raw_relations_wf r -> raw_step r r' -> raw_relations_wf r'.
   Proof.
-    intros (Hrf & Hco & Hrmw) Hstep. destruct Hstep as
-      [r ev Htail | r e Hnew | r e Hnew | r e Hnew | r e | r e]; simpl in *.
+    intros (Hrf & Hco & Hrmw & Haddr & Hdata & Hctrl) Hstep. destruct Hstep as
+      [r ev Htail | r e Hnew | r e Hnew | r e Hnew |
+       r e Hnew | r e Hnew | r e Hnew]; simpl in *.
     - pose proof (raw_step_graph_le _ _ (RawStepEvent r ev Htail)) as Hle.
       assert (event_structure_included r.(raw_events) (add_event r ev).(raw_events)) as HE.
       { exact (graph_le_events _ _ Hle). }
@@ -171,6 +189,10 @@ Module RcuBuilder.
       + by eapply rf_prefix_wf_mono.
       + by eapply co_prefix_wf_mono.
       + by eapply rmw_prefix_wf_mono.
+      + by eapply direct_addr_wf_mono.
+      + by eapply direct_data_wf_mono.
+      + by eapply direct_ctrl_wf_mono.
+    - split_and!; done.
     - split_and!; done.
     - split_and!; done.
     - split_and!; done.
@@ -203,8 +225,8 @@ Module RcuBuilder.
 
   Definition rcu_link_commitment_valid (G : graph) (k : rcu_link_commitment) : Prop :=
     optional (graph_po G) k.(lc_source) k.(lc_optional_po) /\
-    rtc G.(hb) k.(lc_optional_po) k.(lc_after_hb) /\
-    rtc G.(pb) k.(lc_after_hb) k.(lc_after_pb) /\
+    rtc (graph_hb G) k.(lc_optional_po) k.(lc_after_hb) /\
+    rtc (graph_pb G) k.(lc_after_hb) k.(lc_after_pb) /\
     graph_prop G k.(lc_after_pb) k.(lc_after_prop) /\
     graph_po G k.(lc_after_prop) k.(lc_target).
 

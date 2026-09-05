@@ -56,9 +56,8 @@ Module RcuGateExamples.
     apply one_reader_one_gp.
   Qed.
 
-  Definition permissive_relations : abstract_relations :=
-    AbstractRelations ∅ ∅ ∅
-      (fun source target => source = 3 /\ target = 0) (fun _ _ => False).
+  Definition permissive_relations : candidate_relations :=
+    CandidateRelations {[(3, 0)]} ∅ ∅ ∅ ∅ ∅.
 
   Definition reader_cert := GpCertificate 3 [0].
   Definition reader_cs := CriticalSection 0 2.
@@ -73,9 +72,21 @@ Module RcuGateExamples.
   Proof.
     exists 3, 0, 0, 0. split_and!.
     - by left.
-    - apply rt_step. split; reflexivity.
+    - apply rt_step. unfold graph_hb, LkmmMemoryRelations.hb.
+      apply rel_seq_id_on_r. split.
+      + apply rel_seq_id_on_l. split.
+        * unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
+          -- apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
+          -- intros [Hmode _]. vm_compute in Hmode. discriminate.
+        * right. left. split.
+          -- unfold LkmmMemoryRelations.rf, edge_relation. set_solver.
+          -- intros Hsame. destruct Hsame as (agent & Hagent1 & Hagent0).
+             vm_compute in Hagent1, Hagent0. congruence.
+      + unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
+        * apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
+        * intros [Hmode _]. vm_compute in Hmode. discriminate.
     - apply rt_refl.
-    - change (LkmmMemoryRelations.prop s5.(generated) ∅ ∅ ∅ 0 0).
+    - change (LkmmMemoryRelations.prop s5.(generated) ∅ {[(3, 0)]} ∅ 0 0).
       assert (LkmmMemoryRelations.marked s5.(generated) 0) as Hmarked0.
       { unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
         - apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
@@ -167,7 +178,7 @@ Module RcuGateExamples.
       1 := EAgent 0 1 (canonical_label LSyncRcu);
       2 := EAgent 0 2 (canonical_label LRead)]}.
 
-  Definition link_raw : raw_graph := RawGraph link_events [] [] [] [] [].
+  Definition link_raw : raw_graph := RawGraph link_events [] [] [] [] [] [].
 
   Definition rcu_link_witness : rcu_link_commitment := RcuLinkCommitment 0 0 0 0 1 2.
 
@@ -221,7 +232,7 @@ Module RcuGateExamples.
     apply incremental_link_witness_is_valid.
   Qed.
 
-  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [].
+  Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [] [].
 
   Example empty_candidate_well_formed :
     candidate_well_formed empty_candidate.
@@ -234,6 +245,7 @@ Module RcuGateExamples.
     - apply rf_empty_prefix_wf.
     - apply co_empty_prefix_wf.
     - apply rmw_empty_prefix_wf.
+    - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
   Qed.
@@ -261,7 +273,7 @@ Module RcuGateExamples.
        LabeledEvent 2 (EAgent 0 2 (canonical_label LRcuUnlock));
        LabeledEvent 1 (EAgent 0 1 (canonical_label LRead));
        LabeledEvent 0 (EAgent 0 0 (canonical_label LRcuLock))]
-      [] [] [] [] [].
+      [] [] [] [] [] [].
 
   Example one_reader_candidate_well_formed :
     candidate_well_formed one_reader_candidate.
@@ -278,6 +290,7 @@ Module RcuGateExamples.
     - apply rf_empty_prefix_wf.
     - apply co_empty_prefix_wf.
     - apply rmw_empty_prefix_wf.
+    - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
   Qed.
