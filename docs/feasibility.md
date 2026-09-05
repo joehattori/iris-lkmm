@@ -82,10 +82,11 @@ commitment, but normal RCU does not force that pivot.
 - Coupled scheduling assumes a complete Core-driven snapshot-machine run.
   It does not prove that every consistent `program_graph` admits such a run.
 - `coupled_run_program_graph` requires explicit well-formedness obligations
-  for `rf`, `co`, `rmw`, and direct dependencies.  Transferring RCU consistency
-  to the candidate's derived view additionally requires its `hb`/`pb` to be
-  included in the builder's abstract relations.  Neither bridge establishes
-  full LKMM consistency.
+  only for the builder-chosen `rf` and `co`; Core execution proves the
+  generated `rmw` and direct dependencies well formed.  Transferring RCU
+  consistency to the candidate's derived view additionally requires its
+  `hb`/`pb` to be included in the builder's abstract relations.  Neither bridge
+  establishes full LKMM consistency.
 - The Iris bridge uses Core-driven machine and coupled runs, but its
   authoritative state and pending-GP token are explicit resource premises.
   There is not yet a ghost-state interpretation maintained by every step.

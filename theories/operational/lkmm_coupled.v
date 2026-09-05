@@ -72,16 +72,13 @@ Module LkmmCoupled.
       s.(coupled_machine).(machine_core).(core_direct_data)
       s.(coupled_machine).(machine_core).(core_direct_ctrl).
 
-  (** These obligations are not transition guards.  Allocation and complete
-      RCU matching are already consequences of a completed coupled run. *)
+  (** These base-relation obligations are not transition guards.  Allocation,
+      generated-relation well-formedness, and complete RCU matching follow
+      from a completed coupled run. *)
   Definition coupled_program_graph_obligations (s : coupled_state) : Prop :=
     let C := coupled_candidate s in
     rf_wf C.(candidate_events) C.(candidate_rf) /\
-    co_wf C.(candidate_events) C.(candidate_co) /\
-    rmw_wf C.(candidate_events) C.(candidate_rmw) /\
-    direct_addr_wf C.(candidate_events) C.(candidate_direct_addr) /\
-    direct_data_wf C.(candidate_events) C.(candidate_direct_data) /\
-    direct_ctrl_wf C.(candidate_events) C.(candidate_direct_ctrl).
+    co_wf C.(candidate_events) C.(candidate_co).
 
   Lemma coupled_run_trans P s1 actions1 s2 actions2 s3 :
     coupled_run P s1 actions1 s2 -> coupled_run P s2 actions2 s3 ->
@@ -196,14 +193,28 @@ Module LkmmCoupled.
   Proof.
     intros Hrun Hcomplete Hobligations.
     destruct (coupled_operational_soundness _ _ _ Hrun Hcomplete)
-      as (Hcore & [Hevents Hrmw] & _ & [Halloc _] & _).
+      as (Hcore & [Hevents Hrmw_eq] & _ & [Halloc _] & _).
+    pose proof (complete_core_run_generated_relations_wf _ _ _ Hcore) as
+      (Hrmw & Haddr & Hdata & Hctrl).
     destruct Hcomplete as [[_ [_ Hmatching]] _].
     constructor.
     - exists (project_actions (machine_actions actions)), s.(coupled_machine).(machine_core).
       split_and!; try done; symmetry; done.
-    - destruct Hobligations as (Hrf & Hco & Hrmw_wf & Haddr & Hdata & Hctrl).
+    - destruct Hobligations as [Hrf Hco].
       unfold core_candidate_wf. split_and!; try done.
       + change (event_structure_wf s.(coupled_builder).(bs_raw).(raw_events)).
+        by rewrite Hevents.
+      + change (rmw_wf s.(coupled_builder).(bs_raw).(raw_events)
+          (list_to_set s.(coupled_builder).(bs_raw).(raw_rmw))).
+        by rewrite Hevents, Hrmw_eq.
+      + change (direct_addr_wf s.(coupled_builder).(bs_raw).(raw_events)
+          s.(coupled_machine).(machine_core).(core_direct_addr)).
+        by rewrite Hevents.
+      + change (direct_data_wf s.(coupled_builder).(bs_raw).(raw_events)
+          s.(coupled_machine).(machine_core).(core_direct_data)).
+        by rewrite Hevents.
+      + change (direct_ctrl_wf s.(coupled_builder).(bs_raw).(raw_events)
+          s.(coupled_machine).(machine_core).(core_direct_ctrl)).
         by rewrite Hevents.
       + change (rcu_matching_complete s.(coupled_builder).(bs_raw).(raw_events)).
         by rewrite Hevents.
@@ -478,8 +489,7 @@ Module LkmmCoupled.
       - eapply coupled_run_program_graph; [exact Hrun | by split |].
         unfold coupled_program_graph_obligations, coupled_candidate. simpl. rewrite Hraw.
         pose proof (program_graph_wf _ _ two_agent_program_graph) as Hcandidate.
-        destruct Hcandidate as (_ & Hrf & Hco & Hrmw & Haddr & Hdata & Hctrl & _).
-        split_and!; done.
+        destruct Hcandidate as (_ & Hrf & Hco & _). split; done.
       - simpl. by rewrite Hraw.
       - simpl. by rewrite Hraw.
     Qed.

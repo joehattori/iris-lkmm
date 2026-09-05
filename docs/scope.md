@@ -42,10 +42,10 @@ with generated-event/RMW provenance guards and exact agreement at completion.
 It proves Core-run projection, RCU consistency, snapshot safety, and relative
 scheduling for candidates backed by complete snapshot-machine runs.
 `coupled_run_program_graph` connects completed runs to `program_graph` under
-explicit relation well-formedness obligations.  The extracted candidate uses
-machine-generated direct dependencies; the builder does not commit those
-sets.  RCU consistency transfers to the candidate when the builder covers its
-derived `hb`/`pb`.  Discharging these obligations generally, full LKMM
-operational soundness/completeness, Iris WP/adequacy, and source-language
-refinement remain outside this coupling.  The existing gate machine remains
-separate.
+explicit `rf`/`co` well-formedness obligations.  Core execution proves
+well-formedness of its generated RMW and direct-dependency relations.  The
+builder does not commit dependency sets.  RCU consistency transfers to the
+candidate when the builder covers its derived `hb`/`pb`.  Validating the base
+choices generally, full LKMM operational soundness/completeness, Iris
+WP/adequacy, and source-language refinement remain outside this coupling.  The
+existing gate machine remains separate.

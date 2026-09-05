@@ -21,8 +21,11 @@ a fresh per-agent index.  Loads and RMW reads nondeterministically choose an
 observed value.  Successful RMWs emit their marked read and write together and
 record the pairing; failed `cmpxchg` emits only its marked read.  Initial writes
 are generated from the finite initial-memory map in ascending location order.
-The allocation invariant proves unique per-agent positions and globally fresh
-event IDs for every core run.
+The Core generation invariant proves unique per-agent positions, globally
+fresh event IDs, well-formed RMW pairing, and well-formed direct address, data,
+and control dependencies for every run.  Its provenance component states that
+every origin retained in a register or active control frame is an earlier read
+of the same agent.
 
 `program_graph.v` defines the base-only `core_candidate` and the declarative
 `program_graph` relation.  A program graph contains a complete core run whose
@@ -254,19 +257,18 @@ prove that every consistent `program_graph` admits a snapshot-machine run.
 `coupled_candidate` extracts the builder's events and finite `rf`/`co`/`rmw`
 sets together with the machine's generated direct dependencies.
 `coupled_run_program_graph` proves that a completed coupled run yields a
-`program_graph` when `coupled_program_graph_obligations` holds: well-formed
-`rf`, `co`, `rmw`, and the three direct dependency relations.  Event-structure
-well-formedness and complete RCU matching follow from the run and completion,
-rather than additional premises.  These obligations are not transition guards.
+`program_graph` when `coupled_program_graph_obligations` supplies well-formed
+`rf` and `co`.  Event-structure, generated `rmw`, and direct-dependency
+well-formedness follow from Core execution; complete RCU matching follows from
+coupled completion.  The two remaining obligations are not transition guards.
 
 `coupled_candidate_rcu_consistent` transfers the builder's RCU consistency to
 the candidate's canonical RCU view when its derived `hb` and `pb` are included
 in the builder's abstract relations.  Their equality is sufficient but not
-required.  The coupled result is not full LKMM operational soundness: general
-RMW/dependency well-formedness invariants, validation of `rf`/`co`, coverage of
-derived `hb`/`pb`, and the non-RCU consistency constraints remain separate
-proof obligations.  No theorem yet derives `lkmm_consistent` from an arbitrary
-completed coupled run.
+required.  The coupled result is not full LKMM operational soundness:
+validation of `rf`/`co`, coverage of derived `hb`/`pb`, and the non-RCU
+consistency constraints remain separate proof obligations.  No theorem yet
+derives `lkmm_consistent` from an arbitrary completed coupled run.
 
 ## Iris reader and grace-period protocol
 

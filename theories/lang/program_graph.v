@@ -1,3 +1,4 @@
+From Stdlib Require Import Lia.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_graph.
 From iris_lkmm.lang Require Import lkmm_core.
@@ -8,6 +9,1040 @@ From iris_lkmm.lang Require Import lkmm_core.
 Module LkmmProgramGraph.
   Export LkmmCore.
   Import LkmmMemoryRelations RcuGraph.
+
+  (** An origin retained in a register or control frame must be an earlier
+      read of that same agent.  This is the invariant that turns syntactic
+      provenance into well-formed dependency edges when the next event is
+      emitted. *)
+  Definition origin_before (state : core_state) (agent : agent_id) (source : event_id) : Prop :=
+    exists index label,
+      lookup_event state.(core_events) source = Some (EAgent agent index label) /\
+      is_read (EAgent agent index label) /\
+      (index < next_agent_index state agent)%nat.
+
+  Definition origins_before (state : core_state) (agent : agent_id) (sources : origins) : Prop :=
+    forall source, source ∈ sources -> origin_before state agent source.
+
+  Definition registers_origins_wf (state : core_state) (agent : agent_id)
+      (regs : registers) : Prop :=
+    forall reg result,
+      regs !! reg = Some result -> origins_before state agent result.(reg_origins).
+
+  Definition core_provenance_wf (state : core_state) : Prop :=
+    forall agent thread,
+      state.(core_threads) !! agent = Some thread ->
+      registers_origins_wf state agent thread.(thread_registers) /\
+      origins_before state agent (thread_control_origins thread).
+
+  Definition core_generated_wf (state : core_state) : Prop :=
+    core_allocation_wf state /\
+    core_provenance_wf state /\
+    rmw_wf state.(core_events) state.(core_rmw) /\
+    direct_addr_wf state.(core_events) state.(core_direct_addr) /\
+    direct_data_wf state.(core_events) state.(core_direct_data) /\
+    direct_ctrl_wf state.(core_events) state.(core_direct_ctrl).
+
+  Lemma origin_edges_spec sources target source destination :
+    edge_relation (origin_edges sources target) source destination <->
+    source ∈ sources /\ destination = target.
+  Proof.
+    unfold edge_relation, origin_edges. rewrite elem_of_list_to_set. set_solver.
+  Qed.
+
+  Lemma eval_expr_origins_before state agent regs expression result :
+    registers_origins_wf state agent regs ->
+    eval_expr regs expression = Some result ->
+    origins_before state agent result.(reg_origins).
+  Proof.
+    intros Hregs. revert result. induction expression as [z | reg | op left IHleft right IHright];
+      intros result Heval; simpl in Heval.
+    - simplify_eq. intros source Hfalse. set_solver.
+    - by eapply Hregs.
+    - destruct (eval_expr regs left) as [left_result |] eqn:Hleft; last done.
+      destruct (eval_expr regs right) as [right_result |] eqn:Hright; last done.
+      simplify_eq. intros source Hsource. apply elem_of_union in Hsource as [Hsource | Hsource].
+      + by eapply IHleft.
+      + by eapply IHright.
+  Qed.
+
+  Lemma eval_location_origins_before state agent regs expression loc sources :
+    registers_origins_wf state agent regs ->
+    eval_location regs expression = Some (loc, sources) ->
+    origins_before state agent sources.
+  Proof.
+    intros Hregs. unfold eval_location.
+    destruct (eval_expr regs expression) as [result |] eqn:Heval; last done.
+    destruct (decide (Z.le 0%Z (reg_integer result))); last done.
+    intros Hlocation. simplify_eq. by eapply eval_expr_origins_before.
+  Qed.
+
+  Definition core_extends (state state' : core_state) : Prop :=
+    event_structure_included state.(core_events) state'.(core_events) /\
+    forall agent,
+      (next_agent_index state agent <= next_agent_index state' agent)%nat.
+
+  Lemma origin_before_mono state state' agent source :
+    core_extends state state' ->
+    origin_before state agent source -> origin_before state' agent source.
+  Proof.
+    intros [Hevents Hindices] (index & label & Hlookup & Hread & Hindex).
+    exists index, label. split_and!; try done.
+    - by eapply Hevents.
+    - specialize (Hindices agent). lia.
+  Qed.
+
+  Lemma origins_before_mono state state' agent sources :
+    core_extends state state' ->
+    origins_before state agent sources -> origins_before state' agent sources.
+  Proof.
+    intros Hextends Hsources source Hsource. apply origin_before_mono with state; first done.
+    by apply Hsources.
+  Qed.
+
+  Lemma add_single_event_extends state agent thread label regs address data control :
+    core_allocation_wf state ->
+    core_extends state (add_single_event state agent thread label regs address data control).
+  Proof.
+    intros (_ & Hids & _). split.
+    - intros eid ev Hlookup. simpl. unfold lookup_event in Hlookup |- *.
+      apply lookup_insert_Some. right. split; last done.
+      intros Heq. subst eid. specialize (Hids _ _ Hlookup). lia.
+    - intros other. simpl. unfold next_agent_index.
+      destruct (decide (other = agent)) as [-> | Hne].
+      + simplify_map_eq. unfold next_agent_index. lia.
+      + simplify_map_eq. done.
+  Qed.
+
+  Lemma add_rmw_events_extends state agent thread mode loc old new regs address data control :
+    core_allocation_wf state ->
+    core_extends state
+      (add_rmw_events state agent thread mode loc old new regs address data control).
+  Proof.
+    intros (_ & Hids & _). split.
+    - intros eid ev Hlookup. simpl. unfold lookup_event in Hlookup |- *.
+      apply lookup_insert_Some. right. split.
+      { intros Heq. subst eid. specialize (Hids _ _ Hlookup). lia. }
+      apply lookup_insert_Some. right. split; last done.
+      intros Heq. subst eid. specialize (Hids _ _ Hlookup). lia.
+    - intros other. simpl. unfold next_agent_index.
+      destruct (decide (other = agent)) as [-> | Hne].
+      + simplify_map_eq. unfold next_agent_index. lia.
+      + simplify_map_eq. done.
+  Qed.
+
+  Lemma direct_addr_wf_mono E E' edges :
+    event_structure_included E E' ->
+    direct_addr_wf E edges -> direct_addr_wf E' edges.
+  Proof.
+    intros HE Hwf read access Hedge. destruct (Hwf read access Hedge) as (Hr & Hm & Hpo).
+    split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_memory_mono.
+    - by eapply po_mono.
+  Qed.
+
+  Lemma direct_data_wf_mono E E' edges :
+    event_structure_included E E' ->
+    direct_data_wf E edges -> direct_data_wf E' edges.
+  Proof.
+    intros HE Hwf read write Hedge. destruct (Hwf read write Hedge) as (Hr & Hw & Hpo).
+    split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_write_mono.
+    - by eapply po_mono.
+  Qed.
+
+  Lemma direct_ctrl_wf_mono E E' edges :
+    event_structure_included E E' ->
+    direct_ctrl_wf E edges -> direct_ctrl_wf E' edges.
+  Proof.
+    intros HE Hwf read write Hedge. destruct (Hwf read write Hedge) as (Hr & Hw & Hpo).
+    split_and!.
+    - by eapply event_is_read_mono.
+    - by eapply event_is_write_mono.
+    - by eapply po_mono.
+  Qed.
+
+  Lemma add_origin_edges_addr_wf E E' edges sources target :
+    event_structure_included E E' ->
+    direct_addr_wf E edges ->
+    (forall source, source ∈ sources ->
+      event_is_read E' source /\ event_is_memory E' target /\ po E' source target) ->
+    direct_addr_wf E' (add_origin_edges edges sources target).
+  Proof.
+    intros HE Hedges Hsources read access Hedge.
+    unfold add_origin_edges in Hedge. apply elem_of_union in Hedge as [Hedge | Hedge].
+    - by eapply direct_addr_wf_mono.
+    - apply origin_edges_spec in Hedge as [Hsource ->].
+      by apply Hsources.
+  Qed.
+
+  Lemma add_origin_edges_data_wf E E' edges sources target :
+    event_structure_included E E' ->
+    direct_data_wf E edges ->
+    (forall source, source ∈ sources ->
+      event_is_read E' source /\ event_is_write E' target /\ po E' source target) ->
+    direct_data_wf E' (add_origin_edges edges sources target).
+  Proof.
+    intros HE Hedges Hsources read write Hedge.
+    unfold add_origin_edges in Hedge. apply elem_of_union in Hedge as [Hedge | Hedge].
+    - by eapply direct_data_wf_mono.
+    - apply origin_edges_spec in Hedge as [Hsource ->].
+      by apply Hsources.
+  Qed.
+
+  Lemma add_origin_edges_ctrl_wf E E' edges sources target :
+    event_structure_included E E' ->
+    direct_ctrl_wf E edges ->
+    (forall source, source ∈ sources ->
+      event_is_read E' source /\ event_is_write E' target /\ po E' source target) ->
+    direct_ctrl_wf E' (add_origin_edges edges sources target).
+  Proof.
+    intros HE Hedges Hsources read write Hedge.
+    unfold add_origin_edges in Hedge. apply elem_of_union in Hedge as [Hedge | Hedge].
+    - by eapply direct_ctrl_wf_mono.
+    - apply origin_edges_spec in Hedge as [Hsource ->].
+      by apply Hsources.
+  Qed.
+
+  Lemma origin_before_single_event state agent thread label regs address data control source :
+    core_allocation_wf state ->
+    origin_before state agent source ->
+    event_is_read
+      (add_single_event state agent thread label regs address data control).(core_events) source /\
+    po (add_single_event state agent thread label regs address data control).(core_events)
+      source state.(core_next_id).
+  Proof.
+    intros Hwf (index & source_label & Hlookup & Hread & Hindex).
+    pose proof (add_single_event_extends state agent thread label regs address data control Hwf)
+      as [Hevents _]. split.
+    - exists (EAgent agent index source_label). split; [by eapply Hevents | done].
+    - exists agent, index, (next_agent_index state agent), source_label, label.
+      split_and!; try done.
+      + by eapply Hevents.
+      + simpl. apply lookup_insert_eq.
+  Qed.
+
+  Lemma origin_before_rmw_read state agent thread mode loc old new regs address data control
+      source :
+    core_allocation_wf state ->
+    origin_before state agent source ->
+    event_is_read
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      source /\
+    po (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      source state.(core_next_id).
+  Proof.
+    intros Hwf (index & source_label & Hlookup & Hread & Hindex).
+    pose proof (add_rmw_events_extends state agent thread mode loc old new regs address data control
+      Hwf) as [Hevents _]. split.
+    - exists (EAgent agent index source_label). split; [by eapply Hevents | done].
+    - exists agent, index, (next_agent_index state agent), source_label,
+        (LMemory AccessRead mode RmwMarked loc old).
+      split_and!; try done.
+      + by eapply Hevents.
+      + simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+  Qed.
+
+  Lemma origin_before_rmw_write state agent thread mode loc old new regs address data control
+      source :
+    core_allocation_wf state ->
+    origin_before state agent source ->
+    event_is_read
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      source /\
+    po (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      source (S state.(core_next_id)).
+  Proof.
+    intros Hwf (index & source_label & Hlookup & Hread & Hindex).
+    pose proof (add_rmw_events_extends state agent thread mode loc old new regs address data control
+      Hwf) as [Hevents _]. split.
+    - exists (EAgent agent index source_label). split; [by eapply Hevents | done].
+    - exists agent, index, (S (next_agent_index state agent)), source_label,
+        (LMemory AccessWrite mode RmwMarked loc new).
+      split_and!; try done.
+      + by eapply Hevents.
+      + simpl. apply lookup_insert_eq.
+      + lia.
+  Qed.
+
+  Lemma rmw_wf_mono E E' edges :
+    event_structure_included E E' ->
+    (forall eid ev,
+      lookup_event E' eid = Some ev -> is_write ev -> is_rmw_marked ev ->
+      in_event_structure E eid) ->
+    rmw_wf E edges -> rmw_wf E' edges.
+  Proof.
+    intros HE Hold (Hedges & Hfunctional & Hinjective & Htotal). split_and!; try done.
+    - intros read write Hedge.
+      destruct (Hedges read write Hedge) as
+        (read_event & write_event & Hread & Hwrite & Hr & Hw & Hrmw_r & Hrmw_w &
+          Hpo & Hloc & Hmode).
+      exists read_event, write_event. split_and!; try done.
+      + by eapply HE.
+      + by eapply HE.
+      + by eapply po_mono.
+      + by eapply same_attribute_mono.
+      + by eapply same_attribute_mono.
+    - intros write write_event Hlookup Hwrite Hmarked.
+      assert (in_event_structure E write) as Hin.
+      { exact (Hold write write_event Hlookup Hwrite Hmarked). }
+      apply in_event_structure_lookup_iff in Hin as (old_event & Hold_lookup).
+      assert (lookup_event E' write = Some old_event) as Hold_lookup'.
+      { exact (HE write old_event Hold_lookup). }
+      assert (old_event = write_event) as -> by congruence.
+      by eapply Htotal.
+  Qed.
+
+  Lemma add_single_event_rmw_wf state agent thread label regs address data control :
+    core_allocation_wf state ->
+    ~ (is_write (EAgent agent (next_agent_index state agent) label) /\
+      is_rmw_marked (EAgent agent (next_agent_index state agent) label)) ->
+    rmw_wf state.(core_events) state.(core_rmw) ->
+    rmw_wf
+      (add_single_event state agent thread label regs address data control).(core_events)
+      state.(core_rmw).
+  Proof.
+    intros Hallocation Hnot_marked Hrmw.
+    pose proof (add_single_event_extends state agent thread label regs address data control
+      Hallocation) as [HE _]. eapply rmw_wf_mono; try done.
+    intros eid ev Hlookup Hwrite Hmarked.
+    simpl in Hlookup. unfold lookup_event in Hlookup.
+    apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]].
+    - exfalso. apply Hnot_marked. split; first done.
+      done.
+    - apply in_event_structure_lookup_iff. by exists ev.
+  Qed.
+
+  Lemma add_rmw_events_rmw_wf state agent thread mode loc old new regs address data control :
+    core_allocation_wf state ->
+    rmw_wf state.(core_events) state.(core_rmw) ->
+    rmw_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_rmw).
+  Proof.
+    intros Hallocation (Hedges & Hfunctional & Hinjective & Htotal).
+    pose proof (add_rmw_events_extends state agent thread mode loc old new regs address data control
+      Hallocation) as [HE _].
+    pose proof (core_next_id_fresh state Hallocation) as Hread_fresh.
+    assert (lookup_event state.(core_events) (S state.(core_next_id)) = None) as Hwrite_fresh.
+    { apply eq_None_not_Some. intros [ev Hlookup].
+      destruct Hallocation as (_ & Hids & _). specialize (Hids _ _ Hlookup). lia. }
+    split_and!.
+    - intros read write Hedge. simpl in Hedge. unfold rmw, edge_relation in Hedge.
+      apply elem_of_union in Hedge as [Hnew | Hold].
+      + apply elem_of_singleton, pair_equal_spec in Hnew as [-> ->].
+        exists (EAgent agent (next_agent_index state agent)
+          (LMemory AccessRead mode RmwMarked loc old)),
+          (EAgent agent (S (next_agent_index state agent))
+            (LMemory AccessWrite mode RmwMarked loc new)).
+        split_and!; try done.
+        * simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+        * simpl. apply lookup_insert_eq.
+        * exists agent, (next_agent_index state agent),
+            (S (next_agent_index state agent)),
+            (LMemory AccessRead mode RmwMarked loc old),
+            (LMemory AccessWrite mode RmwMarked loc new).
+          split_and!; try done.
+          -- simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+          -- simpl. apply lookup_insert_eq.
+          -- lia.
+        * eapply same_attribute_from_lookup
+            with (event1 := EAgent agent (next_agent_index state agent)
+              (LMemory AccessRead mode RmwMarked loc old))
+              (event2 := EAgent agent (S (next_agent_index state agent))
+                (LMemory AccessWrite mode RmwMarked loc new)) (value := loc);
+            simpl; try done.
+          -- apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+          -- apply lookup_insert_eq.
+        * eapply same_attribute_from_lookup
+            with (event1 := EAgent agent (next_agent_index state agent)
+              (LMemory AccessRead mode RmwMarked loc old))
+              (event2 := EAgent agent (S (next_agent_index state agent))
+                (LMemory AccessWrite mode RmwMarked loc new)) (value := mode);
+            simpl; try done.
+          -- apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+          -- apply lookup_insert_eq.
+      + destruct (Hedges read write Hold) as
+          (read_event & write_event & Hread & Hwrite & Hr & Hw & Hrmw_r & Hrmw_w &
+            Hpo & Hloc & Hmode).
+        exists read_event, write_event. split_and!; try done.
+        * by eapply HE.
+        * by eapply HE.
+        * by eapply po_mono.
+        * by eapply same_attribute_mono.
+        * by eapply same_attribute_mono.
+    - intros read write1 write2 Hedge1 Hedge2. simpl in Hedge1, Hedge2.
+      unfold rmw, edge_relation in Hedge1, Hedge2.
+      apply elem_of_union in Hedge1 as [Hnew1 | Hold1];
+        apply elem_of_union in Hedge2 as [Hnew2 | Hold2].
+      + set_solver.
+      + apply elem_of_singleton, pair_equal_spec in Hnew1 as [-> ->].
+        destruct (Hedges _ _ Hold2) as (read_event & write_event & Hlookup & _).
+        by rewrite Hread_fresh in Hlookup.
+      + apply elem_of_singleton, pair_equal_spec in Hnew2 as [-> ->].
+        destruct (Hedges _ _ Hold1) as (read_event & write_event & Hlookup & _).
+        by rewrite Hread_fresh in Hlookup.
+      + by eapply Hfunctional.
+    - intros read1 read2 write Hedge1 Hedge2. simpl in Hedge1, Hedge2.
+      unfold rmw, edge_relation in Hedge1, Hedge2.
+      apply elem_of_union in Hedge1 as [Hnew1 | Hold1];
+        apply elem_of_union in Hedge2 as [Hnew2 | Hold2].
+      + set_solver.
+      + apply elem_of_singleton, pair_equal_spec in Hnew1 as [-> ->].
+        destruct (Hedges _ _ Hold2) as (read_event & write_event & _ & Hlookup & _).
+        by rewrite Hwrite_fresh in Hlookup.
+      + apply elem_of_singleton, pair_equal_spec in Hnew2 as [-> ->].
+        destruct (Hedges _ _ Hold1) as (read_event & write_event & _ & Hlookup & _).
+        by rewrite Hwrite_fresh in Hlookup.
+      + by eapply Hinjective.
+    - intros write write_event Hlookup Hwrite Hmarked. simpl in Hlookup.
+      unfold lookup_event in Hlookup.
+      apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]].
+      + exists state.(core_next_id). simpl. unfold rmw, edge_relation. set_solver.
+      + apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done.
+        destruct (Htotal write write_event Hlookup Hwrite Hmarked) as [read Hedge].
+        exists read. simpl. unfold rmw, edge_relation. set_solver.
+  Qed.
+
+  Lemma registers_origins_wf_mono state state' agent regs :
+    core_extends state state' ->
+    registers_origins_wf state agent regs -> registers_origins_wf state' agent regs.
+  Proof.
+    intros Hextends Hregs reg result Hlookup.
+    eapply origins_before_mono; first done. by eapply Hregs.
+  Qed.
+
+  Lemma registers_origins_wf_insert state agent regs reg result :
+    registers_origins_wf state agent regs ->
+    origins_before state agent result.(reg_origins) ->
+    registers_origins_wf state agent (<[reg := result]> regs).
+  Proof.
+    intros Hregs Hresult other value Hlookup.
+    apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done.
+    by eapply Hregs.
+  Qed.
+
+  Lemma update_thread_provenance_wf state agent old_thread new_thread :
+    state.(core_threads) !! agent = Some old_thread ->
+    core_provenance_wf state ->
+    registers_origins_wf state agent new_thread.(thread_registers) ->
+    origins_before state agent (thread_control_origins new_thread) ->
+    core_provenance_wf (update_thread state agent new_thread).
+  Proof.
+    intros Hold Hwf Hregs Hcontrol other thread Hlookup. simpl in Hlookup.
+    apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done.
+    by eapply Hwf.
+  Qed.
+
+  Lemma add_single_event_provenance_wf state agent thread label regs address data control :
+    state.(core_threads) !! agent = Some thread ->
+    core_allocation_wf state ->
+    core_provenance_wf state ->
+    registers_origins_wf
+      (add_single_event state agent thread label regs address data control) agent regs ->
+    core_provenance_wf
+      (add_single_event state agent thread label regs address data control).
+  Proof.
+    intros Hthread Hallocation Hwf Hregs other current Hlookup. simpl in Hlookup.
+    pose proof (add_single_event_extends state agent thread label regs address data control
+      Hallocation) as Hextends.
+    apply lookup_insert_Some in Hlookup as [[<- <-] | [Hne Hlookup]].
+    - split; first done. simpl.
+      eapply origins_before_mono; first exact Hextends.
+      by apply (Hwf agent thread Hthread).
+    - destruct (Hwf other current Hlookup) as [Hregs_old Hcontrol]. split.
+      + by eapply registers_origins_wf_mono.
+      + by eapply origins_before_mono.
+  Qed.
+
+  Lemma add_rmw_events_provenance_wf state agent thread mode loc old new regs address data control :
+    state.(core_threads) !! agent = Some thread ->
+    core_allocation_wf state ->
+    core_provenance_wf state ->
+    registers_origins_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control) agent regs ->
+    core_provenance_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control).
+  Proof.
+    intros Hthread Hallocation Hwf Hregs other current Hlookup. simpl in Hlookup.
+    pose proof (add_rmw_events_extends state agent thread mode loc old new regs address data control
+      Hallocation) as Hextends.
+    apply lookup_insert_Some in Hlookup as [[<- <-] | [Hne Hlookup]].
+    - split; first done. simpl.
+      eapply origins_before_mono; first exact Hextends.
+      by apply (Hwf agent thread Hthread).
+    - destruct (Hwf other current Hlookup) as [Hregs_old Hcontrol]. split.
+      + by eapply registers_origins_wf_mono.
+      + by eapply origins_before_mono.
+  Qed.
+
+  Lemma added_single_read_origin state agent thread label regs address data control :
+    core_allocation_wf state ->
+    is_read (EAgent agent (next_agent_index state agent) label) ->
+    origins_before (add_single_event state agent thread label regs address data control) agent
+      {[state.(core_next_id)]}.
+  Proof.
+    intros Hallocation Hread source Hsource.
+    apply elem_of_singleton in Hsource as ->.
+    exists (next_agent_index state agent), label. split_and!; try done.
+    - simpl. apply lookup_insert_eq.
+    - simpl. unfold next_agent_index. simplify_map_eq. unfold next_agent_index. lia.
+  Qed.
+
+  Lemma added_rmw_read_origin state agent thread mode loc old new regs address data control :
+    core_allocation_wf state ->
+    origins_before (add_rmw_events state agent thread mode loc old new regs address data control)
+      agent {[state.(core_next_id)]}.
+  Proof.
+    intros Hallocation source Hsource. apply elem_of_singleton in Hsource as ->.
+    exists (next_agent_index state agent), (LMemory AccessRead mode RmwMarked loc old).
+    split_and!; try done.
+    - simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+    - simpl. unfold next_agent_index. simplify_map_eq. unfold next_agent_index. lia.
+  Qed.
+
+  Lemma add_single_event_direct_wf state agent thread label regs address data control :
+    core_allocation_wf state ->
+    direct_addr_wf state.(core_events) state.(core_direct_addr) ->
+    direct_data_wf state.(core_events) state.(core_direct_data) ->
+    direct_ctrl_wf state.(core_events) state.(core_direct_ctrl) ->
+    origins_before state agent address ->
+    origins_before state agent data ->
+    origins_before state agent control ->
+    (forall source, source ∈ address ->
+      is_memory (EAgent agent (next_agent_index state agent) label)) ->
+    (forall source, source ∈ data ->
+      is_write (EAgent agent (next_agent_index state agent) label)) ->
+    (forall source, source ∈ control ->
+      is_write (EAgent agent (next_agent_index state agent) label)) ->
+    direct_addr_wf
+      (add_single_event state agent thread label regs address data control).(core_events)
+      (add_single_event state agent thread label regs address data control).(core_direct_addr) /\
+    direct_data_wf
+      (add_single_event state agent thread label regs address data control).(core_events)
+      (add_single_event state agent thread label regs address data control).(core_direct_data) /\
+    direct_ctrl_wf
+      (add_single_event state agent thread label regs address data control).(core_events)
+      (add_single_event state agent thread label regs address data control).(core_direct_ctrl).
+  Proof.
+    intros Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr Hdata Hctrl
+      Hmemory Hwrite_data Hwrite_ctrl.
+    pose proof (add_single_event_extends state agent thread label regs address data control
+      Hallocation) as [HE _]. split_and!; simpl.
+    - eapply add_origin_edges_addr_wf; try done. intros source Hsource.
+      destruct (origin_before_single_event state agent thread label regs address data control
+        source Hallocation (Haddr source Hsource)) as [Hread Hpo].
+      split_and!; try done. exists (EAgent agent (next_agent_index state agent) label).
+      split; last exact (Hmemory source Hsource). simpl. apply lookup_insert_eq.
+    - eapply add_origin_edges_data_wf; try done. intros source Hsource.
+      destruct (origin_before_single_event state agent thread label regs address data control
+        source Hallocation (Hdata source Hsource)) as [Hread Hpo].
+      split_and!; try done. exists (EAgent agent (next_agent_index state agent) label).
+      split; last exact (Hwrite_data source Hsource). simpl. apply lookup_insert_eq.
+    - eapply add_origin_edges_ctrl_wf; try done. intros source Hsource.
+      destruct (origin_before_single_event state agent thread label regs address data control
+        source Hallocation (Hctrl source Hsource)) as [Hread Hpo].
+      split_and!; try done. exists (EAgent agent (next_agent_index state agent) label).
+      split; last exact (Hwrite_ctrl source Hsource). simpl. apply lookup_insert_eq.
+  Qed.
+
+  Lemma rmw_read_write_po state agent thread mode loc old new regs address data control :
+    po (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      state.(core_next_id) (S state.(core_next_id)).
+  Proof.
+    exists agent, (next_agent_index state agent), (S (next_agent_index state agent)),
+      (LMemory AccessRead mode RmwMarked loc old),
+      (LMemory AccessWrite mode RmwMarked loc new).
+    split_and!; try done.
+    - simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+    - simpl. apply lookup_insert_eq.
+    - lia.
+  Qed.
+
+  Lemma add_rmw_events_direct_wf state agent thread mode loc old new regs address data control :
+    core_allocation_wf state ->
+    direct_addr_wf state.(core_events) state.(core_direct_addr) ->
+    direct_data_wf state.(core_events) state.(core_direct_data) ->
+    direct_ctrl_wf state.(core_events) state.(core_direct_ctrl) ->
+    origins_before state agent address ->
+    (forall source, source ∈ data ->
+      event_is_read
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source /\
+      po
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source (S state.(core_next_id))) ->
+    (forall source, source ∈ control ->
+      event_is_read
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source /\
+      po
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source (S state.(core_next_id))) ->
+    direct_addr_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      (add_rmw_events state agent thread mode loc old new regs address data control)
+        .(core_direct_addr) /\
+    direct_data_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      (add_rmw_events state agent thread mode loc old new regs address data control)
+        .(core_direct_data) /\
+    direct_ctrl_wf
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      (add_rmw_events state agent thread mode loc old new regs address data control)
+        .(core_direct_ctrl).
+  Proof.
+    intros Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr Hdata Hctrl.
+    pose proof (add_rmw_events_extends state agent thread mode loc old new regs address data control
+      Hallocation) as [HE _]. split_and!; simpl.
+    - eapply add_origin_edges_addr_wf.
+      + intros eid ev Hlookup. done.
+      + eapply add_origin_edges_addr_wf; try done. intros source Hsource.
+        destruct (origin_before_rmw_read state agent thread mode loc old new regs address data
+          control source Hallocation (Haddr source Hsource)) as [Hread Hpo].
+        split_and!; try done. exists (EAgent agent (next_agent_index state agent)
+          (LMemory AccessRead mode RmwMarked loc old)).
+        split; last done. simpl. apply lookup_insert_Some. right.
+        split; first lia. apply lookup_insert_eq.
+      + intros source Hsource.
+        destruct (origin_before_rmw_write state agent thread mode loc old new regs address data
+          control source Hallocation (Haddr source Hsource)) as [Hread Hpo].
+        split_and!; try done. exists (EAgent agent (S (next_agent_index state agent))
+          (LMemory AccessWrite mode RmwMarked loc new)).
+        split; last done. simpl. apply lookup_insert_eq.
+    - eapply add_origin_edges_data_wf; try done. intros source Hsource.
+      destruct (Hdata source Hsource) as [Hread Hpo]. split_and!; try done.
+      exists (EAgent agent (S (next_agent_index state agent))
+        (LMemory AccessWrite mode RmwMarked loc new)).
+      split; last done. simpl. apply lookup_insert_eq.
+    - eapply add_origin_edges_ctrl_wf; try done. intros source Hsource.
+      destruct (Hctrl source Hsource) as [Hread Hpo]. split_and!; try done.
+      exists (EAgent agent (S (next_agent_index state agent))
+        (LMemory AccessWrite mode RmwMarked loc new)).
+      split; last done. simpl. apply lookup_insert_eq.
+  Qed.
+
+  Lemma add_empty_single_event_direct_wf state agent thread label regs :
+    core_allocation_wf state ->
+    direct_addr_wf state.(core_events) state.(core_direct_addr) ->
+    direct_data_wf state.(core_events) state.(core_direct_data) ->
+    direct_ctrl_wf state.(core_events) state.(core_direct_ctrl) ->
+    direct_addr_wf
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_events)
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_direct_addr) /\
+    direct_data_wf
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_events)
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_direct_data) /\
+    direct_ctrl_wf
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_events)
+      (add_single_event state agent thread label regs ∅ ∅ ∅).(core_direct_ctrl).
+  Proof.
+    intros Hallocation Haddr Hdata Hctrl.
+    eapply add_single_event_direct_wf; try done;
+      intros source Hsource; set_solver.
+  Qed.
+
+  Lemma core_initial_generated_wf P : core_generated_wf (core_initial_state P).
+  Proof.
+    unfold core_generated_wf. split_and!.
+    - apply core_initial_allocation_wf.
+    - intros agent thread Hlookup. simpl in Hlookup.
+      apply lookup_fmap_Some in Hlookup as (body & <- & Hbody). split.
+      + intros reg result Hfalse. done.
+      + intros source Hfalse. set_solver.
+    - unfold rmw_wf. split_and!.
+      + intros read write Hfalse. set_solver.
+      + intros write1 write2 read Hfalse. set_solver.
+      + intros read1 read2 write Hfalse. set_solver.
+      + intros write event Hlookup Hwrite Hmarked.
+        pose proof (insert_initial_events_shape (initial_entries P) 0%nat ∅ write event)
+          as Hshape.
+        specialize (Hshape ltac:(intros; simplify_map_eq) Hlookup).
+        destruct Hshape as (loc & val & ->). done.
+    - intros read access Hfalse. set_solver.
+    - intros read write Hfalse. set_solver.
+    - intros read write Hfalse. set_solver.
+  Qed.
+
+  Lemma origins_before_union state agent left right :
+    origins_before state agent left -> origins_before state agent right ->
+    origins_before state agent (left ∪ right).
+  Proof.
+    intros Hleft Hright source Hsource. apply elem_of_union in Hsource as [Hsource | Hsource].
+    - by apply Hleft.
+    - by apply Hright.
+  Qed.
+
+  Lemma old_origins_to_rmw_write state agent thread mode loc old new regs address data control
+      sources :
+    core_allocation_wf state -> origins_before state agent sources ->
+    forall source, source ∈ sources ->
+      event_is_read
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source /\
+      po
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source (S state.(core_next_id)).
+  Proof.
+    intros Hallocation Hsources source Hsource.
+    by eapply origin_before_rmw_write, Hsources.
+  Qed.
+
+  Lemma rmw_read_to_write state agent thread mode loc old new regs address data control :
+    event_is_read
+      (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      state.(core_next_id) /\
+    po (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+      state.(core_next_id) (S state.(core_next_id)).
+  Proof.
+    split; last apply rmw_read_write_po.
+    exists (EAgent agent (next_agent_index state agent)
+      (LMemory AccessRead mode RmwMarked loc old)). split; last done.
+    simpl. apply lookup_insert_Some. right. split; first lia. apply lookup_insert_eq.
+  Qed.
+
+  Lemma rmw_read_union_to_write state agent thread mode loc old new regs address data control
+      sources :
+    core_allocation_wf state -> origins_before state agent sources ->
+    forall source, source ∈ ({[state.(core_next_id)]} ∪ sources) ->
+      event_is_read
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source /\
+      po
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source (S state.(core_next_id)).
+  Proof.
+    intros Hallocation Hsources source Hsource.
+    apply elem_of_union in Hsource as [Hsource | Hsource].
+    - apply elem_of_singleton in Hsource as ->. apply rmw_read_to_write.
+    - by eapply old_origins_to_rmw_write.
+  Qed.
+
+  Lemma rmw_read_union_union_to_write state agent thread mode loc old new regs address data control
+      left right :
+    core_allocation_wf state -> origins_before state agent left ->
+    origins_before state agent right ->
+    forall source, source ∈ ({[state.(core_next_id)]} ∪ left ∪ right) ->
+      event_is_read
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source /\
+      po
+        (add_rmw_events state agent thread mode loc old new regs address data control).(core_events)
+        source (S state.(core_next_id)).
+  Proof.
+    intros Hallocation Hleft Hright source Hsource.
+    eapply rmw_read_union_to_write with (sources := left ∪ right); try done.
+    - by apply origins_before_union.
+    - set_solver.
+  Qed.
+
+  Theorem core_step_preserves_generated_wf P state action state' :
+    core_step P state action state' ->
+    core_generated_wf state -> core_generated_wf state'.
+  Proof.
+    intros Hstep (Hallocation & Hprovenance & Hrmw & Haddr_wf & Hdata_wf & Hctrl_wf).
+    pose proof (core_step_preserves_allocation P state action state' Hstep Hallocation)
+      as Hallocation'.
+    destruct Hstep as
+      [state agent thread first second Hthread Hstatement
+      | state agent thread next continuation Hthread Hstatement Hcontinuation
+      | state agent thread condition continuation Hthread Hstatement Hcontinuation
+      | state agent thread dst expression result Hthread Hstatement Heval
+      | state agent thread condition then_branch else_branch result
+          Hthread Hstatement Heval Hnonzero
+      | state agent thread condition then_branch else_branch result
+          Hthread Hstatement Heval Hzero
+      | state agent thread dst mode address loc address_sources observed
+          Hthread Hstatement Haddress Hinitialized
+      | state agent thread mode address expression loc address_sources result
+          Hthread Hstatement Haddress Heval Hinitialized
+      | state agent thread dst mode address expression loc address_sources result observed
+          Hthread Hstatement Haddress Heval Hinitialized
+      | state agent thread dst mode address expected desired loc address_sources
+          expected_result desired_result observed Hthread Hstatement Haddress Hexpected Hdesired
+          Hobserved Hinitialized
+      | state agent thread dst mode address expected desired loc address_sources
+          expected_result desired_result observed Hthread Hstatement Haddress Hexpected Hdesired
+          Hobserved Hinitialized
+      | state agent thread dst mode op address argument loc address_sources argument_result observed
+          Hthread Hstatement Haddress Hargument Hinitialized
+      | state agent thread dst mode op address argument loc address_sources argument_result observed
+          Hthread Hstatement Haddress Hargument Hinitialized
+      | state agent thread op address argument loc address_sources argument_result observed
+          Hthread Hstatement Haddress Hargument Hinitialized
+      | state agent thread kind Hthread Hstatement
+      | state agent thread Hthread Hstatement
+      | state agent thread Hthread Hstatement
+      | state agent thread Hthread Hstatement].
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      split_and!; try done. eapply update_thread_provenance_wf; simpl; done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      unfold thread_control_origins in Hcontrol. rewrite Hcontinuation in Hcontrol.
+      split_and!; try done.
+      eapply update_thread_provenance_wf; try done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      unfold thread_control_origins in Hcontrol.
+      rewrite Hcontinuation in Hcontrol. simpl in Hcontrol.
+      split_and!; try done.
+      eapply update_thread_provenance_wf; try done.
+      intros source Hsource. apply Hcontrol. set_solver.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Heval) as Hresult.
+      split_and!; try done. eapply update_thread_provenance_wf; try done.
+      by eapply registers_origins_wf_insert.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Heval) as Hresult.
+      split_and!; try done. eapply update_thread_provenance_wf; try done.
+      simpl. by apply origins_before_union.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Heval) as Hresult.
+      split_and!; try done. eapply update_thread_provenance_wf; try done.
+      simpl. by apply origins_before_union.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (add_single_event_extends state agent thread
+        (LMemory AccessRead (load_access_mode mode) NotRmw loc observed)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ∅ ∅ Hallocation) as Hextends.
+      pose proof (add_single_event_direct_wf state agent thread
+        (LMemory AccessRead (load_access_mode mode) NotRmw loc observed)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ∅ ∅ Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; done)
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; set_solver)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_single_read_origin; done.
+      + eapply (add_single_event_rmw_wf state agent thread
+          (LMemory AccessRead (load_access_mode mode) NotRmw loc observed));
+          try done. intros [Hwrite _]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Heval) as Hdata.
+      pose proof (add_single_event_extends state agent thread
+        (LMemory AccessWrite (store_access_mode mode) NotRmw loc result.(reg_integer))
+        thread.(thread_registers) address_sources result.(reg_origins)
+        (thread_control_origins thread) Hallocation) as Hextends.
+      pose proof (add_single_event_direct_wf state agent thread
+        (LMemory AccessWrite (store_access_mode mode) NotRmw loc result.(reg_integer))
+        thread.(thread_registers) address_sources result.(reg_origins)
+        (thread_control_origins thread) Hallocation Haddr_wf Hdata_wf Hctrl_wf
+        Haddr Hdata Hcontrol
+        ltac:(intros source Hsource; done)
+        ltac:(intros source Hsource; done)
+        ltac:(intros source Hsource; done)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + eapply (add_single_event_rmw_wf state agent thread
+          (LMemory AccessWrite (store_access_mode mode) NotRmw loc result.(reg_integer)));
+          try done. intros [_ Hmarked]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Heval) as Hdata.
+      pose proof (add_rmw_events_extends state agent thread (rmw_access_mode mode) loc observed
+        result.(reg_integer)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources result.(reg_origins) (thread_control_origins thread) Hallocation)
+        as Hextends.
+      pose proof (add_rmw_events_direct_wf state agent thread (rmw_access_mode mode) loc observed
+        result.(reg_integer)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources result.(reg_origins) (thread_control_origins thread)
+        Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(by eapply old_origins_to_rmw_write)
+        ltac:(by eapply old_origins_to_rmw_write)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_rmw_events_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_rmw_read_origin; done.
+      + by eapply add_rmw_events_rmw_wf.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Hexpected) as Hexpected_origins.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Hdesired) as Hdata.
+      pose proof (add_rmw_events_extends state agent thread (rmw_access_mode mode) loc observed
+        desired_result.(reg_integer)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources desired_result.(reg_origins)
+        ({[core_next_id state]} ∪ expected_result.(reg_origins) ∪ thread_control_origins thread)
+        Hallocation) as Hextends.
+      pose proof (add_rmw_events_direct_wf state agent thread (rmw_access_mode mode) loc observed
+        desired_result.(reg_integer)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources desired_result.(reg_origins)
+        ({[core_next_id state]} ∪ expected_result.(reg_origins) ∪ thread_control_origins thread)
+        Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(by eapply old_origins_to_rmw_write)
+        ltac:(by eapply rmw_read_union_union_to_write)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_rmw_events_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_rmw_read_origin; done.
+      + by eapply add_rmw_events_rmw_wf.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (add_single_event_extends state agent thread
+        (LMemory AccessRead (rmw_access_mode mode) RmwMarked loc observed)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ∅ ∅ Hallocation) as Hextends.
+      pose proof (add_single_event_direct_wf state agent thread
+        (LMemory AccessRead (rmw_access_mode mode) RmwMarked loc observed)
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ∅ ∅ Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; done)
+        ltac:(intros source Hsource; set_solver)
+        ltac:(intros source Hsource; set_solver)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_single_read_origin; done.
+      + eapply (add_single_event_rmw_wf state agent thread
+          (LMemory AccessRead (rmw_access_mode mode) RmwMarked loc observed));
+          try done. intros [Hwrite _]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Hargument) as Hargument_origins.
+      pose proof (add_rmw_events_extends state agent thread (rmw_access_mode mode) loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer))
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation) as Hextends.
+      pose proof (add_rmw_events_direct_wf state agent thread (rmw_access_mode mode) loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer))
+        (<[dst := RegValue observed {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(by eapply rmw_read_union_to_write)
+        ltac:(by eapply old_origins_to_rmw_write)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_rmw_events_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_rmw_read_origin; done.
+      + by eapply add_rmw_events_rmw_wf.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Hargument) as Hargument_origins.
+      pose proof (add_rmw_events_extends state agent thread (rmw_access_mode mode) loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer))
+        (<[dst := RegValue (apply_atomic_op op observed argument_result.(reg_integer))
+          {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation) as Hextends.
+      pose proof (add_rmw_events_direct_wf state agent thread (rmw_access_mode mode) loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer))
+        (<[dst := RegValue (apply_atomic_op op observed argument_result.(reg_integer))
+          {[core_next_id state]}]> thread.(thread_registers))
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(by eapply rmw_read_union_to_write)
+        ltac:(by eapply old_origins_to_rmw_write)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_rmw_events_provenance_wf; try done.
+        eapply registers_origins_wf_insert.
+        * by eapply registers_origins_wf_mono.
+        * apply added_rmw_read_origin; done.
+      + by eapply add_rmw_events_rmw_wf.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (eval_location_origins_before state agent _ _ _ _ Hregs Haddress) as Haddr.
+      pose proof (eval_expr_origins_before state agent _ _ _ Hregs Hargument) as Hargument_origins.
+      pose proof (add_rmw_events_extends state agent thread AccessNoreturn loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer)) thread.(thread_registers)
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation) as Hextends.
+      pose proof (add_rmw_events_direct_wf state agent thread AccessNoreturn loc observed
+        (apply_atomic_op op observed argument_result.(reg_integer)) thread.(thread_registers)
+        address_sources ({[core_next_id state]} ∪ argument_result.(reg_origins))
+        (thread_control_origins thread) Hallocation Haddr_wf Hdata_wf Hctrl_wf Haddr
+        ltac:(by eapply rmw_read_union_to_write)
+        ltac:(by eapply old_origins_to_rmw_write)) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_rmw_events_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + by eapply add_rmw_events_rmw_wf.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (add_single_event_extends state agent thread
+        (LBarrier (fence_barrier_kind kind)) thread.(thread_registers) ∅ ∅ ∅ Hallocation)
+        as Hextends.
+      pose proof (add_empty_single_event_direct_wf state agent thread
+        (LBarrier (fence_barrier_kind kind)) thread.(thread_registers)
+        Hallocation Haddr_wf Hdata_wf Hctrl_wf) as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + eapply (add_single_event_rmw_wf state agent thread
+          (LBarrier (fence_barrier_kind kind))); try done. intros [Hwrite _]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (add_single_event_extends state agent thread (LBarrier BarrierRcuLock)
+        thread.(thread_registers) ∅ ∅ ∅ Hallocation) as Hextends.
+      pose proof (add_empty_single_event_direct_wf state agent thread (LBarrier BarrierRcuLock)
+        thread.(thread_registers) Hallocation Haddr_wf Hdata_wf Hctrl_wf)
+        as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + eapply (add_single_event_rmw_wf state agent thread (LBarrier BarrierRcuLock));
+          try done. intros [Hwrite _]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (add_single_event_extends state agent thread (LBarrier BarrierRcuUnlock)
+        thread.(thread_registers) ∅ ∅ ∅ Hallocation) as Hextends.
+      pose proof (add_empty_single_event_direct_wf state agent thread (LBarrier BarrierRcuUnlock)
+        thread.(thread_registers) Hallocation Haddr_wf Hdata_wf Hctrl_wf)
+        as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + eapply (add_single_event_rmw_wf state agent thread (LBarrier BarrierRcuUnlock));
+          try done. intros [Hwrite _]. done.
+    - destruct (Hprovenance agent thread Hthread) as [Hregs Hcontrol].
+      pose proof (add_single_event_extends state agent thread (LBarrier BarrierSyncRcu)
+        thread.(thread_registers) ∅ ∅ ∅ Hallocation) as Hextends.
+      pose proof (add_empty_single_event_direct_wf state agent thread (LBarrier BarrierSyncRcu)
+        thread.(thread_registers) Hallocation Haddr_wf Hdata_wf Hctrl_wf)
+        as (Haddr' & Hdata' & Hctrl').
+      split_and!; try done.
+      + eapply add_single_event_provenance_wf; try done.
+        by eapply registers_origins_wf_mono.
+      + eapply (add_single_event_rmw_wf state agent thread (LBarrier BarrierSyncRcu));
+          try done. intros [Hwrite _]. done.
+  Qed.
+
+  Theorem core_run_preserves_generated_wf P state actions state' :
+    core_run P state actions state' -> core_generated_wf state -> core_generated_wf state'.
+  Proof.
+    intros Hrun. induction Hrun; intros Hwf; first done.
+    apply IHHrun. by eapply core_step_preserves_generated_wf.
+  Qed.
+
+  Theorem core_run_generated_wf P actions state :
+    core_run P (core_initial_state P) actions state -> core_generated_wf state.
+  Proof.
+    intros Hrun. eapply core_run_preserves_generated_wf; first exact Hrun.
+    apply core_initial_generated_wf.
+  Qed.
+
+  Corollary complete_core_run_generated_relations_wf P actions state :
+    complete_core_run P actions state ->
+    rmw_wf state.(core_events) state.(core_rmw) /\
+    direct_addr_wf state.(core_events) state.(core_direct_addr) /\
+    direct_data_wf state.(core_events) state.(core_direct_data) /\
+    direct_ctrl_wf state.(core_events) state.(core_direct_ctrl).
+  Proof.
+    intros [Hrun _]. destruct (core_run_generated_wf P actions state Hrun) as (_ & _ & Hwf).
+    done.
+  Qed.
 
   Record core_candidate := CoreCandidate {
     candidate_events : event_structure;
@@ -73,17 +1108,14 @@ Module LkmmProgramGraph.
   Definition lkmm_consistent (C : core_candidate) : Prop :=
     coherence C.(candidate_events) C.(candidate_rf) C.(candidate_co) /\
     atomicity C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co) /\
-    happens_before C.(candidate_events) C.(candidate_rmw)
-      C.(candidate_rf) C.(candidate_co)
+    happens_before C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
       C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl) /\
-    propagation C.(candidate_events) C.(candidate_rmw)
-      C.(candidate_rf) C.(candidate_co)
+    propagation C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
       C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl) /\
     rcu_consistent (core_candidate_rcu_view C).
 
-  (** Allocation is an invariant of the run itself.  Exact agreement with a
-      well-formed candidate then gives the generated RMW and dependency
-      relations their relational well-formedness guarantees. *)
+  (** Allocation, RMW pairing, and dependency provenance are invariants of
+      Core execution, independently of the candidate's well-formedness field. *)
   Theorem program_graph_execution_invariants P C :
     program_graph P C ->
     exists actions state,
@@ -100,14 +1132,11 @@ Module LkmmProgramGraph.
       direct_ctrl_wf state.(core_events) state.(core_direct_ctrl).
   Proof.
     intros [(actions & state & Hrun & Hevents & Hrmw_eq & Haddr_eq &
-      Hdata_eq & Hctrl_eq) (_ & _ & _ & Hrmw & Haddr & Hdata & Hctrl & _)].
+      Hdata_eq & Hctrl_eq) _].
     pose proof Hrun as Hcomplete_run. destruct Hrun as [Hsteps Hcomplete].
-    exists actions, state. split_and!; try done.
-    - apply (core_run_allocation_wf P actions state). exact Hsteps.
-    - by rewrite Hevents, Hrmw_eq.
-    - by rewrite Hevents, Haddr_eq.
-    - by rewrite Hevents, Hdata_eq.
-    - by rewrite Hevents, Hctrl_eq.
+    destruct (core_run_generated_wf P actions state Hsteps) as
+      (Hallocation & _ & Hrmw & Haddr & Hdata & Hctrl).
+    exists actions, state. split_and!; done.
   Qed.
 
   Module ProgramGraphTests.

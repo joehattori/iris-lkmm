@@ -129,6 +129,17 @@ Module LkmmExecution.
 
   Definition same_agent (E : event_structure) : relation := same_attribute agent_of E.
 
+  Lemma same_attribute_from_lookup {A} (project : event -> option A)
+      E eid1 eid2 event1 event2 value :
+    lookup_event E eid1 = Some event1 ->
+    lookup_event E eid2 = Some event2 ->
+    project event1 = Some value -> project event2 = Some value ->
+    same_attribute project E eid1 eid2.
+  Proof.
+    intros Hlookup1 Hlookup2 Hvalue1 Hvalue2. exists value.
+    unfold event_attribute. by rewrite Hlookup1, Hlookup2.
+  Qed.
+
   (** Herd's [ext]: endpoints that do not belong to the same program agent. *)
   Definition ext (E : event_structure) : relation := fun eid1 eid2 => ~ same_agent E eid1 eid2.
 

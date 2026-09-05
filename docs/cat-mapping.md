@@ -61,6 +61,9 @@ only the marked read.
 
 `theories/lang/program_graph.v` relates a complete run to one `core_candidate`.
 Events, RMW pairs, and direct dependencies must equal the generated fields.
+The Core generation invariant proves that the generated RMW relation and all
+three direct dependency relations satisfy their relational well-formedness
+interfaces.
 `rf` and `co` remain finite candidate choices constrained by `rf_wf` and
 `co_wf`; `lkmm_consistent` applies the selected CAT constraints separately.
 The adapter to the feasibility RCU kernel derives `hb` and `pb` from the same

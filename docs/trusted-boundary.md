@@ -31,10 +31,10 @@ irreflexivity for every builder run, and finite candidate scheduling
 completeness.  Iris checks exclusive reader entry/exit, registered pending/done
 GP transitions, monotone epoch advancement, persistence of completion
 certificates, and arbitrary-frame preservation.
-Rocq also checks LKMM-Core event allocation, exact RMW/dependency agreement in
-`program_graph`, and all relational well-formedness conditions for an accepted
-core candidate.  The program run generates RMW and dependency relations; `rf`
-and `co` remain finite candidate choices rather than trusted program inputs.
+Rocq also checks LKMM-Core event allocation and provenance, proves generated
+RMW and direct-dependency relations well formed for every Core run, and checks
+their exact agreement in `program_graph`.  The `rf` and `co` relations remain
+finite candidate choices rather than trusted program inputs.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
@@ -44,9 +44,10 @@ and RMW pair comes from the machine; completion requires exact agreement.
 Its scheduling theorem assumes an existing complete snapshot-machine run
 and inherits the candidate scheduler's excluded-middle dependency.  Its
 soundness proof adds no axioms.  `coupled_run_program_graph` proves the
-`program_graph` connection under explicit `rf`/`co`/`rmw` and direct-dependency
-well-formedness premises.  These are obligations for callers, not new axioms
-or transition guards; their general derivation from execution is not claimed.
+`program_graph` connection under explicit `rf`/`co` well-formedness premises;
+RMW and direct-dependency well-formedness are derived from the projected Core
+run.  The remaining premises are obligations for callers, not new axioms or
+transition guards.
 RCU consistency transfers to the extracted candidate only under explicit
 inclusion of its derived `hb`/`pb` in the builder's abstract relations.  The
 builder still does not enforce full LKMM consistency.
