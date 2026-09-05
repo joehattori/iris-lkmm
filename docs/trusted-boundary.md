@@ -41,7 +41,7 @@ and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
 uses the canonical matcher.  The Core-aware coupling connects these results
 to the builder's RCU consistency invariant.  Every reachable committed event
 and RMW pair comes from the machine; completion requires exact agreement.
-Its scheduling theorem assumes an existing complete snapshot-machine run
+Its scheduling theorem assumes a complete snapshot-machine run
 and inherits the candidate scheduler's excluded-middle dependency.  Its
 soundness proof adds no axioms.  `coupled_run_program_graph` proves the
 `program_graph` connection under explicit `rf`/`co` well-formedness premises;
@@ -50,7 +50,7 @@ run.  The remaining premises are obligations for callers, not new axioms or
 transition guards.
 RCU consistency transfers to the extracted candidate only under explicit
 inclusion of its derived `hb`/`pb` in the builder's abstract relations.  The
-builder still does not enforce full LKMM consistency.
+builder does not enforce full LKMM consistency.
 
 `lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
 Core-driven GP certificates, including certificates in coupled executions.

@@ -4,12 +4,11 @@ The prototype language has fixed agents and five instructions: `read`,
 `write`, `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu`.
 Its syntax and canonical event-label translation live in `lkmm_lang.v`; the
 operational state and transitions in `rcu_machine.v` consume that language.
-It remains intentionally smaller than the LKMM-Core language in
-`lkmm_core.v`.
+It is intentionally smaller than the LKMM-Core language in `lkmm_core.v`.
 
 ## LKMM-Core and concrete program graphs
 
-`lkmm_core.v` adds a separate finite, loop-free language with registers,
+`lkmm_core.v` defines a separate finite, loop-free language with registers,
 structured sequencing and conditionals, memory accesses, RMW operations,
 fences, and normal-RCU operations.  Expressions evaluate to an integer and
 the set of read-event origins that contributed to it.  Those origins generate
@@ -38,8 +37,8 @@ allowing future writes to justify earlier observations.
 `lkmm_consistent` is deliberately separate from `program_graph`.  It conjoins
 coherence, atomicity, happens-before acyclicity, propagation acyclicity, and
 normal-RCU consistency over an adapter whose `hb` and `pb` are derived from the
-candidate's dependency edges.  The existing abstract-`hb`/`pb` feasibility
-graph remains intact for the already-proved gate results.
+candidate's dependency edges.  The feasibility graph uses abstract `hb` and
+`pb` relations for the gate results.
 
 ## Core-driven RCU machine
 
@@ -71,8 +70,7 @@ This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model
 consistency, or maintain Iris resources.  `lkmm_coupled.v` connects it to the
 incremental builder; `lkmm_machine_ghost.v` connects completed GP certificates
-to the Iris completion update, as described below.  Core's declarative trace
-semantics and `program_graph` remain unchanged.
+to the Iris completion update, as described below.
 
 ## Gate machine waiting protocol
 
@@ -106,8 +104,8 @@ sufficient to take the finish transition.  Neither theorem invokes
 canonical events, finite candidate `rf`, `co`, and `rmw` edge sets, and abstract
 `hb` and `pb` relations.  Its `prop` relation is derived from the canonical events
 and finite candidate edges.  It is a minimal shared graph view, not yet the final
-LKMM candidate-execution type.  `rcu_graph.v` adds the normal-RCU classifications
-and consistency condition.
+LKMM candidate-execution type.  `rcu_graph.v` defines the normal-RCU
+classifications and consistency condition.
 
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
@@ -224,20 +222,20 @@ the transition relation itself never receives the final candidate.
 
 ## Core-aware delayed commitments
 
-`lkmm_coupled.v` couples `LkmmMachine.state` to the existing `builder_state`.
+`lkmm_coupled.v` couples `LkmmMachine.state` to `builder_state`.
 A machine action advances Core execution or its snapshot-waiting protocol;
-a builder action retains the existing local `rb` delta check and additionally
-requires `generated_prefix` for its successor.  This guard requires every
+a builder action performs the local `rb` delta check and requires
+`generated_prefix` for its successor.  This guard requires every
 committed event to occur unchanged in the generated map and every committed
 RMW pair to belong to Core's generated RMW set.  `coupled_run_generated_prefix`
 proves that these conditions hold throughout every reachable run, including
 after later machine actions.
 
 The machine starts from `initial_state P`, including the program's initial
-writes; the builder still starts empty.  Commitments may lag behind emission.
+writes; the builder starts empty.  Commitments may lag behind emission.
 In particular, the builder can load events in canonical RCU trace order rather
 than global emission order.  `rf` and `co` are independent builder choices,
-not machine-generated edges.  `hb` and `pb` retain the gate's abstract interface.
+not machine-generated edges.  `hb` and `pb` use the gate's abstract interface.
 
 `coupled_complete` requires completed Core threads, no pending GPs, complete
 RCU matching, exact event-map agreement, and exact RMW-set agreement.  Its
@@ -303,7 +301,7 @@ all execution steps, primitive WP rules, and adequacy remain to be developed.
 
 ## Deliberate limitations
 
-- The feasibility-gate machine still emits only its five minimal labels.  The
+- The feasibility-gate machine emits only its five minimal labels.  The
   separate LKMM-Core machine handles values, generated RMW pairs, and direct
   dependency provenance.  Its builder and Iris completion bridges do not yet
   supply a full LKMM operational soundness theorem or Iris WP.

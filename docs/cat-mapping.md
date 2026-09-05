@@ -46,8 +46,8 @@ Address, data, and control dependencies are graph relations, not event labels;
 `direct_addr`, `direct_data`, and `direct_ctrl` expose their finite provenance
 edge sets through relational views.
 
-The existing feasibility kernel retains its five-label graph vocabulary until
-the later RCU compatibility-view commit.
+The feasibility kernel uses a five-label graph vocabulary.  A unified RCU
+compatibility view is deferred.
 
 ## LKMM-Core program correspondence
 
@@ -207,14 +207,14 @@ read-to-write endpoints are also related by `fre ; coe`; it is not folded into
 
 The operational graph layer does not redefine these relations.
 `rcu_link_commitment` stores the four intermediate event identifiers of the
-existing `rcu_link` decomposition, and `rcu_link_commitment_sound`/
+`rcu_link` decomposition, and `rcu_link_commitment_sound`/
 `rcu_link_commitment_complete` prove correspondence in both directions.  The
-builder's `bs_seen_rb` monitor is proved extensionally equal to the existing
-`rb` at every reachable state; `completed_builder_run_rb_irreflexive`
+builder's `bs_seen_rb` monitor is proved extensionally equal to `rb` at every
+reachable state; `completed_builder_run_rb_irreflexive`
 therefore establishes the same `rcu_consistent` predicate rather than a
 separate operational approximation.
 
-`rcu_segment` is an early proof-oriented certificate that retains CAT's
+`rcu_segment` is a proof-oriented certificate that retains CAT's
 recursive composition structure.  The independent formulation is
 `rcu_chain_order` in `theories/lkmm/rcu_obligations.v`.  It contains:
 
