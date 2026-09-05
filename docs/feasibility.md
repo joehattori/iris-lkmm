@@ -24,7 +24,7 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
 | Can grace-period waiting be represented incrementally? | `ABeginGp` snapshots exactly the currently open nested reader IDs. `AFinishGp` requires exactly those captured IDs to have closed; readers opened later do not mutate the snapshot. | **Pass.** |
 | Do machine snapshots and completed critical sections refine the chain semantics? | `operational_event_integrity` proves the machine's stack and closed-section cache agree with matching computed from canonical events. `completed_run_snapshot_chain_bridge` resolves captured IDs and constructs either valid two-atom chain orientation when its graph link is present. | **Pass.** |
 | Can `po?;hb*;pb*;prop;po` links be committed incrementally? | `rcu_link_commitment` stores the four intermediate events. `rcu_link_commitment_sound`/`rcu_link_commitment_complete` prove exact correspondence with `rcu_link`; `commit_ready_rcu_link` and monotonicity make commitments local and persistent under graph extension. | **Pass.** |
-| Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. It checks only delta irreflexivity. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
+| Is `rb` irreflexive for completed executions without embedding final consistency in each step? | Each raw mutation contributes one fact and an exact current-graph `rb` delta. Base-relation mutations also preserve structural prefix validity without imposing completion-only totality. `builder_step` has no final candidate and no `rcu_consistent` premise. `completed_builder_run_rb_irreflexive` proves the final CAT-style predicate. | **Pass.** |
 | Can every finite consistent candidate be generated without preloading the final graph? | `finite_candidate` contains graph data but no run, schedule, or operational state. `consistent_candidate_is_incrementally_schedulable` starts from the single constant `initial_builder` and adds one component at a time. | **Pass.** |
 | Can program execution be coupled to delayed builder commitments? | `LkmmCoupled.coupled_operational_soundness` proves complete Core-run projection, exact event/RMW agreement, RCU consistency, allocation well-formedness, and reader/certificate safety. `consistent_program_candidate_is_schedulable` proves relative scheduling given a complete snapshot-machine run with matching events and RMW pairs. | **Pass.** |
 | Does the operational state support a compositional Iris reclamation rule? | `rcu_ghost.v` gives readers exclusive ghost-map entries, registers immutable GP snapshots, and advances an authoritative MaxNat epoch on completion. `rcu_gp_finish_frame` preserves an arbitrary client frame and returns a persistent done certificate. | **Pass.** |
@@ -36,7 +36,8 @@ LKMM-Core language, Iris WP, or `percpu_ref` verification is already built.
   The builder admits explicit nonempty base relations and stores actual link
   witnesses.
 - Soundness is an invariant over current facts and new `rb` deltas.  No step
-  receives a final candidate or assumes `rcu_consistent`.
+  receives a final candidate or assumes `rcu_consistent`.  Base-relation
+  steps reject malformed `rf`/`co`/`rmw` prefixes locally.
 - Completeness is target-directed at the meta-level, as expected, but the
   target is absent from `initial_builder` and from `builder_step`.
 - The coupled semantics permits delayed commitments explicitly.  Machine

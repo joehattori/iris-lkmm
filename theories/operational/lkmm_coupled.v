@@ -339,9 +339,44 @@ Module LkmmCoupled.
       - destruct machine_run as [Hrun _].
         destruct (run_allocation_wf _ _ _ Hrun) as [Hwf _]. exact Hwf.
       - split; done.
-      - intros x y Hin. simpl in Hin. naive_solver.
-      - intros x y Hin. simpl in Hin. naive_solver.
-      - intros x y Hin. simpl in Hin. naive_solver.
+      - unfold rf_prefix_wf, rf_functional. split.
+        + intros write read Hrf.
+          unfold rf, edge_relation in Hrf. simpl in Hrf.
+          assert (write = 0 /\ read = 1) as [-> ->] by set_solver.
+          eexists _, _, 0%Z. split_and!; try reflexivity.
+          exists 0. split; reflexivity.
+        + intros write1 write2 read Hrf1 Hrf2.
+          unfold rf, edge_relation in Hrf1, Hrf2. simpl in Hrf1, Hrf2. set_solver.
+      - unfold co_prefix_wf, rel_acyclic, rel_irreflexive. split.
+        + intros write1 write2 Hco.
+          unfold co, edge_relation in Hco. simpl in Hco.
+          assert (write1 = 0 /\ write2 = 2) as [-> ->] by set_solver.
+          eexists _, _. split_and!; try reflexivity.
+          exists 0. split; reflexivity.
+        + assert (forall source target,
+            co {[(0, 2)]} source target -> source < target) as Hstep.
+          { unfold co, edge_relation. set_solver. }
+          assert (forall source target,
+            tc (co {[(0, 2)]}) source target -> source < target) as Hpath.
+          { intros source target Hcycle. induction Hcycle.
+            - by apply Hstep.
+            - lia. }
+          intros write Hcycle. pose proof (Hpath write write Hcycle). lia.
+      - unfold rmw_prefix_wf, rmw_functional, rmw_injective. split_and!.
+        + intros read write Hrmw.
+          unfold rmw, edge_relation in Hrmw. simpl in Hrmw.
+          assert (read = 1 /\ write = 2) as [-> ->] by set_solver.
+          eexists _, _. split_and!; try reflexivity.
+          * exists 0, 0, 1,
+              (LMemory AccessRead AccessOnce RmwMarked 0 0%Z),
+              (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z).
+            split_and!; try reflexivity; lia.
+          * exists 0. split; reflexivity.
+          * exists AccessOnce. split; reflexivity.
+        + intros read write1 write2 Hrmw1 Hrmw2.
+          unfold rmw, edge_relation in Hrmw1, Hrmw2. simpl in Hrmw1, Hrmw2. set_solver.
+        + intros read1 read2 write Hrmw1 Hrmw2.
+          unfold rmw, edge_relation in Hrmw1, Hrmw2. simpl in Hrmw1, Hrmw2. set_solver.
       - intros x y Hin. inversion Hin.
       - intros x y Hin. inversion Hin.
     Qed.
@@ -440,11 +475,11 @@ Module LkmmCoupled.
     Local Lemma finite_graph_wf : candidate_well_formed finite_graph.
     Proof.
       destruct (program_graph_wf _ _ two_agent_program_graph)
-        as (HE & _ & _ & _ & _ & _ & _ & Hmatching).
+        as (HE & Hrf & Hco & Hrmw & _ & _ & _ & Hmatching).
       unfold candidate_well_formed. split_and!; try done.
       - vm_compute. repeat constructor; set_solver.
-      - intros x y Hin. simpl in Hin. naive_solver.
-      - intros x y Hin. simpl in Hin. naive_solver.
+      - by apply rf_wf_prefix.
+      - by apply co_wf_prefix.
     Qed.
 
     Local Lemma finite_graph_consistent : rcu_consistent (candidate_graph finite_graph).

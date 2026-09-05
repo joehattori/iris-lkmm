@@ -11,11 +11,12 @@ The operational scope includes emitted-event integrity, a finite graph view
 over canonical events, derived `prop`, and abstract `hb`/`pb`, completed snapshot
 coverage, and the proved coverage-to-chain refinement.  It includes an
 incremental finite graph builder with explicit `rcu-link` witnesses and `rb` deltas, a
-proof of `rb` irreflexivity for every builder run, an independent declarative
-candidate type, and finite candidate scheduling completeness from a fixed
-empty initial builder.  The Core-driven machine and builder are combined by
-an asynchronous delayed-commitment semantics with RCU soundness and relative
-candidate scheduling theorems.
+proof of `rb` irreflexivity and structural `rf`/`co`/`rmw` prefix validity for
+every builder run, an independent declarative candidate type, and finite
+candidate scheduling completeness from a fixed empty initial builder.  The
+Core-driven machine and builder are combined by an asynchronous
+delayed-commitment semantics with RCU soundness and relative candidate
+scheduling theorems.
 
 The Iris feasibility scope includes exclusive reader tokens, authoritative
 pending/done GP registrations, a MaxNat completion epoch, a framed
@@ -26,10 +27,11 @@ registered pending-GP token.
 
 The incremental prototype includes fixed concurrent agents and the five
 gate-language instructions.  It carries finite `rf`, `co`, and `rmw`
-candidates but does not yet generate or validate them.  It deliberately
-excludes values, locations, graph-level `fr`, barriers, dependencies, RMW
-instruction semantics, SRCU, locks, the full LKMM consistency predicate, Iris
-WP/adequacy, and the `percpu_ref` case study.
+candidates and validates structural prefix obligations at each commitment.
+It does not choose those relations or enforce their completion-only totality
+conditions.  It deliberately excludes values, locations, graph-level `fr`,
+barriers, dependencies, RMW instruction semantics, SRCU, locks, the full LKMM
+consistency predicate, Iris WP/adequacy, and the `percpu_ref` case study.
 
 The LKMM-Core scope includes finite structured programs,
 register-origin dependency provenance, memory and RMW event generation, a

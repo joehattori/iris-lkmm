@@ -184,6 +184,14 @@ rb(new graph) = seen-rb ∪ delta
 irreflexive(delta)
 ```
 
+An `rf`, `co`, or `rmw` mutation must leave the resulting partial relation
+structurally well formed.  An `rf` prefix has well-formed edges and is
+functional; an `rmw` prefix has well-formed edges and is functional and
+injective; a `co` prefix has well-formed edges and is acyclic.  These
+properties are preserved by every builder run from `initial_builder`.
+Read-from totality, marked-write totality, and the total/transitive coherence
+order remain completion properties of a full LKMM candidate.
+
 The transition refers only to the current state, the one-step successor, and
 the delta.  It has no final candidate and no `rcu_consistent` premise.
 `builder_invariant` proves that `seen-rb` is exactly the current graph's `rb`,
@@ -197,7 +205,8 @@ Consequently, `completed_builder_run_rb_irreflexive` proves
 and five edge lists.  It contains no operational state,
 delta, transition list, or schedule.  `candidate_well_formed` requires unique
 event identifiers, canonical per-agent ordering, `event_structure_wf`,
-complete RCU matching, and relation endpoints in the event set.
+complete RCU matching, structurally well-formed `rf`/`co`/`rmw` prefixes, and
+abstract `hb`/`pb` endpoints in the event set.
 
 `candidate_has_raw_schedule` enumerates those finite components one at a
 time.  `lift_safe_raw_schedule` turns that enumeration into builder steps by

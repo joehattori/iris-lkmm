@@ -722,6 +722,47 @@ Module LkmmMemoryRelations.
     rf_functional edges /\
     rf_total E edges.
 
+  (** Structural obligations preserved by an incrementally constructed
+      prefix of [rf].  Totality is meaningful only for a completed
+      candidate and therefore remains in [rf_wf]. *)
+  Definition rf_prefix_wf (E : event_structure) (edges : edge_set) : Prop :=
+    (forall write read, rf edges write read -> rf_edge_wf E write read) /\
+    rf_functional edges.
+
+  Lemma rf_empty_prefix_wf E :
+    rf_prefix_wf E ∅.
+  Proof.
+    unfold rf_prefix_wf, rf_functional, rf, edge_relation. split; set_solver.
+  Qed.
+
+  Lemma rf_wf_prefix E edges :
+    rf_wf E edges -> rf_prefix_wf E edges.
+  Proof. intros (Hedges & Hfunctional & _). split; done. Qed.
+
+  Lemma rf_prefix_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> rf_prefix_wf E edges2 -> rf_prefix_wf E edges1.
+  Proof.
+    intros Hsubset [Hedges Hfunctional]. split.
+    - intros write read Hrf. apply Hedges, Hsubset, Hrf.
+    - intros write1 write2 read Hrf1 Hrf2.
+      eapply Hfunctional; [apply Hsubset, Hrf1 | apply Hsubset, Hrf2].
+  Qed.
+
+  Lemma rf_prefix_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 ->
+    rf_prefix_wf E1 edges -> rf_prefix_wf E2 edges.
+  Proof.
+    intros HE [Hedges Hfunctional]. split; last done.
+    intros write read Hrf.
+    destruct (Hedges write read Hrf) as
+      (write_event & read_event & val & Hwrite & Hread & Hwrite_kind &
+        Hread_kind & Hlocation & Hwrite_value & Hread_value).
+    exists write_event, read_event, val. split_and!; try done.
+    - by eapply HE.
+    - by eapply HE.
+    - by eapply same_attribute_mono.
+  Qed.
+
   Lemma rf_wf_edge E edges write read :
     rf_wf E edges -> rf edges write read -> rf_edge_wf E write read.
   Proof. intros (Hedges & _ & _) Hrf. by eapply Hedges. Qed.
@@ -806,6 +847,52 @@ Module LkmmMemoryRelations.
     rmw_functional edges /\
     rmw_injective edges /\
     rmw_write_total E edges.
+
+  (** Structural obligations preserved by an incrementally constructed
+      prefix of [rmw].  Marked-write totality remains a completion property. *)
+  Definition rmw_prefix_wf (E : event_structure) (edges : edge_set) : Prop :=
+    (forall read write, rmw edges read write -> rmw_edge_wf E read write) /\
+    rmw_functional edges /\
+    rmw_injective edges.
+
+  Lemma rmw_empty_prefix_wf E :
+    rmw_prefix_wf E ∅.
+  Proof.
+    unfold rmw_prefix_wf, rmw_functional, rmw_injective, rmw, edge_relation.
+    split_and!; set_solver.
+  Qed.
+
+  Lemma rmw_wf_prefix E edges :
+    rmw_wf E edges -> rmw_prefix_wf E edges.
+  Proof. intros (Hedges & Hfunctional & Hinjective & _). split_and!; done. Qed.
+
+  Lemma rmw_prefix_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> rmw_prefix_wf E edges2 -> rmw_prefix_wf E edges1.
+  Proof.
+    intros Hsubset (Hedges & Hfunctional & Hinjective). split_and!.
+    - intros read write Hrmw. apply Hedges, Hsubset, Hrmw.
+    - intros read write1 write2 Hrmw1 Hrmw2.
+      eapply Hfunctional; [apply Hsubset, Hrmw1 | apply Hsubset, Hrmw2].
+    - intros read1 read2 write Hrmw1 Hrmw2.
+      eapply Hinjective; [apply Hsubset, Hrmw1 | apply Hsubset, Hrmw2].
+  Qed.
+
+  Lemma rmw_prefix_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 ->
+    rmw_prefix_wf E1 edges -> rmw_prefix_wf E2 edges.
+  Proof.
+    intros HE (Hedges & Hfunctional & Hinjective). split_and!; try done.
+    intros read write Hrmw.
+    destruct (Hedges read write Hrmw) as
+      (read_event & write_event & Hread & Hwrite & Hread_kind & Hwrite_kind &
+        Hread_marked & Hwrite_marked & Hpo & Hlocation & Hmode).
+    exists read_event, write_event. split_and!; try done.
+    - by eapply HE.
+    - by eapply HE.
+    - by eapply po_mono.
+    - by eapply same_attribute_mono.
+    - by eapply same_attribute_mono.
+  Qed.
 
   Lemma rmw_wf_edge E edges read write :
     rmw_wf E edges -> rmw edges read write -> rmw_edge_wf E read write.
@@ -970,6 +1057,55 @@ Module LkmmMemoryRelations.
       initial_writes_exist E /\
       initial_writes_unique E /\
       co_initial_first E edges.
+
+  (** A coherence prefix need not yet be transitive or total.  Acyclicity is
+      hereditary under edge removal and prevents an incremental builder from
+      committing a cycle that no completed coherence order can repair. *)
+  Definition co_prefix_wf (E : event_structure) (edges : edge_set) : Prop :=
+    (forall write1 write2, co edges write1 write2 -> co_edge_wf E write1 write2) /\
+    rel_acyclic (co edges).
+
+  Lemma co_empty_prefix_wf E :
+    co_prefix_wf E ∅.
+  Proof.
+    unfold co_prefix_wf, rel_acyclic, rel_irreflexive, co, edge_relation. split.
+    - set_solver.
+    - intros write Hcycle. induction Hcycle; set_solver.
+  Qed.
+
+  Lemma co_wf_prefix E edges :
+    co_wf E edges -> co_prefix_wf E edges.
+  Proof.
+    intros (Hedges & Hirreflexive & Htransitive & _). split; first done.
+    assert (forall source target, tc (co edges) source target -> co edges source target) as Htc.
+    { intros source target Hpath. induction Hpath; first done.
+      by eapply Htransitive. }
+    intros write Hcycle. apply (Hirreflexive write), Htc, Hcycle.
+  Qed.
+
+  Lemma co_prefix_wf_subset E edges1 edges2 :
+    edges1 ⊆ edges2 -> co_prefix_wf E edges2 -> co_prefix_wf E edges1.
+  Proof.
+    intros Hsubset [Hedges Hacyclic]. split.
+    - intros write1 write2 Hco. apply Hedges, Hsubset, Hco.
+    - intros write Hcycle. apply (Hacyclic write).
+      eapply tc_mono; last exact Hcycle.
+      intros source target Hco. by apply Hsubset.
+  Qed.
+
+  Lemma co_prefix_wf_mono E1 E2 edges :
+    event_structure_included E1 E2 ->
+    co_prefix_wf E1 edges -> co_prefix_wf E2 edges.
+  Proof.
+    intros HE [Hedges Hacyclic]. split; last done.
+    intros write1 write2 Hco.
+    destruct (Hedges write1 write2 Hco) as
+      (write_event1 & write_event2 & Hwrite1 & Hwrite2 & Hkind1 & Hkind2 & Hlocation).
+    exists write_event1, write_event2. split_and!; try done.
+    - by eapply HE.
+    - by eapply HE.
+    - by eapply same_attribute_mono.
+  Qed.
 
   Lemma co_wf_edge E edges write1 write2 :
     co_wf E edges -> co edges write1 write2 ->

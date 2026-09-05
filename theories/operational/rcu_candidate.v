@@ -1,6 +1,6 @@
 From Stdlib Require Import Arith Classical List.
 From stdpp Require Import base fin_map_dom gmap sets tactics.
-From iris_lkmm.lkmm Require Import rcu_graph rcu_mono.
+From iris_lkmm.lkmm Require Import memory_relations rcu_graph rcu_mono.
 From iris_lkmm.operational Require Import rcu_builder.
 Import ListNotations.
 
@@ -11,7 +11,7 @@ Import ListNotations.
     completeness theorem starts from the single constant [initial_builder]
     and constructs the candidate one component at a time. *)
 Module RcuCandidate.
-  Import RcuGraph RcuMono RcuBuilder.
+  Import LkmmMemoryRelations RcuGraph RcuMono RcuBuilder.
 
   Definition edge_endpoints_in (ids : list event_id) (edges : list edge) : Prop :=
     forall x y, In (x, y) edges -> In x ids /\ In y ids.
@@ -47,9 +47,9 @@ Module RcuCandidate.
     events_in_canonical_order C.(fc_events) /\
     event_structure_wf (load_events C.(fc_events)).(raw_events) /\
     rcu_matching_complete (load_events C.(fc_events)).(raw_events) /\
-    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_rf) /\
-    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_co) /\
-    edge_endpoints_in (map le_id C.(fc_events)) C.(fc_rmw) /\
+    rf_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_rf)) /\
+    co_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_co)) /\
+    rmw_prefix_wf (load_events C.(fc_events)).(raw_events) (list_to_set C.(fc_rmw)) /\
     edge_endpoints_in (map le_id C.(fc_events)) C.(fc_hb) /\
     edge_endpoints_in (map le_id C.(fc_events)) C.(fc_pb).
 
@@ -103,6 +103,33 @@ Module RcuCandidate.
     (load_pb edges r).(raw_events) = r.(raw_events).
   Proof. induction edges; simpl; done. Qed.
 
+  Lemma load_events_relations evs :
+    (load_events evs).(raw_rf) = [] /\
+    (load_events evs).(raw_co) = [] /\
+    (load_events evs).(raw_rmw) = [].
+  Proof. induction evs; simpl; done. Qed.
+
+  Lemma load_rf_edges edges r :
+    r.(raw_rf) = [] -> (load_rf edges r).(raw_rf) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
+  Lemma load_rf_other edges r :
+    (load_rf edges r).(raw_co) = r.(raw_co) /\
+    (load_rf edges r).(raw_rmw) = r.(raw_rmw).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_co_edges edges r :
+    r.(raw_co) = [] -> (load_co edges r).(raw_co) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
+  Lemma load_co_rmw edges r :
+    (load_co edges r).(raw_rmw) = r.(raw_rmw).
+  Proof. induction edges; simpl; done. Qed.
+
+  Lemma load_rmw_edges edges r :
+    r.(raw_rmw) = [] -> (load_rmw edges r).(raw_rmw) = edges.
+  Proof. induction edges; simpl; intros; [done | by rewrite IHedges]. Qed.
+
   Definition candidate_raw (C : finite_candidate) : raw_graph :=
     load_pb C.(fc_pb)
       (load_hb C.(fc_hb)
@@ -132,27 +159,42 @@ Module RcuCandidate.
   Qed.
 
   Lemma load_rf_schedule edges r :
+    r.(raw_rf) = [] ->
+    rf_prefix_wf r.(raw_events) (list_to_set edges) ->
     raw_run r (load_rf edges r).
   Proof.
-    induction edges as [|e edges IH]; simpl; first constructor.
-    eapply raw_run_trans; first apply IH.
-    apply raw_run_single. apply RawStepRf.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (rf_prefix_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply rf_prefix_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepRf.
+    rewrite load_rf_events, (load_rf_edges edges r Hempty). exact Hwf.
   Qed.
 
   Lemma load_co_schedule edges r :
+    r.(raw_co) = [] ->
+    co_prefix_wf r.(raw_events) (list_to_set edges) ->
     raw_run r (load_co edges r).
   Proof.
-    induction edges as [|e edges IH]; simpl; first constructor.
-    eapply raw_run_trans; first apply IH.
-    apply raw_run_single. apply RawStepCo.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (co_prefix_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply co_prefix_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepCo.
+    rewrite load_co_events, (load_co_edges edges r Hempty). exact Hwf.
   Qed.
 
   Lemma load_rmw_schedule edges r :
+    r.(raw_rmw) = [] ->
+    rmw_prefix_wf r.(raw_events) (list_to_set edges) ->
     raw_run r (load_rmw edges r).
   Proof.
-    induction edges as [|e edges IH]; simpl; first constructor.
-    eapply raw_run_trans; first apply IH.
-    apply raw_run_single. apply RawStepRmw.
+    intros Hempty Hwf. induction edges as [|e edges IH]; simpl; first constructor.
+    assert (rmw_prefix_wf r.(raw_events) (list_to_set edges)) as Htail.
+    { eapply rmw_prefix_wf_subset; last exact Hwf. set_solver. }
+    eapply raw_run_trans; first by apply IH.
+    apply raw_run_single, RawStepRmw.
+    rewrite load_rmw_events, (load_rmw_edges edges r Hempty). exact Hwf.
   Qed.
 
   Lemma load_hb_schedule edges r :
@@ -175,12 +217,21 @@ Module RcuCandidate.
     candidate_well_formed C ->
     raw_run empty_raw (candidate_raw C).
   Proof.
-    intros (_ & Horder & _).
+    intros (_ & Horder & _ & _ & Hrf & Hco & Hrmw & _).
+    pose proof (load_events_relations C.(fc_events)) as (Hempty_rf & Hempty_co & Hempty_rmw).
     unfold candidate_raw.
     eapply raw_run_trans; first by apply load_events_schedule.
-    eapply raw_run_trans; first apply load_rf_schedule.
-    eapply raw_run_trans; first apply load_co_schedule.
-    eapply raw_run_trans; first apply load_rmw_schedule.
+    eapply raw_run_trans.
+    { apply load_rf_schedule; done. }
+    eapply raw_run_trans.
+    { apply load_co_schedule.
+      - by rewrite (proj1 (load_rf_other C.(fc_rf) (load_events C.(fc_events)))).
+      - by rewrite load_rf_events. }
+    eapply raw_run_trans.
+    { apply load_rmw_schedule.
+      - rewrite load_co_rmw, (proj2 (load_rf_other C.(fc_rf)
+          (load_events C.(fc_events)))). done.
+      - by rewrite load_co_events, load_rf_events. }
     eapply raw_run_trans; first apply load_hb_schedule.
     apply load_pb_schedule.
   Qed.

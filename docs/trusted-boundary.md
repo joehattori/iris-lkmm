@@ -26,11 +26,11 @@ list/counter characterization, operational event integrity, and the
 snapshot-to-chain refinement conditional on explicit `rcu-link` witnesses.
 It also checks monotonicity of the RCU graph relations, persistence and
 soundness of incremental link commitments, monotonicity of derived propagation,
-the `rb` monitor invariant,
-irreflexivity for every builder run, and finite candidate scheduling
-completeness.  Iris checks exclusive reader entry/exit, registered pending/done
-GP transitions, monotone epoch advancement, persistence of completion
-certificates, and arbitrary-frame preservation.
+the `rb` monitor invariant, structural validity of every committed
+`rf`/`co`/`rmw` prefix, irreflexivity for every builder run, and finite
+candidate scheduling completeness.  Iris checks exclusive reader entry/exit,
+registered pending/done GP transitions, monotone epoch advancement,
+persistence of completion certificates, and arbitrary-frame preservation.
 Rocq also checks LKMM-Core event allocation and provenance, proves generated
 RMW and direct-dependency relations well formed for every Core run, and checks
 their exact agreement in `program_graph`.  The `rf` and `co` relations remain

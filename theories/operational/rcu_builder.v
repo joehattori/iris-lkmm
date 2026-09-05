@@ -1,6 +1,6 @@
 From Stdlib Require Import Arith List Relations.Relation_Operators.
 From stdpp Require Import base gmap sets tactics.
-From iris_lkmm.lkmm Require Import rcu_graph rcu_mono.
+From iris_lkmm.lkmm Require Import memory_relations rcu_graph rcu_mono.
 Import ListNotations.
 
 (** Incremental construction of the finite RCU graph kernel.
@@ -13,7 +13,7 @@ Import ListNotations.
     newly exposed [rb] pairs and rejects only reflexive new pairs.  It does
     not mention a final candidate or [rcu_consistent]. *)
 Module RcuBuilder.
-  Import RcuGraph RcuMono.
+  Import LkmmMemoryRelations RcuGraph RcuMono.
 
   Record labeled_event := LabeledEvent {
     le_id : event_id;
@@ -67,13 +67,24 @@ Module RcuBuilder.
     RawGraph r.(raw_events) r.(raw_rf) r.(raw_co) r.(raw_rmw)
       r.(raw_hb) (e :: r.(raw_pb)).
 
+  Definition raw_relations_wf (r : raw_graph) : Prop :=
+    rf_prefix_wf r.(raw_events) (list_to_set r.(raw_rf)) /\
+    co_prefix_wf r.(raw_events) (list_to_set r.(raw_co)) /\
+    rmw_prefix_wf r.(raw_events) (list_to_set r.(raw_rmw)).
+
   Inductive raw_step : raw_graph -> raw_graph -> Prop :=
   | RawStepEvent r ev :
       rcu_trace_tail r.(raw_events) ev.(le_id) ev.(le_event) ->
       raw_step r (add_event r ev)
-  | RawStepRf r e : raw_step r (add_rf r e)
-  | RawStepCo r e : raw_step r (add_co r e)
-  | RawStepRmw r e : raw_step r (add_rmw r e)
+  | RawStepRf r e :
+      rf_prefix_wf r.(raw_events) (list_to_set (e :: r.(raw_rf))) ->
+      raw_step r (add_rf r e)
+  | RawStepCo r e :
+      co_prefix_wf r.(raw_events) (list_to_set (e :: r.(raw_co))) ->
+      raw_step r (add_co r e)
+  | RawStepRmw r e :
+      rmw_prefix_wf r.(raw_events) (list_to_set (e :: r.(raw_rmw))) ->
+      raw_step r (add_rmw r e)
   | RawStepHb r e : raw_step r (add_hb r e)
   | RawStepPb r e : raw_step r (add_pb r e).
 
@@ -137,6 +148,41 @@ Module RcuBuilder.
     intros Hrun. induction Hrun.
     - apply graph_le_refl.
     - eapply graph_le_trans; [by eapply raw_step_graph_le | done].
+  Qed.
+
+  Lemma empty_raw_relations_wf :
+    raw_relations_wf empty_raw.
+  Proof.
+    unfold raw_relations_wf, empty_raw. cbn. split_and!.
+    - apply rf_empty_prefix_wf.
+    - apply co_empty_prefix_wf.
+    - apply rmw_empty_prefix_wf.
+  Qed.
+
+  Lemma raw_step_preserves_relations_wf r r' :
+    raw_relations_wf r -> raw_step r r' -> raw_relations_wf r'.
+  Proof.
+    intros (Hrf & Hco & Hrmw) Hstep. destruct Hstep as
+      [r ev Htail | r e Hnew | r e Hnew | r e Hnew | r e | r e]; simpl in *.
+    - pose proof (raw_step_graph_le _ _ (RawStepEvent r ev Htail)) as Hle.
+      assert (event_structure_included r.(raw_events) (add_event r ev).(raw_events)) as HE.
+      { exact (graph_le_events _ _ Hle). }
+      split_and!.
+      + by eapply rf_prefix_wf_mono.
+      + by eapply co_prefix_wf_mono.
+      + by eapply rmw_prefix_wf_mono.
+    - split_and!; done.
+    - split_and!; done.
+    - split_and!; done.
+    - split_and!; done.
+    - split_and!; done.
+  Qed.
+
+  Lemma raw_run_preserves_relations_wf r r' :
+    raw_relations_wf r -> raw_run r r' -> raw_relations_wf r'.
+  Proof.
+    intros Hwf Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply raw_step_preserves_relations_wf.
   Qed.
 
   (** An [rcu_link_commitment] makes the existential decomposition of one
@@ -284,6 +330,28 @@ Module RcuBuilder.
   Proof.
     intros Hinv Hrun. induction Hrun; first done.
     apply IHHrun. by eapply builder_step_preserves_invariant.
+  Qed.
+
+  Lemma builder_step_preserves_relations_wf s s' :
+    raw_relations_wf s.(bs_raw) ->
+    builder_step s s' -> raw_relations_wf s'.(bs_raw).
+  Proof.
+    intros Hwf Hstep. destruct Hstep as [r r' links seen delta Hraw |]; simpl; last done.
+    by eapply raw_step_preserves_relations_wf.
+  Qed.
+
+  Lemma builder_run_preserves_relations_wf s s' :
+    raw_relations_wf s.(bs_raw) ->
+    builder_run s s' -> raw_relations_wf s'.(bs_raw).
+  Proof.
+    intros Hwf Hrun. induction Hrun; first done.
+    apply IHHrun. by eapply builder_step_preserves_relations_wf.
+  Qed.
+
+  Theorem builder_run_relations_wf s :
+    builder_run initial_builder s -> raw_relations_wf s.(bs_raw).
+  Proof.
+    apply builder_run_preserves_relations_wf, empty_raw_relations_wf.
   Qed.
 
   Theorem completed_builder_run_rb_irreflexive s :

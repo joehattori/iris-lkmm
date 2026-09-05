@@ -10,7 +10,8 @@ From stdpp Require Import sets tactics.
 Import ListNotations.
 
 Module RcuGateExamples.
-  Import LkmmExecution RcuGraph RcuObligations LkmmLang RcuMachine RcuRefinement.
+  Import LkmmExecution LkmmMemoryRelations RcuGraph RcuObligations.
+  Import LkmmLang RcuMachine RcuRefinement.
   Import RcuBuilder RcuCandidate.
 
   Definition agents : list agent := [0; 1].
@@ -230,9 +231,9 @@ Module RcuGateExamples.
     - done.
     - apply empty_event_structure_wf.
     - vm_compute. split_and!; reflexivity.
-    - intros x y Hin. inversion Hin.
-    - intros x y Hin. inversion Hin.
-    - intros x y Hin. inversion Hin.
+    - apply rf_empty_prefix_wf.
+    - apply co_empty_prefix_wf.
+    - apply rmw_empty_prefix_wf.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
   Qed.
@@ -274,9 +275,9 @@ Module RcuGateExamples.
       replace (raw_events (load_events (fc_events one_reader_candidate)))
         with s5.(generated) by (vm_compute; reflexivity). done.
     - vm_compute. split_and!; reflexivity.
-    - intros x y Hin. inversion Hin.
-    - intros x y Hin. inversion Hin.
-    - intros x y Hin. inversion Hin.
+    - apply rf_empty_prefix_wf.
+    - apply co_empty_prefix_wf.
+    - apply rmw_empty_prefix_wf.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
   Qed.
