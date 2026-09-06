@@ -6,7 +6,7 @@ From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
 From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost.
 Import ListNotations.
 
-Module RcuGhostGateExamples.
+Module RcuGhostExamples.
   Import RcuGhost LkmmMachine LkmmCoupled LkmmMachineGhost.
 
   Section lifecycle.
@@ -88,4 +88,4 @@ Module RcuGhostGateExamples.
 
   End lifecycle.
 
-End RcuGhostGateExamples.
+End RcuGhostExamples.

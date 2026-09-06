@@ -5,7 +5,7 @@ From iris_lkmm.lang Require Import program_graph.
 From iris_lkmm.operational Require Import lkmm_machine rcu_builder rcu_candidate.
 Import ListNotations.
 
-(** Core execution coupled to the incremental RCU gate.  Builder commitments
+(** Core execution coupled to the incremental graph builder.  Builder commitments
     may lag behind execution, but events, RMW pairs, and dependency provenance
     must already have been generated.  The builder chooses [rf]/[co], while
     [hb]/[pb] are derived; neither transition rule consults a completed candidate. *)
@@ -26,12 +26,9 @@ Module LkmmCoupled.
   Definition machine_matches_raw (m : LkmmMachine.state) (r : raw_graph) : Prop :=
     r.(raw_events) = m.(machine_core).(core_events) /\
     (list_to_set r.(raw_rmw) : edge_set) = m.(machine_core).(core_rmw) /\
-    (list_to_set r.(raw_direct_addr) : edge_set) =
-      m.(machine_core).(core_direct_addr) /\
-    (list_to_set r.(raw_direct_data) : edge_set) =
-      m.(machine_core).(core_direct_data) /\
-    (list_to_set r.(raw_direct_ctrl) : edge_set) =
-      m.(machine_core).(core_direct_ctrl).
+    (list_to_set r.(raw_direct_addr) : edge_set) = m.(machine_core).(core_direct_addr) /\
+    (list_to_set r.(raw_direct_data) : edge_set) = m.(machine_core).(core_direct_data) /\
+    (list_to_set r.(raw_direct_ctrl) : edge_set) = m.(machine_core).(core_direct_ctrl).
 
   Record coupled_state := CoupledState {
     coupled_machine : LkmmMachine.state;

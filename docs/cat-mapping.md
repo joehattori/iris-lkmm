@@ -46,8 +46,8 @@ Address, data, and control dependencies are graph relations, not event labels;
 `direct_addr`, `direct_data`, and `direct_ctrl` expose their finite provenance
 edge sets through relational views.
 
-The feasibility kernel uses a five-label graph vocabulary.  A unified RCU
-compatibility view is deferred.
+The relational RCU model, Core candidates, and graph builder share the same
+canonical event vocabulary and derived memory relations.
 
 ## LKMM-Core program correspondence
 
@@ -92,7 +92,7 @@ excluded by `po`.  The `rf`, `co`, and `fr` edge well-formedness predicates in
 `theories/lkmm/memory_relations.v` reuse `same_location`, as do coherence
 totality, initial-write ordering, and the `location_used` projection.
 
-The feasibility kernel uses this canonical `po` directly from its event map.
+The graph builder uses this canonical `po` directly from its event map.
 
 ## Dependency candidates and Bell carrying
 
@@ -192,7 +192,7 @@ The separate `atomicity` consistency predicate rejects an `rmw` edge when its
 read-to-write endpoints are also related by `fre ; coe`; it is not folded into
 `rmw_wf`.
 
-## Feasibility-kernel RCU mapping
+## Normal-RCU mapping
 
 | Upstream source | Definition | Rocq definition | Treatment |
 | --- | --- | --- | --- |

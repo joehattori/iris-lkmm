@@ -2,7 +2,7 @@ From Stdlib Require Import Lia.
 From stdpp Require Import tactics.
 From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_matching.
 
-(** The finite, normal-RCU-only graph kernel used by the feasibility gate.
+(** The finite normal-RCU graph kernel.
     The shared graph record derives [prop], [hb], and [pb]; this file adds only
     the normal-RCU classifications and consistency condition. *)
 Module RcuGraph.

@@ -398,16 +398,13 @@ Module RcuMatching.
       (token_id <$> stacked_tokens st.(match_stacks))
       st.(match_unmatched_unlocks).
 
-  Definition compute_agent_match_state
-      (E : event_structure) (agent : agent_id) : rcu_match_state :=
+  Definition compute_agent_match_state (E : event_structure) (agent : agent_id) : rcu_match_state :=
     match_tokens (rcu_agent_token_trace E agent) empty_match_state.
 
-  Definition compute_agent_matching
-      (E : event_structure) (agent : agent_id) : rcu_match_result :=
+  Definition compute_agent_matching (E : event_structure) (agent : agent_id) : rcu_match_result :=
     result_of_state (compute_agent_match_state E agent).
 
-  Definition computed_agent_stack
-      (E : event_structure) (agent : agent_id) : list event_id :=
+  Definition computed_agent_stack (E : event_structure) (agent : agent_id) : list event_id :=
     token_id <$> token_stack (compute_agent_match_state E agent) agent.
 
   Definition rcu_agents (E : event_structure) : list agent_id :=

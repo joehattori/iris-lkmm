@@ -1,13 +1,10 @@
 # Trusted boundary
 
-For the feasibility prototype, the trusted boundary includes:
+For the current LKMM-Core prototype, the trusted boundary includes:
 
 - the manual reading and transcription of the cited Linux v6.18 CAT/Bell
   definitions;
-- the input graph's finite canonical event map and finite candidate `rf`, `co`,
-  `rmw`, and direct dependency edges;
-- the claim that the small instruction language represents the intended
-  client operations;
+- the claim that LKMM-Core represents the intended client operations;
 - the mapping from LKMM-Core constructors to the selected Linux v6.18
   operations, pending differential testing and a later source-to-core
   refinement;
@@ -21,9 +18,8 @@ endpoint tags, agent/order shape, endpoint uniqueness, non-crossing nesting,
 and total lock/unlock coverage for complete candidates.  The per-agent
 relation is equivalent to its aggregate Bell view, and completeness is
 equivalent to both Bell unmatched-event flags being empty.  Rocq also checks
-the recursive/independent-chain equivalence, the generic
-list/counter characterization, operational event integrity, and the
-snapshot-to-chain refinement conditional on explicit `rcu-link` witnesses.
+the recursive/independent-chain equivalence and the generic
+list/counter characterization independently of operational executions.
 It also checks monotonicity of the RCU graph relations, persistence and
 soundness of incremental link commitments, monotonicity of derived propagation,
 the five-relation consistency monitor invariant, structural validity of every

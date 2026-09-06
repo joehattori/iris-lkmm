@@ -4,7 +4,7 @@ From iris.algebra Require Import auth.
 From iris.base_logic.lib Require Import ghost_map mono_nat.
 From iris.proofmode Require Import proofmode.
 
-(** Iris ghost state for the normal-RCU feasibility gate.
+(** Iris ghost state for the normal-RCU reader and grace-period protocol.
 
     Readers own exclusive entries in [rg_open_name].  Grace periods are
     registered in [rg_gp_name] with the exact finite set of readers captured
@@ -132,7 +132,7 @@ Module RcuGhost.
     Qed.
 
     (** The completion update is stable under an arbitrary client frame.
-        This is the compositional reclamation rule needed by the gate. *)
+        This update supplies the compositional reclamation rule. *)
     Lemma rcu_gp_finish_frame γ open gps epoch gid snapshot start
         (R : iProp Σ) :
       snapshot ## dom open ->

@@ -245,7 +245,6 @@ docs/
   model-version.md
   cat-mapping.md
   semantics.md
-  feasibility.md
   trusted-boundary.md
   percpu-ref-mapping.md
 ```

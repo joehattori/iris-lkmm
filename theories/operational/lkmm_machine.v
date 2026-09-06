@@ -4,7 +4,7 @@ From iris_lkmm.lang Require Import lkmm_core.
 From iris_lkmm.lkmm Require Import rcu_matching.
 Import ListNotations.
 
-(** LKMM-Core execution with the feasibility gate's normal-RCU waiting protocol.
+(** LKMM-Core execution with normal-RCU snapshot waiting.
     Reader stacks and completed sections are computed from canonical events;
     only pending snapshots and completion certificates need additional state.
     This machine neither chooses [rf]/[co] nor tests final LKMM consistency. *)

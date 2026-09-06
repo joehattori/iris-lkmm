@@ -1,14 +1,13 @@
-# Incremental RCU prototype semantics
+# LKMM-Core operational semantics
 
-The prototype language has fixed agents and five instructions: `read`,
-`write`, `rcu_read_lock`, `rcu_read_unlock`, and `synchronize_rcu`.
-Its syntax and canonical event-label translation live in `lkmm_lang.v`; the
-operational state and transitions in `rcu_machine.v` consume that language.
-It is intentionally smaller than the LKMM-Core language in `lkmm_core.v`.
+LKMM-Core programs execute through `lkmm_machine.v`, which implements
+normal-RCU snapshot waiting. `lkmm_coupled.v` interleaves that execution with
+the incremental graph builder. The relational model and Iris ghost protocol
+remain separate layers.
 
 ## LKMM-Core and concrete program graphs
 
-`lkmm_core.v` defines a separate finite, loop-free language with registers,
+`lkmm_core.v` defines a finite, loop-free language with registers,
 structured sequencing and conditionals, memory accesses, RMW operations,
 fences, and normal-RCU operations.  Expressions evaluate to an integer and
 the set of read-event origins that contributed to it.  Those origins generate
@@ -41,7 +40,7 @@ from the candidate's dependency edges.
 
 ## Core-driven RCU machine
 
-`operational/lkmm_machine.v` executes LKMM-Core with the gate's snapshot-based
+`operational/lkmm_machine.v` executes LKMM-Core with a snapshot-based
 RCU waiting protocol.  Its state contains the Core execution state, a finite
 map of pending grace-period snapshots, and completion certificates.  Open
 reader stacks and completed sections are obtained from the canonical matcher
@@ -71,40 +70,14 @@ consistency, or maintain Iris resources.  `lkmm_coupled.v` connects it to the
 incremental builder; `lkmm_machine_ghost.v` connects completed GP certificates
 to the Iris completion update, as described below.
 
-## Gate machine waiting protocol
-
-Each ordinary instruction appends a fresh event.  Lock events are pushed onto
-a per-agent stack; unlock events pop the stack and append a matched critical
-section.  This handles nested read-side sections syntactically, without alias
-analysis.
-
-`synchronize_rcu` has two internal transitions:
-
-1. **Begin** snapshots the lock-event identifiers currently open on the fixed
-   agent set.  It emits no graph event and does not advance the program
-   counter.
-2. **Finish** is enabled when every identifier in that immutable snapshot has
-   appeared as the lock endpoint of a closed critical section.  It emits the
-   grace-period event, advances the program counter, and stores a certificate.
-
-A reader that starts after Begin is not in the snapshot and therefore cannot
-delay that grace period.  A nested reader already open at Begin is a separate
-captured obligation.
-
-The proved invariant `operational_soundness` says that every stored
-grace-period certificate refers only to sections that have closed.
-`finish_gp_complete` proves that discharging the captured obligations is
-sufficient to take the finish transition.  Neither theorem invokes
-`rcu_consistent` or inspects a completed graph.
-
 ## Independent graph-chain invariant
 
-`execution_graph.v` defines the RCU-independent feasibility graph containing
+`execution_graph.v` defines the shared relation graph containing
 canonical events and finite candidate `rf`, `co`, `rmw`, and direct dependency
 edge sets.  Its `prop`, `hb`, and `pb` relations are derived from those fields.
-It is a minimal shared graph view, not yet the final LKMM candidate-execution
-type.  `rcu_graph.v` defines the normal-RCU classifications and consistency
-condition.
+`core_candidate_graph` and the builder's `graph_of_raw` both use this graph
+type. `rcu_graph.v` defines the normal-RCU classifications and consistency
+condition, and combines it with the four memory consistency conditions.
 
 The graph kernel also has an operationally useful, nonrecursive
 characterization of `rcu-order`.  An RCU chain is a nonempty list whose atoms
@@ -123,39 +96,10 @@ Append composes both the link witnesses and balances.  The mechanized theorem
 `rcu_order_chain_equiv` proves that this invariant recognizes exactly the
 normal-RCU recursive `rcu-order` relation.
 
-## Machine-to-chain refinement
-
-`event_integrity` records that every lock on an open stack, both endpoints
-of every closed section, and every completed GP certificate are backed by
-events emitted by the machine.  It also states that the operational stack
-and closed-section cache agree with the canonical stack matcher.
-`operational_event_integrity` proves this for every reachable state.
-
-`graph_of_state` uses the machine's canonical event map directly.  Program
-order, GP classification, `Marked`, and inverse critical-section matching are
-derived from that map; the finite `rf`, `co`, `rmw`, and direct dependency
-relations are supplied by the `candidate_relations` parameter.
-Propagation, `hb`, and `pb` are derived from the event map and those candidate
-relations.
-
-`certificate_covers s cert cs` says that:
-
-- `cert` is a completed GP certificate;
-- `cs` is a completed critical section; and
-- the lock endpoint of `cs` occurred in the GP's immutable begin snapshot.
-
-`completed_run_snapshot_chain_bridge` proves that every captured lock in
-every completed certificate resolves to such a section.  It proves the GP
-and inverse-RSCS atoms valid in the extracted graph and provides both
-implications:
-
-```text
-rcu-link(lock, gp)   -> chain [RSCS(unlock, lock), GP(gp)]
-rcu-link(gp, unlock) -> chain [GP(gp), RSCS(unlock, lock)]
-```
-
-The theorem does not assume or synthesize those links.  Their incremental
-construction is handled by the graph builder below.
+The chain equivalence is a theorem about graphs, independent of the machine's
+waiting protocol. Coupled LKMM consistency follows from the builder's
+consistency invariant; the Iris completion bridge uses the machine's
+snapshot-clear theorem. Neither proof requires a machine-to-chain bridge.
 
 ## Incremental graph builder
 
@@ -320,10 +264,9 @@ all execution steps, primitive WP rules, and adequacy remain to be developed.
 
 ## Deliberate limitations
 
-- The feasibility-gate machine emits only its five minimal labels.  The
-  separate LKMM-Core machine handles values, generated RMW pairs, and direct
-  dependency provenance. Its builder supplies finite operational soundness,
-  while Iris WP and unrestricted operational completeness remain deferred.
+- Coupled operational soundness requires completion-time `rf`/`co`
+  well-formedness. Unrestricted operational completeness and Iris WP/adequacy
+  remain deferred.
 - `program_graph` accepts finite well-formed `rf` and `co` choices; it does not
   compute a single choice from the program.  Quantification over candidates is
   therefore required when stating a property for every allowed execution.

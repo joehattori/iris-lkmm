@@ -1,6 +1,6 @@
 From iris_lkmm.lkmm Require Import execution memory_relations.
 
-(** Minimal relation graph shared by the feasibility prototype.
+(** Relation graph shared by the relational model and operational builder.
 
     This record is independent of RCU, but it is not yet the final LKMM
     candidate-execution type.  Base memory relations and direct dependency

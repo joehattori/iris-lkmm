@@ -1,56 +1,46 @@
-# Prototype scope
+# Current scope
 
-The feasibility kernel includes finite event identifiers, read/write labels,
-normal-RCU lock/unlock and grace-period labels, canonical program order,
-finite candidate `rf`, `co`, `rmw`, and direct dependencies, derived `prop`,
-`hb`, and `pb`, computed nested critical sections, `rcu-link`, `rcu-order`,
-`rcu-fence`, `rb`, and `rb` irreflexivity.
-It also includes finite GP/inverse-RSCS chains, signed obligation balances,
-and their proved equivalence to recursive `rcu-order`.
-The operational scope includes emitted-event integrity, a finite graph view
-over canonical events, derived `prop`/`hb`/`pb`, completed snapshot coverage,
-and the proved coverage-to-chain refinement.  It includes an
-incremental finite graph builder with explicit `rcu-link` witnesses and deltas
-for all five selected consistency checks, a proof of full relational
-consistency and structural `rf`/`co`/`rmw` prefix validity for every builder
-run, an independent declarative candidate type, and finite
-candidate scheduling completeness from a fixed empty initial builder.  The
-Core-driven machine and builder are combined by an asynchronous
-delayed-commitment semantics with RCU soundness and relative candidate
-scheduling theorems.
+The relational model uses canonical finite events, program order, candidate
+`rf`, `co`, `rmw`, and direct dependencies, and derived `prop`, `hb`, and `pb`.
+It includes computed nested RCU critical sections, `rcu-link`, `rcu-order`,
+`rcu-fence`, and `rb`. `graph_consistent` combines coherence, atomicity,
+happens-before, propagation, and normal-RCU consistency for the selected
+Linux v6.18 fragment. Finite GP/inverse-RSCS chains and signed obligation
+balances are proved equivalent to recursive `rcu-order` independently of
+program execution.
 
-The Iris feasibility scope includes exclusive reader tokens, authoritative
-pending/done GP registrations, a MaxNat completion epoch, a framed
-reclamation update, and a proved bridge from completed machine certificates
-to that update's snapshot-clear premise.  This bridge applies to Core-driven
-machine and coupled runs, with explicit authoritative ownership and a
-registered pending-GP token.
+LKMM-Core provides finite, loop-free structured programs with fixed agents,
+registers, values, locations, memory accesses, RMWs, fences, and normal-RCU
+instructions. Register-origin provenance generates direct dependencies.
+`core_candidate` records graph data, while `program_graph` relates a candidate
+to Core execution and structural well-formedness. `lkmm_consistent` applies
+the selected relational consistency constraints separately.
 
-The incremental prototype includes fixed concurrent agents and the five
-gate-language instructions.  It carries finite `rf`, `co`, and `rmw`
-candidates and generated direct dependencies, and validates structural prefix
-obligations at each commitment.
-It does not choose those relations or enforce their completion-only totality
-conditions.  The five-instruction gate language itself excludes values,
-locations, barriers, dependency-producing expressions, RMW instructions,
-SRCU, and locks.  Full LKMM operational consistency, Iris WP/adequacy, and the
-`percpu_ref` case study remain outside the prototype.
+`lkmm_machine.v` executes Core programs with normal-RCU snapshot waiting.
+Reader stacks and matched sections are computed from canonical events.
+Its proofs establish projection into Core runs, allocation well-formedness,
+absence of unmatched unlocks, and closure of captured readers for completed
+GP certificates. Nested readers and readers entering after GP begin are
+covered by the machine regressions.
 
-The LKMM-Core scope includes finite structured programs,
-register-origin dependency provenance, memory and RMW event generation, a
-base-only `core_candidate`, and the declarative `program_graph` relation.
-`lkmm_consistent` derives the selected relational consistency constraints from
-that candidate.  `lkmm_machine.v` defines Core-driven execution with normal-RCU
-snapshot waiting, a projection into Core runs, and reader/certificate safety
-proofs.  `lkmm_coupled.v` connects this machine to the incremental RCU builder
-with generated-event/relation provenance guards and exact agreement at
-completion.
-It proves Core-run projection, LKMM consistency, snapshot safety, and relative
-scheduling for candidates backed by complete snapshot-machine runs.
-`coupled_run_program_graph` connects completed runs to `program_graph` under
-explicit `rf`/`co` well-formedness obligations.  Core execution proves
-well-formedness of its generated RMW and direct-dependency relations.  The
-builder commits those generated relations and derives `hb`/`pb` from them.
-Validating the base choices generally, unrestricted operational completeness,
-Iris WP/adequacy, and source-language refinement remain outside this coupling. The
-gate machine is separate.
+The incremental graph builder commits events, base relations, dependencies,
+and explicit `rcu-link` witnesses. Exact deltas maintain all five consistency
+conditions, while relation mutations preserve structural prefix validity.
+Finite well-formed, consistent candidates admit a schedule from the fixed
+empty builder. `lkmm_coupled.v` interleaves the machine and builder, requiring
+generated-event/relation provenance and exact agreement at completion.
+`coupled_run_soundness` establishes both `program_graph` and `lkmm_consistent`
+under explicit completion-time `rf`/`co` well-formedness obligations.
+Coupled scheduling assumes a compatible completed snapshot-machine run.
+
+The Iris protocol supplies exclusive reader tokens, authoritative pending/done
+GP registrations, a MaxNat completion epoch, and a framed completion update.
+Completed Core-machine and coupled GP certificates justify that update's
+snapshot-clear premise. Authoritative ownership and a registered pending-GP
+token remain explicit resource premises.
+
+Unrestricted operational completeness, a ghost-state interpretation maintained
+by every step, Iris WP/adequacy, differential testing against `herd7`,
+source-language refinement, and the `percpu_ref` case study remain future
+work. SRCU, kernel locks, and grace-period liveness remain outside the selected
+fragment.

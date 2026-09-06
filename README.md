@@ -31,17 +31,20 @@ make check
 opam list --locked
 ```
 
-## Feasibility-gate status
+## Current status
 
-The normal-RCU feasibility gate is **passed: the architecture is feasible**.
-The CAT-style recursion is equivalent to an independent finite chain;
-machine snapshots refine that chain; the graph builder commits links and
-`rb` deltas incrementally; consistent program candidates are schedulable from
-a fixed empty state through delayed commitments; and completed machine grace
-periods drive a framed Iris reclamation update backed by exclusive reader
-tokens and a MaxNat completion epoch.  See
-[`docs/feasibility.md`](docs/feasibility.md) for the evidence and the precise
-boundary of this verdict.
+LKMM-Core execution uses normal-RCU snapshot waiting and an incremental
+graph builder. The builder maintains all five selected LKMM consistency
+conditions. Completed coupled runs yield a program graph and LKMM consistency
+under explicit `rf`/`co` well-formedness obligations. Candidate scheduling is
+relative to a compatible completed machine run; unrestricted operational
+completeness remains open.
+
+The relational RCU recursion is proved equivalent to an independent finite
+chain. Completed machine grace periods also support a framed Iris completion
+update; primitive WP rules and adequacy remain future work. See
+[`docs/semantics.md`](docs/semantics.md) for the architecture and proofs, and
+[`docs/scope.md`](docs/scope.md) for the current scope and remaining work.
 
 The broad package constraint supports Rocq 9.0.x and 9.1.x. The lock file is
 the reproducible, tested development configuration and should be updated

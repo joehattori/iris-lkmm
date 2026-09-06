@@ -5,9 +5,8 @@ Import ListNotations.
 
 (** A finite, loop-free core language for the selected LKMM fragment.
 
-    This language is separate from the smaller feasibility-gate language in
-    [lkmm_lang.v].  It records dependency provenance while it executes, but
-    deliberately leaves [rf] and [co] to the candidate-execution layer. *)
+    It records dependency provenance while it executes and leaves [rf] and
+    [co] to the candidate-execution layer. *)
 Module LkmmCore.
   Export LkmmExecution.
   Open Scope Z_scope.

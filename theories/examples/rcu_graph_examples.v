@@ -1,133 +1,14 @@
 From Stdlib Require Import Arith Lia List ZArith Relations.Relation_Operators.
 From iris_lkmm.lkmm Require Import execution memory_relations rcu_graph.
 From iris_lkmm.lkmm Require Import rcu_obligations.
-From iris_lkmm.lang Require Import lkmm_lang.
-From iris_lkmm.operational Require Import rcu_machine.
-From iris_lkmm.operational Require Import rcu_refinement.
 From iris_lkmm.operational Require Import rcu_builder.
 From iris_lkmm.operational Require Import rcu_candidate.
-From stdpp Require Import sets tactics.
+From stdpp Require Import fin_maps gmap sets tactics.
 Import ListNotations.
 
-Module RcuGateExamples.
+Module RcuGraphExamples.
   Import LkmmExecution LkmmMemoryRelations RcuGraph RcuObligations.
-  Import LkmmLang RcuMachine RcuRefinement.
   Import RcuBuilder RcuCandidate.
-
-  Definition agents : list agent := [0; 1].
-
-  Definition one_reader_program : program :=
-    fun a => if Nat.eq_dec a 0
-             then [IRcuLock; IRead; IRcuUnlock]
-             else [ISynchronizeRcu].
-
-  Definition s0 := initial_state.
-  Definition s1 := lock_emit s0 0.
-  Definition s2 := begin_gp agents s1 1.
-  Definition s3 := ordinary_emit s2 0 LRead.
-  Definition s4 := unlock_emit s3 0 0 [].
-  Definition s5 := finish_gp s4 1 [0].
-
-  Example one_reader_one_gp :
-    run one_reader_program agents s0
-      [ALock 0; ABeginGp 1; ARead 0; AUnlock 0; AFinishGp 1] s5.
-  Proof.
-    eapply Run_cons with (s2 := s1).
-    { unfold s0, s1. apply Step_lock. vm_compute. reflexivity. }
-    eapply Run_cons with (s2 := s2).
-    { unfold s1, s2. apply Step_begin_gp; vm_compute; reflexivity. }
-    eapply Run_cons with (s2 := s3).
-    { unfold s2, s3. apply Step_read. vm_compute. reflexivity. }
-    eapply Run_cons with (s2 := s4).
-    { unfold s3, s4. eapply Step_unlock; vm_compute; reflexivity. }
-    eapply Run_cons with (s2 := s5).
-      - unfold s4, s5.
-        eapply Step_finish_gp; [vm_compute; reflexivity | vm_compute; reflexivity |].
-        unfold all_closed, lock_closed. simpl.
-        intros l [<- | []].
-        exists (CriticalSection 0 2). split; [by left | done].
-      - apply Run_nil.
-  Qed.
-
-  Example one_reader_certificate_is_sound :
-    certificates_sound s5.
-  Proof.
-    eapply operational_soundness.
-    apply one_reader_one_gp.
-  Qed.
-
-  Definition permissive_relations : candidate_relations :=
-    CandidateRelations {[(3, 0)]} ∅ ∅ ∅ ∅ ∅.
-
-  Definition reader_cert := GpCertificate 3 [0].
-  Definition reader_cs := CriticalSection 0 2.
-
-  Example one_reader_certificate_covers_section :
-    certificate_covers s5 reader_cert reader_cs.
-  Proof. vm_compute. split_and!; by left.
-  Qed.
-
-  Lemma one_reader_gp_link :
-    rcu_link (graph_of_state permissive_relations s5) 3 2.
-  Proof.
-    exists 3, 0, 0, 0. split_and!.
-    - by left.
-    - apply rt_step. unfold graph_hb, LkmmMemoryRelations.hb.
-      apply rel_seq_id_on_r. split.
-      + apply rel_seq_id_on_l. split.
-        * unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
-          -- apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
-          -- intros [Hmode _]. vm_compute in Hmode. discriminate.
-        * right. left. split.
-          -- unfold LkmmMemoryRelations.rf, edge_relation. set_solver.
-          -- intros Hsame. destruct Hsame as (agent & Hagent1 & Hagent0).
-             vm_compute in Hagent1, Hagent0. congruence.
-      + unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
-        * apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
-        * intros [Hmode _]. vm_compute in Hmode. discriminate.
-    - apply rt_refl.
-    - change (LkmmMemoryRelations.prop s5.(generated) ∅ {[(3, 0)]} ∅ 0 0).
-      assert (LkmmMemoryRelations.marked s5.(generated) 0) as Hmarked0.
-      { unfold LkmmMemoryRelations.marked, LkmmMemoryRelations.plain. split.
-        - apply in_event_structure_lookup_iff. eexists. vm_compute. reflexivity.
-        - intros [Hmode _]. vm_compute in Hmode. discriminate. }
-      apply rel_seq_id_on_r. split; last done.
-      exists 0. split.
-      + apply rel_seq_id_on_r. split; last done.
-        exists 0. split; last apply rt_refl.
-        apply rel_seq_id_on_l. split; first done. by left.
-      + by left.
-    - unfold graph_po, po, graph_of_state. cbn.
-      exists 0, 0, 2, (canonical_label LRcuLock), (canonical_label LRcuUnlock).
-      split_and!; try reflexivity; lia.
-  Qed.
-
-  Example one_reader_snapshot_refines_gp_rscs_chain :
-    rcu_chain_order (graph_of_state permissive_relations s5) 3 0.
-  Proof.
-    eapply covered_gp_rscs_chain with (cert := reader_cert) (cs := reader_cs).
-    - eapply operational_event_integrity. apply one_reader_one_gp.
-    - apply one_reader_certificate_covers_section.
-    - apply one_reader_gp_link.
-  Qed.
-
-  Definition nested0 := lock_emit initial_state 0.
-  Definition nested1 := lock_emit nested0 0.
-
-  (** The inner lock is first in the captured stack, but both nesting levels
-      become independent grace-period obligations. *)
-  Example nested_readers_are_all_captured :
-    snapshot [0] nested1 = [1; 0].
-  Proof. vm_compute. reflexivity. Qed.
-
-  Definition after_begin := begin_gp [0; 1] nested0 1.
-  Definition after_new_reader := lock_emit after_begin 0.
-
-  (** Starting another (nested) reader after a GP begins does not mutate the
-      GP's already-captured obligation set. *)
-  Example later_reader_does_not_extend_snapshot :
-    after_new_reader.(pending_gp) 1 = Some [0].
-  Proof. vm_compute. reflexivity. Qed.
 
   Section RecursiveKernel.
     Context (G : graph) (g1 g2 u l : event_id).
@@ -174,9 +55,9 @@ Module RcuGateExamples.
   End RecursiveKernel.
 
   Definition link_events : event_structure :=
-    {[0 := EAgent 0 0 (canonical_label LRead);
-      1 := EAgent 0 1 (canonical_label LSyncRcu);
-      2 := EAgent 0 2 (canonical_label LRead)]}.
+    {[0 := EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 0 0%Z);
+      1 := EAgent 0 1 (LBarrier BarrierSyncRcu);
+      2 := EAgent 0 2 (LMemory AccessRead AccessOnce NotRmw 0 0%Z)]}.
 
   Definition link_raw : raw_graph := RawGraph link_events [] [] [] [] [] [].
 
@@ -201,7 +82,7 @@ Module RcuGateExamples.
         - apply in_event_structure_lookup_iff. eexists. reflexivity.
         - intros [Hmode _]. discriminate. }
       assert (po link_events 0 1) as Hpo.
-      { exists 0, 0, 1, (canonical_label LRead), (canonical_label LSyncRcu).
+      { exists 0, 0, 1, (LMemory AccessRead AccessOnce NotRmw 0 0%Z), (LBarrier BarrierSyncRcu).
         split_and!; try reflexivity; lia. }
       assert (LkmmMemoryRelations.gp link_events 0 1) as Hgp.
       { unfold LkmmMemoryRelations.gp. exists 1. split.
@@ -221,7 +102,7 @@ Module RcuGateExamples.
         apply rel_seq_id_on_l. split; first done. by left.
       + by left.
     - unfold graph_po, po, graph_of_raw, link_raw. simpl.
-      exists 0, 1, 2, (canonical_label LSyncRcu), (canonical_label LRead).
+      exists 0, 1, 2, (LBarrier BarrierSyncRcu), (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
       split_and!; try reflexivity; lia.
   Qed.
 
@@ -267,10 +148,10 @@ Module RcuGateExamples.
 
   Definition one_reader_candidate : finite_candidate :=
     FiniteCandidate
-      [LabeledEvent 3 (EAgent 1 0 (canonical_label LSyncRcu));
-       LabeledEvent 2 (EAgent 0 2 (canonical_label LRcuUnlock));
-       LabeledEvent 1 (EAgent 0 1 (canonical_label LRead));
-       LabeledEvent 0 (EAgent 0 0 (canonical_label LRcuLock))]
+      [LabeledEvent 3 (EAgent 1 0 (LBarrier BarrierSyncRcu));
+       LabeledEvent 2 (EAgent 0 2 (LBarrier BarrierRcuUnlock));
+       LabeledEvent 1 (EAgent 0 1 (LMemory AccessRead AccessOnce NotRmw 0 0%Z));
+       LabeledEvent 0 (EAgent 0 0 (LBarrier BarrierRcuLock))]
       [] [] [] [] [] [].
 
   Example one_reader_candidate_well_formed :
@@ -280,10 +161,17 @@ Module RcuGateExamples.
     - vm_compute. repeat constructor; set_solver.
     - vm_compute. split_and!; try reflexivity; try apply Forall_nil.
       all: apply Forall_cons; [lia | apply Forall_nil].
-    - pose proof (operational_event_integrity _ _ _ _ one_reader_one_gp)
-        as (_ & _ & Hwf & _).
-      replace (raw_events (load_events (fc_events one_reader_candidate)))
-        with s5.(generated) by (vm_compute; reflexivity). done.
+    - change (event_structure_wf
+        {[3 := EAgent 1 0 (LBarrier BarrierSyncRcu);
+          2 := EAgent 0 2 (LBarrier BarrierRcuUnlock);
+          1 := EAgent 0 1 (LMemory AccessRead AccessOnce NotRmw 0 0%Z);
+          0 := EAgent 0 0 (LBarrier BarrierRcuLock)]}).
+      intros eid1 eid2 agent index label1 label2 Hlookup1 Hlookup2.
+      unfold lookup_event in Hlookup1, Hlookup2.
+      repeat (apply lookup_insert_Some in Hlookup1 as [[? ?] | [? Hlookup1]]);
+        repeat (apply lookup_insert_Some in Hlookup2 as [[? ?] | [? Hlookup2]]);
+        try (apply lookup_singleton_Some in Hlookup1);
+        try (apply lookup_singleton_Some in Hlookup2); naive_solver.
     - vm_compute. split_and!; reflexivity.
     - apply rf_empty_prefix_wf.
     - apply co_empty_prefix_wf.
@@ -293,8 +181,4 @@ Module RcuGateExamples.
     - intros x y Hin. inversion Hin.
   Qed.
 
-  Example one_reader_candidate_matches_machine :
-    (candidate_raw one_reader_candidate).(raw_events) = s5.(generated).
-  Proof. reflexivity. Qed.
-
-End RcuGateExamples.
+End RcuGraphExamples.
