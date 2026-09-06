@@ -38,6 +38,51 @@ coherence, atomicity, happens-before acyclicity, propagation acyclicity, and
 normal-RCU consistency to `core_candidate_graph`; its `hb` and `pb` are derived
 from the candidate's dependency edges.
 
+## Per-agent Core replay
+
+`lang/core_agent_replay.v` proves `core_run_replay_agent`: the subsequence of a
+Core run belonging to one agent can execute independently in any
+allocation-well-formed context where that agent still has its initial thread
+state and local event index zero. The context may already contain other
+agents' events. `complete_core_run_replay_agent` additionally proves that the
+selected agent finishes; it does not assert completion of the other agents.
+`program_graph_replay_agent` exposes the generated-graph correspondence
+directly for `program_graph` candidates.
+
+The replay keeps the original observed read values and per-agent action
+order, including silent branch and continuation steps. Expression evaluation
+commutes with renaming read origins in registers and control frames. An event
+at local index `index` receives ID `base.core_next_id + index`; the
+correspondence is injective on the selected agent's source events by canonical
+event-position uniqueness. `replay_state` records exact equality of the
+replayed events, RMW pairs, and three direct-dependency sets with their renamed
+source projections plus the existing context. Other agents' thread states
+are preserved; `agent_replay_other_index` also preserves their local event
+indices, allowing subsequent replays in the resulting context.
+
+`lang/core_replay.v` composes those replays for all program agents.
+`complete_core_run_replay_order` accepts any enumeration containing each
+program agent exactly once. Its conclusion is a `complete_core_run` whose
+actions concatenate the agents' original subsequences in that order.
+`complete_core_run_replay` supplies a finite enumeration automatically.
+`serial_actions_agent` proves that each agent retains exactly its original
+action subsequence. The construction also returns a `serial_replay`
+certificate containing the intermediate Core runs and their exact per-agent
+`replay_state` correspondences; these are proof witnesses, not new semantics.
+The induction keeps unreplayed agents initial and previously replayed agents
+complete, so the final completion covers every agent. This does not assert
+that arbitrary schedules terminate.
+
+The source's final event map defines the naming correspondence in the proof
+only. Core transitions and states are unchanged, and reads do not require
+their eventual source writes to have executed. This result needs neither
+LKMM consistency nor a completed RCU-machine run and adds no axioms. It is
+the Core replay component of the proposed completeness construction;
+reconstruction of snapshot-machine runs and full coupled completeness remain
+open. Regressions exercise nested control/address/data provenance, successful
+and failed `cmpxchg`, replay after another agent has already executed,
+whole-program completion in either two-agent order, and the empty program.
+
 ## Core-driven RCU machine
 
 `operational/lkmm_machine.v` executes LKMM-Core with a snapshot-based

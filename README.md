@@ -40,6 +40,12 @@ under explicit `rf`/`co` well-formedness obligations. Candidate scheduling is
 relative to a compatible completed machine run; unrestricted operational
 completeness remains open.
 
+Core replay is proved for individual agents and for whole programs serialized
+in any enumeration of their agents. The serialized execution is a completed
+Core run, with the original per-agent actions and event/RMW/dependency
+correspondence recorded at each replay boundary. Reconstructing completed
+snapshot-machine runs remains a separate completeness obligation.
+
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion
 update; primitive WP rules and adequacy remain future work. See

@@ -480,8 +480,7 @@ Module LkmmCore.
         (add_single_event state agent thread (LBarrier BarrierSyncRcu)
           thread.(thread_registers) ∅ ∅ ∅).
 
-  Inductive core_run (P : core_program) :
-      core_state -> list core_action -> core_state -> Prop :=
+  Inductive core_run (P : core_program) : core_state -> list core_action -> core_state -> Prop :=
   | CoreRunNil state : core_run P state [] state
   | CoreRunCons state1 state2 state3 action actions :
       core_step P state1 action state2 ->

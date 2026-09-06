@@ -31,6 +31,14 @@ Rocq also checks LKMM-Core event allocation and provenance, proves generated
 RMW and direct-dependency relations well formed for every Core run, and checks
 their exact agreement in `program_graph`.  The `rf` and `co` relations remain
 finite candidate choices rather than trusted program inputs.
+Per-agent Core replay is also mechanized: the original action subsequence
+executes with preserved values, branch behavior, RMW pairing, and dependency
+origins under an injective renaming of that agent's events. The contextual
+replay theorem preserves existing events and edges and other agents' thread
+states. Whole-program serialization composes these replays in any enumeration
+of all program agents and proves completion of every agent, retaining the
+per-agent correspondence certificates. These proofs add no axioms and do not
+establish snapshot-machine reconstruction or full operational completeness.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
