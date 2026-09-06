@@ -83,6 +83,17 @@ open. Regressions exercise nested control/address/data provenance, successful
 and failed `cmpxchg`, replay after another agent has already executed,
 whole-program completion in either two-agent order, and the empty program.
 
+The event-level premises for machine reconstruction are defined in
+`lkmm/rcu_replay.v`. `rcu_replay_wf E` combines `rcu_matching_complete E`
+with `no_gp_in_read_section E`: no `BarrierSyncRcu` event lies strictly
+between a matched lock and unlock in program order. Since program order
+relates events of the same agent, this permits other agents' grace periods.
+Every matched section is checked, including outer sections around nested
+ones. These premises describe a completed event structure, not a prefix;
+they do not assume a machine run, change the transition rules, or add a new
+LKMM consistency constraint. Their sufficiency for machine reconstruction
+and derivation from consistent program graphs remain to be proved.
+
 ## Core-driven RCU machine
 
 `operational/lkmm_machine.v` executes LKMM-Core with a snapshot-based
