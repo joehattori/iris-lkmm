@@ -132,4 +132,8 @@ Module RcuGraph.
 
   Definition rcu_consistent (G : graph) : Prop := forall e, ~ rb G e e.
 
+  Definition graph_consistent (G : graph) : Prop :=
+    graph_coherence G /\ graph_atomicity G /\ graph_happens_before G /\
+    graph_propagation G /\ rcu_consistent G.
+
 End RcuGraph.

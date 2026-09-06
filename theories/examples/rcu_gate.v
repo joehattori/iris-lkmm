@@ -251,10 +251,8 @@ Module RcuGateExamples.
   Qed.
 
   Example empty_candidate_consistent :
-    rcu_consistent (candidate_graph empty_candidate).
-  Proof.
-    intros e. apply empty_raw_has_no_rb.
-  Qed.
+    graph_consistent (candidate_graph empty_candidate).
+  Proof. apply empty_raw_graph_consistent. Qed.
 
   Example empty_candidate_has_incremental_schedule :
     exists s,

@@ -10,9 +10,10 @@ and their proved equivalence to recursive `rcu-order`.
 The operational scope includes emitted-event integrity, a finite graph view
 over canonical events, derived `prop`/`hb`/`pb`, completed snapshot coverage,
 and the proved coverage-to-chain refinement.  It includes an
-incremental finite graph builder with explicit `rcu-link` witnesses and `rb` deltas, a
-proof of `rb` irreflexivity and structural `rf`/`co`/`rmw` prefix validity for
-every builder run, an independent declarative candidate type, and finite
+incremental finite graph builder with explicit `rcu-link` witnesses and deltas
+for all five selected consistency checks, a proof of full relational
+consistency and structural `rf`/`co`/`rmw` prefix validity for every builder
+run, an independent declarative candidate type, and finite
 candidate scheduling completeness from a fixed empty initial builder.  The
 Core-driven machine and builder are combined by an asynchronous
 delayed-commitment semantics with RCU soundness and relative candidate
@@ -44,13 +45,12 @@ snapshot waiting, a projection into Core runs, and reader/certificate safety
 proofs.  `lkmm_coupled.v` connects this machine to the incremental RCU builder
 with generated-event/relation provenance guards and exact agreement at
 completion.
-It proves Core-run projection, RCU consistency, snapshot safety, and relative
+It proves Core-run projection, LKMM consistency, snapshot safety, and relative
 scheduling for candidates backed by complete snapshot-machine runs.
 `coupled_run_program_graph` connects completed runs to `program_graph` under
 explicit `rf`/`co` well-formedness obligations.  Core execution proves
 well-formedness of its generated RMW and direct-dependency relations.  The
 builder commits those generated relations and derives `hb`/`pb` from them.
-Validating the base choices generally, full LKMM operational
-soundness/completeness, Iris
-WP/adequacy, and source-language refinement remain outside this coupling.  The
+Validating the base choices generally, unrestricted operational completeness,
+Iris WP/adequacy, and source-language refinement remain outside this coupling. The
 gate machine is separate.

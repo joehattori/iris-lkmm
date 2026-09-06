@@ -34,10 +34,10 @@ all finite choices satisfying their relational well-formedness predicates.
 This connects nondeterministically observed read values to writes while still
 allowing future writes to justify earlier observations.
 
-`lkmm_consistent` is deliberately separate from `program_graph`.  It conjoins
+`lkmm_consistent` is deliberately separate from `program_graph`. It applies
 coherence, atomicity, happens-before acyclicity, propagation acyclicity, and
-normal-RCU consistency over an adapter whose `hb` and `pb` are derived from the
-candidate's dependency edges.  The feasibility graph uses the same derivation.
+normal-RCU consistency to `core_candidate_graph`; its `hb` and `pb` are derived
+from the candidate's dependency edges.
 
 ## Core-driven RCU machine
 
@@ -177,11 +177,17 @@ the commitment only after all of its component paths are present.  Graph
 monotonicity proves that an already committed link remains valid as later
 facts are added.
 
-For a raw mutation, the builder also supplies an `rb` delta satisfying:
+For a raw mutation, the builder supplies exact deltas for the five selected
+consistency relations. It tracks transitive-closure paths for coherence,
+`hb`, and `pb`, forbidden pairs for atomicity, and direct `rb` pairs:
 
 ```text
-rb(new graph) = seen-rb ∪ delta
-irreflexive(delta)
+relations(new graph) = seen-relations ∪ delta
+irreflexive(delta.coherence-paths)
+empty(delta.atomicity-violations)
+irreflexive(delta.hb-paths)
+irreflexive(delta.pb-paths)
+irreflexive(delta.rb)
 ```
 
 Every relation mutation must leave the resulting partial relation structurally
@@ -194,11 +200,13 @@ Read-from totality, marked-write totality, and the total/transitive coherence
 order remain completion properties of a full LKMM candidate.
 
 The transition refers only to the current state, the one-step successor, and
-the delta.  It has no final candidate and no `rcu_consistent` premise.
-`builder_invariant` proves that `seen-rb` is exactly the current graph's `rb`,
-that it is irreflexive, and that all stored link witnesses remain valid.
-Consequently, `completed_builder_run_rb_irreflexive` proves
-`rcu_consistent` for every finite builder run from `initial_builder`.
+the delta. It has no final candidate or completed-graph consistency premise.
+`builder_invariant` proves that `bs_seen_consistency` is exactly the current
+graph's five monitored relations, that each required local safety property
+holds, and that all stored link witnesses remain valid. Consequently,
+`completed_builder_run_consistent` proves coherence, atomicity,
+happens-before, propagation, and RCU consistency for every finite builder run
+from `initial_builder`.
 
 ## Independent candidates and finite scheduling
 
@@ -210,15 +218,15 @@ complete RCU matching, structurally well-formed `rf`/`co`/`rmw` prefixes, and
 well-formed direct address/data/control dependencies.
 
 `candidate_has_raw_schedule` enumerates those finite components one at a
-time.  `lift_safe_raw_schedule` turns that enumeration into builder steps by
-partitioning each successor's `rb` relation into previously seen and new
-pairs.  Monotonicity of `rb` and consistency of the final candidate prove
-that each new delta is locally irreflexive.
+time. `lift_safe_raw_schedule` turns that enumeration into builder steps by
+partitioning each successor's five monitored relations into previously seen
+and new pairs. Monotonicity and consistency of the final candidate prove that
+each new delta satisfies its local cycle or emptiness obligation.
 
 The resulting completeness theorem is:
 
 ```text
-candidate_well_formed(C) /\ rcu_consistent(candidate_graph(C))
+candidate_well_formed(C) /\ graph_consistent(candidate_graph(C))
 ->
 exists s,
   builder_run(initial_builder, s) /\
@@ -234,7 +242,7 @@ the transition relation itself never receives the final candidate.
 
 `lkmm_coupled.v` couples `LkmmMachine.state` to `builder_state`.
 A machine action advances Core execution or its snapshot-waiting protocol;
-a builder action performs the local `rb` delta check and requires
+a builder action performs the five local consistency-delta checks and requires
 `generated_prefix` for its successor.  This guard requires every
 committed event to occur unchanged in the generated map and every committed
 RMW or dependency edge to belong to its Core-generated set.
@@ -252,13 +260,13 @@ committed by the builder; `hb` and `pb` are derived from the committed graph.
 RCU matching, exact event-map agreement, and exact agreement for RMW and all
 three direct-dependency sets.  Its
 `coupled_operational_soundness` theorem gives a complete Core run, those exact
-agreements, the builder's RCU consistency, allocation well-formedness, no
+agreements, the builder's LKMM consistency, allocation well-formedness, no
 unmatched unlocks, and sound completion certificates.  The coupled
 snapshot-clear theorem preserves the captured-reader guarantee under arbitrary
 interleaving of machine and builder actions.
 
 `consistent_program_candidate_is_schedulable` proves relative scheduling:
-given a complete snapshot-machine run and a well-formed, RCU-consistent finite
+given a complete snapshot-machine run and a well-formed, LKMM-consistent finite
 candidate with the same events, RMW pairs, and direct dependencies, there is a
 completed coupled run.
 The proof may execute the machine first and then commit the graph.  Neither
@@ -272,12 +280,12 @@ prove that every consistent `program_graph` admits a snapshot-machine run.
 well-formedness follow from Core execution; complete RCU matching follows from
 coupled completion.  The two remaining obligations are not transition guards.
 
-`coupled_candidate_rcu_consistent` transfers the builder's RCU consistency
-directly to the candidate's canonical RCU view because they contain the same
-committed fields and derive the same `hb` and `pb`.  The coupled result is not
-full LKMM operational soundness: validation of `rf`/`co` and the non-RCU
-consistency constraints remain separate proof obligations.  No theorem yet
-derives `lkmm_consistent` from an arbitrary completed coupled run.
+`coupled_candidate_lkmm_consistent` transfers all five builder consistency
+constraints directly to the extracted candidate because they contain the same
+committed fields and derive the same relations. `coupled_run_soundness`
+combines that result with `coupled_run_program_graph`; only completion-time
+well-formedness of the independently chosen `rf` and `co` remains an explicit
+premise.
 
 ## Iris reader and grace-period protocol
 
@@ -314,13 +322,13 @@ all execution steps, primitive WP rules, and adequacy remain to be developed.
 
 - The feasibility-gate machine emits only its five minimal labels.  The
   separate LKMM-Core machine handles values, generated RMW pairs, and direct
-  dependency provenance.  Its builder and Iris completion bridges do not yet
-  supply a full LKMM operational soundness theorem or Iris WP.
+  dependency provenance. Its builder supplies finite operational soundness,
+  while Iris WP and unrestricted operational completeness remain deferred.
 - `program_graph` accepts finite well-formed `rf` and `co` choices; it does not
   compute a single choice from the program.  Quantification over candidates is
   therefore required when stating a property for every allowed execution.
-- The completeness proof uses propositional excluded middle to partition an
-  `rb` relation into old and new pairs.  A reflected finite checker could
+- The completeness proof uses propositional excluded middle to partition the
+  five monitored relations into old and new pairs. A reflected finite checker could
   later replace this classical proof step.
 - Grace-period liveness is out of scope; a pending grace period may remain
   pending forever.

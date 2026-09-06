@@ -143,7 +143,12 @@ Module LkmmCoupled.
         (HE & HRMW & HADDR & HDATA & HCTRL).
       destruct IHHrun as (HE' & HRMW' & HADDR' & HDATA' & HCTRL');
         first by eapply core_step_preserves_allocation.
-      split_and!; try set_solver. intros eid ev Hlookup. by apply HE', HE.
+      split_and!.
+      + intros eid ev Hlookup. exact (HE' eid ev (HE eid ev Hlookup)).
+      + intros edge Hedge. exact (HRMW' edge (HRMW edge Hedge)).
+      + intros edge Hedge. exact (HADDR' edge (HADDR edge Hedge)).
+      + intros edge Hedge. exact (HDATA' edge (HDATA edge Hedge)).
+      + intros edge Hedge. exact (HCTRL' edge (HCTRL edge Hedge)).
   Qed.
 
   Local Lemma step_preserves_generated_prefix P s a s' :
@@ -156,7 +161,12 @@ Module LkmmCoupled.
     pose proof (step_core_projection _ _ _ _ H) as Hcore.
     destruct (core_run_generated_mono _ _ _ _ Hcore Hwf) as
       (HE' & HRMW' & HADDR' & HDATA' & HCTRL').
-    split_and!; try set_solver. intros eid ev Hlookup. by apply HE', HE.
+    split_and!.
+    - intros eid ev Hlookup. exact (HE' eid ev (HE eid ev Hlookup)).
+    - intros edge Hedge. exact (HRMW' edge (HRMW edge Hedge)).
+    - intros edge Hedge. exact (HADDR' edge (HADDR edge Hedge)).
+    - intros edge Hedge. exact (HDATA' edge (HDATA edge Hedge)).
+    - intros edge Hedge. exact (HCTRL' edge (HCTRL edge Hedge)).
   Qed.
 
   (** No reachable builder prefix invents an event or generated relation. *)
@@ -182,7 +192,7 @@ Module LkmmCoupled.
     complete_core_run P (project_actions (machine_actions actions))
       s.(coupled_machine).(machine_core) /\
     machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw) /\
-    rcu_consistent (graph_of_raw s.(coupled_builder).(bs_raw)) /\
+    graph_consistent (graph_of_raw s.(coupled_builder).(bs_raw)) /\
     core_allocation_wf s.(coupled_machine).(machine_core) /\
     no_unmatched_unlocks s.(coupled_machine) /\
     certificates_sound s.(coupled_machine).
@@ -194,7 +204,7 @@ Module LkmmCoupled.
     pose proof (run_allocation_wf _ _ _ Hmachine) as Halloc.
     split_and!; try done.
     - apply complete_run_core_projection. split; done.
-    - by eapply completed_builder_run_rb_irreflexive.
+    - by eapply completed_builder_run_consistent.
   Qed.
 
   Theorem coupled_completed_certificate_snapshot_clear P actions s cert :
@@ -242,14 +252,24 @@ Module LkmmCoupled.
         by rewrite Hevents.
   Qed.
 
-  Theorem coupled_candidate_rcu_consistent P actions s :
+  Theorem coupled_candidate_lkmm_consistent P actions s :
     coupled_run P (initial_coupled P) actions s ->
-    rcu_consistent (core_candidate_rcu_view (coupled_candidate s)).
+    lkmm_consistent (coupled_candidate s).
   Proof.
     intros Hrun.
     pose proof (coupled_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
-    change (rcu_consistent (graph_of_raw s.(coupled_builder).(bs_raw))).
-    by eapply completed_builder_run_rb_irreflexive.
+    change (graph_consistent (graph_of_raw s.(coupled_builder).(bs_raw))).
+    by eapply completed_builder_run_consistent.
+  Qed.
+
+  Theorem coupled_run_soundness P actions s :
+    coupled_run P (initial_coupled P) actions s -> coupled_complete s ->
+    coupled_program_graph_obligations s ->
+    program_graph P (coupled_candidate s) /\ lkmm_consistent (coupled_candidate s).
+  Proof.
+    intros Hrun Hcomplete Hobligations. split.
+    - by eapply coupled_run_program_graph.
+    - by eapply coupled_candidate_lkmm_consistent.
   Qed.
 
   Lemma lift_machine_run P m actions m' b :
@@ -294,7 +314,7 @@ Module LkmmCoupled.
   (** Relative scheduling: the machine execution is supplied as a premise,
       not reconstructed from arbitrary LKMM-consistent program graphs. *)
   Definition consistent_program_candidate (P : core_program) (C : finite_candidate) : Prop :=
-    candidate_well_formed C /\ rcu_consistent (candidate_graph C) /\
+    candidate_well_formed C /\ graph_consistent (candidate_graph C) /\
     exists actions m,
       LkmmMachine.complete_run P actions m /\ machine_matches_raw m (candidate_raw C).
 
@@ -401,29 +421,15 @@ Module LkmmCoupled.
       - intros x y Hin. inversion Hin.
     Qed.
 
-    Local Lemma candidate_consistent : rcu_consistent (candidate_graph candidate).
-    Proof.
-      assert (forall eid, ~ is_gp (candidate_graph candidate) eid) as Hno_gp.
-      { intros eid Hgp. apply event_has_barrier_kind_lookup in Hgp as (ev & Hlookup & Hkind).
-        change (({[2 := EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z);
-          1 := EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 0%Z);
-          0 := EInitWrite 0 0%Z]} : event_structure) !! eid = Some ev) in Hlookup.
-        repeat (apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done).
-        apply lookup_singleton_Some in Hlookup as [<- <-]. done. }
-      assert (forall x y, ~ rcu_order (candidate_graph candidate) x y) as Hno_order.
-      { intros x y Horder. induction Horder; naive_solver. }
-      intros eid Hrb. apply rel_seq_id_on_r in Hrb as [Hrb _].
-      destruct Hrb as (x & (y & (z & _ & a & b & _ & Horder & _) & _) & _).
-      by apply (Hno_order a b).
-    Qed.
-
     Example generated_rmw_commitments :
+      graph_consistent (candidate_graph candidate) ->
       exists actions s,
         coupled_run program (initial_coupled program) actions s /\ coupled_complete s /\
         s.(coupled_builder).(bs_raw) = candidate_raw candidate.
     Proof.
+      intros Hconsistent.
       apply consistent_program_candidate_is_schedulable. split; first apply candidate_wf.
-      split; first apply candidate_consistent.
+      split; first done.
       exists [Execute (CoreObserve 0 0%Z)], finished. split; first apply machine_run.
       split; done.
     Qed.
@@ -439,8 +445,8 @@ Module LkmmCoupled.
       ~ coupled_complete (initial_coupled program) /\
       ~ coupled_complete (CoupledState finished initial_builder) /\
       ~ coupled_complete (CoupledState finished
-        (BuilderState (RawGraph finished.(machine_core).(core_events) [] [] [] [] [] [])
-          [] (fun _ _ => False))).
+        (BuilderState (RawGraph finished.(machine_core).(core_events) [] [] [] [] [] []) []
+          initial_builder.(bs_seen_consistency))).
     Proof.
       split_and!.
       - split_and!; try set_solver. intros eid ev Hlookup. exact Hlookup.
@@ -505,30 +511,18 @@ Module LkmmCoupled.
       - by apply co_wf_prefix.
     Qed.
 
-    Local Lemma finite_graph_consistent : rcu_consistent (candidate_graph finite_graph).
-    Proof.
-      assert (forall eid, ~ is_gp (candidate_graph finite_graph) eid) as Hno_gp.
-      { intros eid Hgp. apply event_has_barrier_kind_lookup in Hgp as (ev & Hlookup & Hkind).
-        change (lookup_event sample_events eid = Some ev) in Hlookup.
-        unfold lookup_event, sample_events in Hlookup.
-        repeat (apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done).
-        apply lookup_singleton_Some in Hlookup as [<- <-]. done. }
-      assert (forall x y, ~ rcu_order (candidate_graph finite_graph) x y) as Hno_order.
-      { intros x y Horder. induction Horder; naive_solver. }
-      intros eid Hrb. apply rel_seq_id_on_r in Hrb as [Hrb _].
-      destruct Hrb as (x & (y & (z & _ & a & b & _ & Horder & _) & _) & _).
-      by apply (Hno_order a b).
-    Qed.
-
     Example completed_coupled_run_has_program_graph :
+      graph_consistent (candidate_graph finite_graph) ->
       exists actions s,
         coupled_run program (initial_coupled program) actions s /\ coupled_complete s /\
         program_graph program (coupled_candidate s) /\
+        lkmm_consistent (coupled_candidate s) /\
         candidate_rf (coupled_candidate s) = sample_rf /\
         candidate_co (coupled_candidate s) = sample_co.
     Proof.
+      intros Hconsistent.
       destruct (consistent_candidate_is_incrementally_schedulable _
-        finite_graph_wf finite_graph_consistent) as (b & Hbuilder & Hraw & _).
+        finite_graph_wf Hconsistent) as (b & Hbuilder & Hraw & _).
       destruct machine_run as [Hmachine Hcomplete].
       assert (machine_matches_raw finished b.(bs_raw)) as Hmatches.
       { rewrite Hraw. split_and!; done. }
@@ -545,20 +539,24 @@ Module LkmmCoupled.
         (map CoupledMachineAction [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)] ++
           builder_actions) (CoupledState finished b)) as Hrun.
       { eapply coupled_run_trans; last done. by apply lift_machine_run. }
+      assert (coupled_program_graph_obligations (CoupledState finished b)) as Hobligations.
+      { unfold coupled_program_graph_obligations, coupled_candidate. simpl. rewrite Hraw.
+        pose proof (program_graph_wf _ _ two_agent_program_graph) as Hcandidate.
+        destruct Hcandidate as (_ & Hrf & Hco & _). split; done. }
+      destruct (coupled_run_soundness program _ (CoupledState finished b)
+        Hrun (conj Hcomplete Hmatches) Hobligations) as [Hprogram_graph Hlkmm].
       eexists _, (CoupledState finished b). split; first exact Hrun.
       split_and!; first by split.
-      - eapply coupled_run_program_graph; [exact Hrun | by split |].
-        unfold coupled_program_graph_obligations, coupled_candidate. simpl. rewrite Hraw.
-        pose proof (program_graph_wf _ _ two_agent_program_graph) as Hcandidate.
-        destruct Hcandidate as (_ & Hrf & Hco & _). split; done.
+      - exact Hprogram_graph.
+      - exact Hlkmm.
       - simpl. by rewrite Hraw.
       - simpl. by rewrite Hraw.
     Qed.
 
     Example malformed_rf_is_an_explicit_obligation :
       ~ coupled_program_graph_obligations (CoupledState finished
-        (BuilderState (RawGraph sample_events [(1, 1)] [(0, 1)] [] [] [] [])
-          [] (fun _ _ => False))).
+        (BuilderState (RawGraph sample_events [(1, 1)] [(0, 1)] [] [] [] []) []
+          initial_builder.(bs_seen_consistency))).
     Proof.
       intros [Hrf _]. destruct Hrf as [Hedges _].
       assert (rf (list_to_set [(1, 1)]) 1 1) as Hedge by set_solver.

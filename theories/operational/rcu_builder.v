@@ -10,9 +10,11 @@ Import ListNotations.
     critical sections are recomputed from the canonical event structure.
     Link commitments record witnesses for
     [po? ; hb* ; pb* ; prop ; po] only after their components are present.
-    The [rb_delta] premise is a local monitor obligation: it describes the
-    newly exposed [rb] pairs and rejects only reflexive new pairs.  It does
-    not mention a final candidate or [rcu_consistent]. *)
+    Each raw mutation supplies exact deltas for the five selected LKMM
+    consistency checks.  The local obligations reject newly exposed cycles
+    in coherence, happens-before, propagation, and RCU [rb], and reject every
+    newly exposed atomicity violation.  They do not mention a final candidate
+    or invoke a completed-graph consistency predicate. *)
 Module RcuBuilder.
   Import LkmmMemoryRelations RcuGraph RcuMono.
 
@@ -263,25 +265,87 @@ Module RcuBuilder.
     - by eapply graph_le_po.
   Qed.
 
+  Record consistency_relations := ConsistencyRelations {
+    cr_coherence : relation;
+    cr_atomicity : relation;
+    cr_happens_before : relation;
+    cr_propagation : relation;
+    cr_rb : relation
+  }.
+
+  Definition graph_consistency_relations (G : graph) : consistency_relations :=
+    ConsistencyRelations
+      (tc (graph_coherence_order G))
+      (graph_atomicity_violation G)
+      (tc (graph_hb G))
+      (tc (graph_pb G))
+      (rb G).
+
+  Definition consistency_relations_union
+      (left right : consistency_relations) : consistency_relations :=
+    ConsistencyRelations
+      (rel_union left.(cr_coherence) right.(cr_coherence))
+      (rel_union left.(cr_atomicity) right.(cr_atomicity))
+      (rel_union left.(cr_happens_before) right.(cr_happens_before))
+      (rel_union left.(cr_propagation) right.(cr_propagation))
+      (rel_union left.(cr_rb) right.(cr_rb)).
+
+  Definition consistency_relations_exact
+      (G : graph) (seen : consistency_relations) : Prop :=
+    (forall x y, seen.(cr_coherence) x y <-> tc (graph_coherence_order G) x y) /\
+    (forall x y, seen.(cr_atomicity) x y <-> graph_atomicity_violation G x y) /\
+    (forall x y, seen.(cr_happens_before) x y <-> tc (graph_hb G) x y) /\
+    (forall x y, seen.(cr_propagation) x y <-> tc (graph_pb G) x y) /\
+    (forall x y, seen.(cr_rb) x y <-> rb G x y).
+
+  Definition consistency_delta_exact (new : raw_graph)
+      (seen delta : consistency_relations) : Prop :=
+    consistency_relations_exact (graph_of_raw new) (consistency_relations_union seen delta).
+
+  Definition consistency_relations_safe (relations : consistency_relations) : Prop :=
+    rel_irreflexive relations.(cr_coherence) /\
+    rel_is_empty relations.(cr_atomicity) /\
+    rel_irreflexive relations.(cr_happens_before) /\
+    rel_irreflexive relations.(cr_propagation) /\
+    rel_irreflexive relations.(cr_rb).
+
+  Lemma graph_consistency_relations_safe G :
+    consistency_relations_safe (graph_consistency_relations G) <-> graph_consistent G.
+  Proof.
+    unfold consistency_relations_safe, graph_consistency_relations, graph_consistent,
+      graph_coherence, graph_atomicity, graph_happens_before, graph_propagation,
+      rcu_consistent, rel_acyclic. done.
+  Qed.
+
+  Lemma consistency_relations_union_safe left right :
+    consistency_relations_safe left -> consistency_relations_safe right ->
+    consistency_relations_safe (consistency_relations_union left right).
+  Proof.
+    intros (Hco1 & Hat1 & Hhb1 & Hpb1 & Hrb1)
+      (Hco2 & Hat2 & Hhb2 & Hpb2 & Hrb2).
+    unfold consistency_relations_safe, consistency_relations_union. cbn. split_and!.
+    - intros eid [Hcycle | Hcycle]; [by apply (Hco1 eid) | by apply (Hco2 eid)].
+    - intros source target [Hbad | Hbad]; [by apply (Hat1 source target) |
+        by apply (Hat2 source target)].
+    - intros eid [Hcycle | Hcycle]; [by apply (Hhb1 eid) | by apply (Hhb2 eid)].
+    - intros eid [Hcycle | Hcycle]; [by apply (Hpb1 eid) | by apply (Hpb2 eid)].
+    - intros eid [Hcycle | Hcycle]; [by apply (Hrb1 eid) | by apply (Hrb2 eid)].
+  Qed.
+
   Record builder_state := BuilderState {
     bs_raw : raw_graph;
     bs_rcu_links : list rcu_link_commitment;
-    bs_seen_rb : relation
+    bs_seen_consistency : consistency_relations
   }.
-
-  Definition rb_delta_exact (old new : raw_graph) (seen delta : relation) : Prop :=
-    forall x y, rb (graph_of_raw new) x y <-> seen x y \/ delta x y.
-
-  Definition locally_safe (delta : relation) : Prop := forall e, ~ delta e e.
 
   Inductive builder_step : builder_state -> builder_state -> Prop :=
   | BuilderStepRaw r r' links seen delta :
       raw_step r r' ->
-      rb_delta_exact r r' seen delta ->
-      locally_safe delta ->
+      consistency_delta_exact r' seen delta ->
+      consistency_relations_safe delta ->
       builder_step
         (BuilderState r links seen)
-        (BuilderState r' links (fun x y => seen x y \/ delta x y))
+        (BuilderState r' links (consistency_relations_union seen delta))
   | BuilderStepRcuLink r links seen k :
       rcu_link_commitment_valid (graph_of_raw r) k ->
       builder_step
@@ -296,11 +360,12 @@ Module RcuBuilder.
       builder_run s1 s3.
 
   Definition builder_invariant (s : builder_state) : Prop :=
-    (forall x y, s.(bs_seen_rb) x y <-> rb (graph_of_raw s.(bs_raw)) x y) /\
-    (forall e, ~ s.(bs_seen_rb) e e) /\
+    consistency_relations_exact (graph_of_raw s.(bs_raw)) s.(bs_seen_consistency) /\
+    consistency_relations_safe s.(bs_seen_consistency) /\
     (forall k, In k s.(bs_rcu_links) -> rcu_link_commitment_valid (graph_of_raw s.(bs_raw)) k).
 
-  Definition initial_builder : builder_state := BuilderState empty_raw [] (fun _ _ => False).
+  Definition initial_builder : builder_state :=
+    BuilderState empty_raw [] (graph_consistency_relations (graph_of_raw empty_raw)).
 
   Lemma empty_raw_has_no_rb x y :
     ~ rb (graph_of_raw empty_raw) x y.
@@ -313,15 +378,68 @@ Module RcuBuilder.
     inversion Hlookup.
   Qed.
 
+  Local Lemma empty_raw_has_no_coherence_edge x y :
+    ~ graph_coherence_order (graph_of_raw empty_raw) x y.
+  Proof.
+    intros [Hpo | Hcom].
+    - destruct Hpo as [(agent & index1 & index2 & label1 & label2 & Hlookup & _) _].
+      inversion Hlookup.
+    - destruct Hcom as [Hrf | [Hco | Hfr]].
+      + unfold rf, edge_relation, graph_of_raw, empty_raw in Hrf. set_solver.
+      + unfold co, edge_relation, graph_of_raw, empty_raw in Hco. set_solver.
+      + destruct Hfr as (write & Hrf & _).
+        unfold rf, edge_relation, graph_of_raw, empty_raw in Hrf. set_solver.
+  Qed.
+
+  Local Lemma empty_raw_has_no_marked eid :
+    ~ graph_marked (graph_of_raw empty_raw) eid.
+  Proof.
+    intros [Hin _]. apply in_event_structure_lookup_iff in Hin as (ev & Hlookup).
+    inversion Hlookup.
+  Qed.
+
+  Local Lemma empty_raw_has_no_hb x y :
+    ~ graph_hb (graph_of_raw empty_raw) x y.
+  Proof.
+    intros Hhb. apply rel_seq_id_on_r in Hhb as [Hprefix _].
+    apply rel_seq_id_on_l in Hprefix as [Hmarked _].
+    by apply (empty_raw_has_no_marked x).
+  Qed.
+
+  Local Lemma empty_raw_has_no_pb x y :
+    ~ graph_pb (graph_of_raw empty_raw) x y.
+  Proof.
+    intros Hpb. apply rel_seq_id_on_r in Hpb as [_ Hmarked].
+    by apply (empty_raw_has_no_marked y).
+  Qed.
+
+  Local Lemma tc_of_empty_is_empty relation :
+    (forall x y, ~ relation x y) -> forall x y, ~ tc relation x y.
+  Proof.
+    intros Hempty x y Hpath. induction Hpath; [by eapply Hempty | done].
+  Qed.
+
+  Lemma empty_raw_graph_consistent :
+    graph_consistent (graph_of_raw empty_raw).
+  Proof.
+    unfold graph_consistent, graph_coherence, graph_atomicity,
+      graph_happens_before, graph_propagation, rel_acyclic. split_and!.
+    - intros eid. by apply tc_of_empty_is_empty, empty_raw_has_no_coherence_edge.
+    - intros source target [Hrmw _].
+      unfold rmw, edge_relation, graph_of_raw, empty_raw in Hrmw. set_solver.
+    - intros eid. by apply tc_of_empty_is_empty, empty_raw_has_no_hb.
+    - intros eid. by apply tc_of_empty_is_empty, empty_raw_has_no_pb.
+    - intros eid. by apply empty_raw_has_no_rb.
+  Qed.
+
   Lemma initial_builder_invariant :
     builder_invariant initial_builder.
   Proof.
-    unfold builder_invariant, initial_builder. simpl.
-    split.
-    - intros x y. split; [contradiction | by intros H; exfalso; eapply empty_raw_has_no_rb].
-    - split.
-      + intros e Hfalse. done.
-      + intros k Hin. inversion Hin.
+    unfold builder_invariant, initial_builder. simpl. split_and!.
+    - unfold consistency_relations_exact, graph_consistency_relations. cbn.
+      split_and!; intros; done.
+    - apply graph_consistency_relations_safe, empty_raw_graph_consistent.
+    - intros k Hin. inversion Hin.
   Qed.
 
   Lemma builder_step_preserves_invariant s s' :
@@ -334,10 +452,8 @@ Module RcuBuilder.
       [r r' links seen delta Hraw Hdelta Hlocal |
        r links seen k Hvalid]; simpl in *.
     - split_and!.
-      + intros x y. symmetry. by apply Hdelta.
-      + intros e [Hold | Hnew].
-        * by apply (Hsafe e).
-        * by apply (Hlocal e).
+      + exact Hdelta.
+      + by apply consistency_relations_union_safe.
       + intros k Hin. eapply rcu_link_commitment_valid_mono.
         * by eapply raw_step_graph_le.
         * by apply Hlinks.
@@ -376,14 +492,22 @@ Module RcuBuilder.
     apply builder_run_preserves_relations_wf, empty_raw_relations_wf.
   Qed.
 
-  Theorem completed_builder_run_rb_irreflexive s :
+  Theorem completed_builder_run_consistent s :
     builder_run initial_builder s ->
-    rcu_consistent (graph_of_raw s.(bs_raw)).
+    graph_consistent (graph_of_raw s.(bs_raw)).
   Proof.
-    intros Hrun e Hrb.
+    intros Hrun.
     pose proof (builder_run_preserves_invariant _ _ initial_builder_invariant
       Hrun) as (Hexact & Hsafe & _).
-    apply (Hsafe e). by apply Hexact.
+    apply graph_consistency_relations_safe.
+    destruct Hexact as (Hco & Hat & Hhb & Hpb & Hrb).
+    destruct Hsafe as (Hco_safe & Hat_safe & Hhb_safe & Hpb_safe & Hrb_safe).
+    unfold consistency_relations_safe, graph_consistency_relations. cbn. split_and!.
+    - intros eid Hcycle. apply (Hco_safe eid), Hco, Hcycle.
+    - intros source target Hbad. apply (Hat_safe source target), Hat, Hbad.
+    - intros eid Hcycle. apply (Hhb_safe eid), Hhb, Hcycle.
+    - intros eid Hcycle. apply (Hpb_safe eid), Hpb, Hcycle.
+    - intros eid Hcycle. apply (Hrb_safe eid), Hrb, Hcycle.
   Qed.
 
   Theorem committed_rcu_links_are_sound s k :

@@ -65,9 +65,9 @@ The Core generation invariant proves that the generated RMW relation and all
 three direct dependency relations satisfy their relational well-formedness
 interfaces.
 `rf` and `co` remain finite candidate choices constrained by `rf_wf` and
-`co_wf`; `lkmm_consistent` applies the selected CAT constraints separately.
-The adapter to the feasibility RCU kernel derives `hb` and `pb` from the same
-candidate rather than accepting them as additional core-candidate fields.
+`co_wf`; `lkmm_consistent` applies the selected CAT constraints to
+`core_candidate_graph`. The graph derives `hb` and `pb` from the same candidate
+rather than accepting them as additional fields.
 
 ## Canonical event structures and program order
 
@@ -208,11 +208,11 @@ read-to-write endpoints are also related by `fre ; coe`; it is not folded into
 The operational graph layer does not redefine these relations.
 `rcu_link_commitment` stores the four intermediate event identifiers of the
 `rcu_link` decomposition, and `rcu_link_commitment_sound`/
-`rcu_link_commitment_complete` prove correspondence in both directions.  The
-builder's `bs_seen_rb` monitor is proved extensionally equal to `rb` at every
-reachable state; `completed_builder_run_rb_irreflexive`
-therefore establishes the same `rcu_consistent` predicate rather than a
-separate operational approximation.
+`rcu_link_commitment_complete` prove correspondence in both directions. The
+builder's `bs_seen_consistency` monitor tracks exact current-graph paths or
+violations for coherence, atomicity, happens-before, propagation, and `rb`.
+`completed_builder_run_consistent` therefore establishes the same five
+relational predicates rather than separate operational approximations.
 
 The builder commits direct address, data, and control provenance only after
 the corresponding Core execution has generated it.  The shared graph then

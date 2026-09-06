@@ -32,4 +32,22 @@ Module LkmmExecutionGraph.
   Definition graph_pb (G : graph) : relation :=
     LkmmMemoryRelations.pb G.(events) G.(rmw_edges) G.(rf_edges) G.(co_edges)
       G.(direct_data_edges) G.(direct_addr_edges) G.(direct_ctrl_edges).
+
+  Definition graph_coherence_order (G : graph) : relation :=
+    rel_union (po_loc G.(events)) (LkmmMemoryRelations.com G.(rf_edges) G.(co_edges)).
+
+  Definition graph_atomicity_violation (G : graph) : relation :=
+    rel_intersection (LkmmMemoryRelations.rmw G.(rmw_edges))
+      (rel_seq
+        (LkmmMemoryRelations.fre G.(events) G.(rf_edges) G.(co_edges))
+        (LkmmMemoryRelations.coe G.(events) G.(co_edges))).
+
+  Definition graph_coherence (G : graph) : Prop := rel_acyclic (graph_coherence_order G).
+
+  Definition graph_atomicity (G : graph) : Prop :=
+    rel_is_empty (graph_atomicity_violation G).
+
+  Definition graph_happens_before (G : graph) : Prop := rel_acyclic (graph_hb G).
+
+  Definition graph_propagation (G : graph) : Prop := rel_acyclic (graph_pb G).
 End LkmmExecutionGraph.

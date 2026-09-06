@@ -1074,7 +1074,7 @@ Module LkmmProgramGraph.
       C.(candidate_direct_addr)
       C.(candidate_direct_ctrl).
 
-  Definition core_candidate_rcu_view (C : core_candidate) : LkmmExecutionGraph.graph :=
+  Definition core_candidate_graph (C : core_candidate) : LkmmExecutionGraph.graph :=
     LkmmExecutionGraph.Graph
       C.(candidate_events)
       C.(candidate_rf)
@@ -1107,13 +1107,7 @@ Module LkmmProgramGraph.
   }.
 
   Definition lkmm_consistent (C : core_candidate) : Prop :=
-    coherence C.(candidate_events) C.(candidate_rf) C.(candidate_co) /\
-    atomicity C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co) /\
-    happens_before C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
-      C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl) /\
-    propagation C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
-      C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl) /\
-    rcu_consistent (core_candidate_rcu_view C).
+    graph_consistent (core_candidate_graph C).
 
   (** Allocation, RMW pairing, and dependency provenance are invariants of
       Core execution, independently of the candidate's well-formedness field. *)
