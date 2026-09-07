@@ -172,8 +172,8 @@ Module CoreReplayExamples.
     Import LkmmCoreReplay.
 
     Lemma dependency_agent_orders :
-      program_agent_order Dependencies.program [0;1] /\
-      program_agent_order Dependencies.program [1;0].
+      program_agent_enumeration Dependencies.program [0;1] /\
+      program_agent_enumeration Dependencies.program [1;0].
     Proof.
       split; split.
       - repeat constructor; set_solver.
@@ -187,26 +187,33 @@ Module CoreReplayExamples.
     (** Both choices of first agent terminate, including the writer that a
         single-agent replay intentionally left at its initial instruction. *)
     Example all_agents_complete_in_either_order :
-      (exists final, complete_core_run Dependencies.program
-        (serial_actions [0;1] Dependencies.actions) final) /\
-      (exists final, complete_core_run Dependencies.program
-        (serial_actions [1;0] Dependencies.actions) final).
+      exists source,
+        complete_core_run Dependencies.program Dependencies.actions source /\
+        (exists final f, complete_core_run Dependencies.program
+          (serial_actions [0;1] Dependencies.actions) final /\ core_state_renaming f source final) /\
+        (exists final f, complete_core_run Dependencies.program
+          (serial_actions [1;0] Dependencies.actions) final /\ core_state_renaming f source final).
     Proof.
       destruct Dependencies.source_run as (source & Hsource & _).
+      exists source. split; first done.
       destruct dependency_agent_orders as [H01 H10]. split.
       - destruct (complete_core_run_replay_order _ _ _ _ Hsource H01)
-          as (final & Hrun & Hcertificate). by exists final.
+          as (final & f & Hrun & Hcertificate & Hrename). by exists final, f.
       - destruct (complete_core_run_replay_order _ _ _ _ Hsource H10)
-          as (final & Hrun & Hcertificate). by exists final.
+          as (final & f & Hrun & Hcertificate & Hrename). by exists final, f.
     Qed.
 
     Example all_conditional_rmw_agents_complete :
-      exists final, complete_core_run ConditionalRmw.program
-        (serial_actions (program_agents_list ConditionalRmw.program) ConditionalRmw.actions) final.
+      exists source final f,
+        complete_core_run ConditionalRmw.program ConditionalRmw.actions source /\
+        complete_core_run ConditionalRmw.program
+          (serial_actions (program_agents_list ConditionalRmw.program) ConditionalRmw.actions) final /\
+        core_state_renaming f source final.
     Proof.
       destruct ConditionalRmw.source_run as (source & Hsource & _).
-      destruct (complete_core_run_replay _ _ _ Hsource) as (final & Hrun & Hcertificate).
-      by exists final.
+      destruct (complete_core_run_replay _ _ _ Hsource)
+        as (final & f & Hrun & Hcertificate & Hrename).
+      by exists source, final, f.
     Qed.
 
     Example empty_program_replays :
@@ -216,7 +223,7 @@ Module CoreReplayExamples.
       assert (complete_core_run (CoreProgram ∅ ∅) [] (core_initial_state (CoreProgram ∅ ∅)))
         as Hsource.
       { split; first constructor. intros t th Hlookup. discriminate Hlookup. }
-      destruct (complete_core_run_replay _ _ _ Hsource) as (final & Hrun & Hcertificate).
+      destruct (complete_core_run_replay _ _ _ Hsource) as (final & f & Hrun & Hcertificate & Hrename).
       by exists final.
     Qed.
   End WholeProgram.

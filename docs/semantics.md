@@ -61,10 +61,13 @@ are preserved; `agent_replay_other_index` also preserves their local event
 indices, allowing subsequent replays in the resulting context.
 
 `lang/core_replay.v` composes those replays for all program agents.
-`complete_core_run_replay_order` accepts any enumeration containing each
-program agent exactly once. Its conclusion is a `complete_core_run` whose
+`complete_core_run_replay_order` accepts any list satisfying
+`program_agent_enumeration`: it contains precisely the program agents,
+each exactly once. Its conclusion is a `complete_core_run` whose
 actions concatenate the agents' original subsequences in that order.
 `complete_core_run_replay` supplies a finite enumeration automatically.
+Both theorems return the replayed state, one event-ID renaming, and a
+`core_state_renaming` proof for the entire final Core state.
 `serial_actions_agent` proves that each agent retains exactly its original
 action subsequence. The construction also returns a `serial_replay`
 certificate containing the intermediate Core runs and their exact per-agent
@@ -83,6 +86,24 @@ open. Regressions exercise nested control/address/data provenance, successful
 and failed `cmpxchg`, replay after another agent has already executed,
 whole-program completion in either two-agent order, and the empty program.
 
+`lang/core_renaming.v` defines the whole-state correspondence. The event
+renaming is a bijection between allocated events, preserves their values
+(including labels, agents and local positions), and fixes initial-write IDs.
+All thread states are renamed using the same function, including register and
+control-frame provenance. The generated RMW and dependency sets are exactly
+the images of the source sets under renaming of both endpoints. Global and
+per-agent next-event counters agree. `serial_replay_core_state_renaming`
+assembles this correspondence from the individual replay certificates;
+the IDs assigned to each agent occupy a block starting after the preceding
+agents' events.
+
+The graph-only parts live in `lkmm/event_renaming.v` and
+`lkmm/rcu_renaming.v`, independently of Core and the machine. They prove
+preservation of program order, event classifications, per-agent RCU token
+traces, matched sections, and complete RCU matching. A renaming need not
+preserve numeric ID order: the matcher sorts by agent and local position,
+and event-structure well-formedness rules out duplicate positions.
+
 The event-level premises for machine reconstruction are defined in
 `lkmm/rcu_replay.v`. `rcu_replay_wf E` combines `rcu_matching_complete E`
 with `no_gp_in_read_section E`: no `BarrierSyncRcu` event lies strictly
@@ -91,8 +112,11 @@ relates events of the same agent, this permits other agents' grace periods.
 Every matched section is checked, including outer sections around nested
 ones. These premises describe a completed event structure, not a prefix;
 they do not assume a machine run, change the transition rules, or add a new
-LKMM consistency constraint. Their sufficiency for machine reconstruction
-and derivation from consistent program graphs remain to be proved.
+LKMM consistency constraint. `rcu_replay_wf_rename` transfers these premises
+through event renaming, and `core_state_renaming_rcu` specializes this to
+Core states. Their sufficiency for machine reconstruction and derivation
+from consistent program graphs remain to be proved. The renaming regression
+reverses numeric event IDs while preserving both nested matching pairs.
 
 ## Core-driven RCU machine
 

@@ -1,10 +1,10 @@
 From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
-From iris_lkmm.lkmm Require Import rcu_replay.
+From iris_lkmm.lkmm Require Import rcu_renaming.
 Import ListNotations.
 
 Module RcuReplayExamples.
-  Import RcuReplay.
+  Import RcuRenaming.
 
   (** Grace periods before and after nested sections of the same agent. *)
   Definition nested_events : event_structure := {[
@@ -108,4 +108,52 @@ Module RcuReplayExamples.
     - exists 0, 3, 4, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
       split_and!; try reflexivity; lia.
   Qed.
+
+  (** Numeric IDs run backwards here, while each event retains its agent
+      and program position.  Matching must follow the positions, not IDs. *)
+  Definition reverse_id (i : event_id) : event_id := 5 - i.
+  Definition reversed_nested_events : event_structure := {[
+    5 := EAgent 0 0 (LBarrier BarrierSyncRcu);
+    4 := EAgent 0 1 (LBarrier BarrierRcuLock);
+    3 := EAgent 0 2 (LBarrier BarrierRcuLock);
+    2 := EAgent 0 3 (LBarrier BarrierRcuUnlock);
+    1 := EAgent 0 4 (LBarrier BarrierRcuUnlock);
+    0 := EAgent 0 5 (LBarrier BarrierSyncRcu)
+  ]}.
+
+  Local Lemma reverse_nested_renaming :
+    event_renaming reverse_id nested_events reversed_nested_events.
+  Proof.
+    constructor.
+    - intros x y ex ey Hx Hy Heq. apply nested_lookup in Hx, Hy.
+      unfold reverse_id in Heq. naive_solver lia.
+    - intros x ev Hx. apply nested_lookup in Hx.
+      repeat destruct Hx as [[-> ->] | Hx]; try reflexivity.
+      destruct Hx as [-> ->]. reflexivity.
+    - intros y ev Hy. unfold lookup_event, reversed_nested_events in Hy.
+      repeat (apply lookup_insert_Some in Hy; destruct Hy as [[<- <-] | [_ Hy]];
+        first (match goal with
+          |- exists x, lookup_event _ x = Some (EAgent _ ?n _) /\ _ =>
+            exists n; split; reflexivity
+          end)).
+      apply lookup_singleton_Some in Hy as [<- <-]. exists 5. split; reflexivity.
+    - intros x loc val Hx. apply nested_lookup in Hx. naive_solver.
+  Qed.
+
+  Example reversed_ids_preserve_nested_rcu :
+    rcu_replay_wf reversed_nested_events /\
+    rcu_rscs reversed_nested_events (reverse_id 1) (reverse_id 4) /\
+    rcu_rscs reversed_nested_events (reverse_id 2) (reverse_id 3).
+  Proof.
+    assert (event_structure_wf nested_events) as HE.
+    { intros x y t n lx ly Hx Hy. apply nested_lookup in Hx, Hy. naive_solver. }
+    split; [| split].
+    - eapply rcu_replay_wf_rename; [apply reverse_nested_renaming | done |].
+      apply nested_events_replay_wf.
+    - eapply rcu_rscs_rename_forward; [apply reverse_nested_renaming | done |].
+      exists 0. vm_compute. auto.
+    - eapply rcu_rscs_rename_forward; [apply reverse_nested_renaming | done |].
+      exists 0. vm_compute. auto.
+  Qed.
+
 End RcuReplayExamples.

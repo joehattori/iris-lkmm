@@ -37,7 +37,9 @@ origins under an injective renaming of that agent's events. The contextual
 replay theorem preserves existing events and edges and other agents' thread
 states. Whole-program serialization composes these replays in any enumeration
 of all program agents and proves completion of every agent, retaining the
-per-agent correspondence certificates. These proofs add no axioms and do not
+per-agent correspondence certificates and a single renaming for the entire
+final Core state. Event renaming preserves program order, computed RCU
+matching, and the RCU replay premises. These proofs add no axioms and do not
 establish snapshot-machine reconstruction or full operational completeness.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
