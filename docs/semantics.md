@@ -147,9 +147,8 @@ Complete matching comes from `program_graph` well-formedness.
 `gp_in_read_section_rb` constructs `rb gp gp`, contradicting RCU consistency.
 The construction uses `rcu_link lock gp`, then `rcu_order unlock gp`, then
 `rcu_fence gp gp`; barriers are marked, so the reflexive cases of `prop`,
-`hb*`, and `pb*` complete the self-edge. Regressions cover both a single
-section and a still-open outer section after its inner section closes,
-with no memory edges in either graph.
+`hb*`, and `pb*` complete the self-edge. A regression covers a still-open
+outer section after its inner section closes, with no memory edges.
 
 `lang/core_rcu.v` proves the local prefix guards in
 `core_step_rcu_local_guards`: if a Core step extends to events satisfying
@@ -167,11 +166,11 @@ and a `core_run_rcu_guards` certificate. Every unlock has an open reader, and
 every synchronization has an empty global snapshot: other agents' stacks
 remain empty during the active block, and each block ends with all stacks
 empty. The certificate records these properties of existing Core steps;
-it does not change Core semantics or construct a machine run. A regression
-starts with an interleaved reader/GP execution whose GP snapshot is nonempty
-and proves that both serialized agent orders satisfy the guards. The machine
-lifting below consumes this certificate, and the composed theorem constructs
-a completed machine run from the original execution's final RCU premises.
+it does not change Core semantics or construct a machine run. The machine
+replay regression below exercises this guard construction from an interleaved
+reader/GP execution. Machine lifting consumes the certificate, and the
+composed theorem constructs a completed machine run from the original
+execution's final RCU premises.
 
 ## Core-driven RCU machine
 

@@ -32,25 +32,16 @@ Module RcuGraphExamples.
     (** Prefix nonnegativity would incorrectly reject this upstream CAT case:
         the inverse critical section contributes [-1] before the GP restores
         the final balance to zero. *)
-    Example rscs_first_has_negative_prefix :
+    Example rscs_first_implies_cat_order :
       chain_balance [AtomRscs u l] = (-1)%Z /\
-      chain_balance [AtomRscs u l; AtomGp g2] = (0)%Z.
-    Proof. vm_compute. lia. Qed.
-
-    Example rscs_first_is_an_obligation_chain :
-      rcu_chain_order G u g2.
+      rcu_order G u g2.
     Proof.
+      split; first reflexivity.
+      apply (proj2 (rcu_order_chain_equiv G u g2)).
       exists [AtomRscs u l; AtomGp g2]. split.
       - eapply Linked_cons with (x := g2); try done.
         by apply Linked_one.
       - change (0 <= (0 : Z))%Z. lia.
-    Qed.
-
-    Example independent_chain_implies_cat_order :
-      rcu_order G u g2.
-    Proof.
-      apply (proj2 (rcu_order_chain_equiv G u g2)).
-      apply rscs_first_is_an_obligation_chain.
     Qed.
   End RecursiveKernel.
 
@@ -65,9 +56,10 @@ Module RcuGraphExamples.
 
   (** The commitment records the five pieces of the upstream link in order:
       optional po, hb closure, pb closure, prop, and final po. *)
-  Example incremental_link_witness_is_valid :
-    rcu_link_commitment_valid (graph_of_raw link_raw) rcu_link_witness.
+  Example incremental_link_witness_denotes_rcu_link :
+    rcu_link (graph_of_raw link_raw) 0 2.
   Proof.
+    apply (rcu_link_commitment_sound _ rcu_link_witness).
     split_and!.
     - by left.
     - apply rt_refl.
@@ -106,18 +98,16 @@ Module RcuGraphExamples.
       split_and!; try reflexivity; lia.
   Qed.
 
-  Example incremental_link_witness_denotes_rcu_link :
-    rcu_link (graph_of_raw link_raw) 0 2.
-  Proof.
-    apply (rcu_link_commitment_sound _ rcu_link_witness).
-    apply incremental_link_witness_is_valid.
-  Qed.
-
   Definition empty_candidate : finite_candidate := FiniteCandidate [] [] [] [] [] [] [].
 
-  Example empty_candidate_well_formed :
-    candidate_well_formed empty_candidate.
+  Example empty_candidate_has_incremental_schedule :
+    exists s,
+      builder_run initial_builder s /\
+      bs_raw s = candidate_raw empty_candidate /\
+      graph_of_raw (bs_raw s) = candidate_graph empty_candidate.
   Proof.
+    apply consistent_candidate_is_incrementally_schedulable;
+      last apply empty_raw_graph_consistent.
     unfold candidate_well_formed, empty_candidate. cbn. split_and!.
     - constructor.
     - done.
@@ -129,21 +119,6 @@ Module RcuGraphExamples.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
     - intros x y Hin. inversion Hin.
-  Qed.
-
-  Example empty_candidate_consistent :
-    graph_consistent (candidate_graph empty_candidate).
-  Proof. apply empty_raw_graph_consistent. Qed.
-
-  Example empty_candidate_has_incremental_schedule :
-    exists s,
-      builder_run initial_builder s /\
-      bs_raw s = candidate_raw empty_candidate /\
-      graph_of_raw (bs_raw s) = candidate_graph empty_candidate.
-  Proof.
-    apply consistent_candidate_is_incrementally_schedulable.
-    - apply empty_candidate_well_formed.
-    - apply empty_candidate_consistent.
   Qed.
 
   Definition one_reader_candidate : finite_candidate :=

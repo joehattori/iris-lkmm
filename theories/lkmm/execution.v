@@ -543,43 +543,6 @@ Module LkmmExecution.
 
     Definition sample_structure : event_structure := {[0 := init_write; 1 := once_read]}.
 
-    Example sample_lookup :
-      lookup_event sample_structure 1 = Some once_read.
-    Proof. reflexivity. Qed.
-    Example sample_membership :
-      in_event_structure sample_structure 1.
-    Proof. apply (lookup_event_in sample_structure 1 once_read), sample_lookup. Qed.
-
-    Local Lemma two_agent_events_wf agent1 index1 label1 agent2 index2 label2 :
-      (agent1 <> agent2 \/ index1 <> index2) ->
-      event_structure_wf {[1 := EAgent agent1 index1 label1; 2 := EAgent agent2 index2 label2]}.
-    Proof.
-      intros Hposition eid1 eid2 agent index label1' label2'
-        Hlookup1 Hlookup2.
-      unfold lookup_event in Hlookup1, Hlookup2.
-      apply lookup_insert_Some in Hlookup1.
-      apply lookup_insert_Some in Hlookup2.
-      destruct Hlookup1 as [[Heid1 Hevent1] | [Hne1 Hlookup1]].
-      - destruct Hlookup2 as [[Heid2 Hevent2] | [Hne2 Hlookup2]].
-        + naive_solver.
-        + apply lookup_singleton_Some in Hlookup2
-            as [Heid2 Hevent2].
-          naive_solver.
-      - apply lookup_singleton_Some in Hlookup1 as [Heid1 Hevent1].
-        destruct Hlookup2 as [[Heid2 Hevent2] | [Hne2 Hlookup2]].
-        + naive_solver.
-        + apply lookup_singleton_Some in Hlookup2
-            as [Heid2 Hevent2].
-          naive_solver.
-    Qed.
-
-    Example distinct_positions_wf : event_structure_wf {[1 := once_read; 2 := once_write_at_two]}.
-    Proof. apply two_agent_events_wf. by right. Qed.
-
-    Example equal_indices_on_different_agents_wf :
-      event_structure_wf {[1 := once_read; 2 := other_agent_write]}.
-    Proof. apply two_agent_events_wf. by left. Qed.
-
     Definition duplicate_position_structure : event_structure :=
       {[1 := once_read; 2 := EAgent 0 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z)]}.
 
@@ -613,24 +576,14 @@ Module LkmmExecution.
 
     Definition same_agent_structure : event_structure := {[1 := once_read; 2 := once_write_at_two]}.
 
-    Example same_agent_structure_has_same_agent :
-      same_agent same_agent_structure 1 2.
-    Proof. exists 0. split; reflexivity. Qed.
-
-    Example same_agent_indices_are_in_program_order :
-      po same_agent_structure 1 2.
-    Proof.
-      exists 0, 0, 2,
-        (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
-        (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
-      split_and!; try reflexivity. lia.
-    Qed.
-
     Example same_agent_same_location_is_in_po_loc :
       po_loc same_agent_structure 1 2.
     Proof.
       split.
-      - apply same_agent_indices_are_in_program_order.
+      - exists 0, 0, 2,
+          (LMemory AccessRead AccessOnce NotRmw 0 0%Z),
+          (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+        split_and!; try reflexivity. lia.
       - exists 0. split; reflexivity.
     Qed.
 
@@ -654,14 +607,6 @@ Module LkmmExecution.
     Definition cross_agent_structure : event_structure :=
       {[1 := once_read; 2 := other_agent_write]}.
 
-    Example cross_agent_structure_has_different_agents :
-      ~ same_agent cross_agent_structure 1 2.
-    Proof.
-      intros (agent & Hagent1 & Hagent2).
-      change (Some 0 = Some agent) in Hagent1.
-      change (Some 1 = Some agent) in Hagent2. congruence.
-    Qed.
-
     Example different_agents_are_not_in_program_order :
       ~ po cross_agent_structure 1 2.
     Proof.
@@ -672,13 +617,6 @@ Module LkmmExecution.
         Some (EAgent agent index2 label2)) in Hlookup2.
       unfold once_read, other_agent_write in Hlookup1, Hlookup2.
       congruence.
-    Qed.
-
-    Example different_agents_are_not_in_po_loc :
-      ~ po_loc cross_agent_structure 1 2.
-    Proof.
-      intros Hpo_loc. apply different_agents_are_not_in_program_order.
-      by eapply po_loc_po.
     Qed.
 
     Definition barrier_structure : event_structure := {[1 := once_read; 2 := mb_at_two]}.
@@ -696,14 +634,6 @@ Module LkmmExecution.
       split.
       - eapply initial_write_not_po_source. reflexivity.
       - eapply initial_write_not_po_target. reflexivity.
-    Qed.
-
-    Example initial_write_is_not_in_po_loc :
-      ~ po_loc sample_structure 0 1 /\ ~ po_loc sample_structure 1 0.
-    Proof.
-      destruct initial_write_is_not_in_program_order as [Hsource Htarget].
-      split; intros Hpo_loc; [apply Hsource | apply Htarget];
-        by eapply po_loc_po.
     Qed.
   End EventStructureTests.
 

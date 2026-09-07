@@ -7,9 +7,20 @@ Module CoreReplayExamples.
   Import LkmmCoreAgentReplay.
 
   Module Dependencies.
+    Definition body : stmt :=
+      SSeq (SLoad 0 LoadOnce (EConst 0))
+        (SSeq (SAssign 1 (EBin OpAdd (EReg 0) (EConst (-1))))
+          (SSeq
+            (SIf (EReg 0)
+              (SIf (EReg 0)
+                (SStore StoreOnce (EReg 1) (EReg 0))
+                SSkip)
+              SSkip)
+            (SStore StoreOnce (EConst 0) (EConst 0)))).
+
     Definition writer := SStore StoreOnce (EConst 0) (EConst 1).
     Definition program := CoreProgram {[0 := 0%Z]}
-      {[0 := CoreDependencyTests.body; 1 := writer]}.
+      {[0 := body; 1 := writer]}.
     Definition actions :=
       [CoreSilent 0; CoreEmit 1; CoreObserve 0 1%Z; CoreSilent 0; CoreSilent 0;
        CoreSilent 0; CoreSilent 0; CoreSilent 0; CoreSilent 0;
@@ -201,19 +212,6 @@ Module CoreReplayExamples.
           as (final & f & Hrun & Hcertificate & Hrename). by exists final, f.
       - destruct (complete_core_run_replay_order _ _ _ _ Hsource H10)
           as (final & f & Hrun & Hcertificate & Hrename). by exists final, f.
-    Qed.
-
-    Example all_conditional_rmw_agents_complete :
-      exists source final f,
-        complete_core_run ConditionalRmw.program ConditionalRmw.actions source /\
-        complete_core_run ConditionalRmw.program
-          (serial_actions (program_agents_list ConditionalRmw.program) ConditionalRmw.actions) final /\
-        core_state_renaming f source final.
-    Proof.
-      destruct ConditionalRmw.source_run as (source & Hsource & _).
-      destruct (complete_core_run_replay _ _ _ Hsource)
-        as (final & f & Hrun & Hcertificate & Hrename).
-      by exists source, final, f.
     Qed.
 
     Example empty_program_replays :

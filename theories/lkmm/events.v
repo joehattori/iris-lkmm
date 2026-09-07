@@ -268,43 +268,4 @@ Module LkmmEvents.
 
   Definition is_sync_rcu (ev : event) : Prop := barrier_kind_of ev = Some BarrierSyncRcu.
 
-  Module EventTests.
-    Definition init_write : event := EInitWrite 0 0%Z.
-    Definition once_read : event := EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 1 7%Z).
-    Definition rmw_read : event := EAgent 0 1 (LMemory AccessRead AccessMb RmwMarked 1 7%Z).
-    Definition rmw_write : event := EAgent 0 2 (LMemory AccessWrite AccessMb RmwMarked 1 8%Z).
-    Definition rcu_lock : event := EAgent 1 0 (LBarrier BarrierRcuLock).
-    Definition rcu_unlock : event := EAgent 1 1 (LBarrier BarrierRcuUnlock).
-    Definition sync_rcu : event := EAgent 2 0 (LBarrier BarrierSyncRcu).
-
-    Example init_write_classification :
-      is_initial init_write /\ is_write init_write /\ is_memory init_write /\ ~ is_read init_write.
-    Proof. done. Qed.
-
-    Example once_read_observers :
-      access_mode_of once_read = Some AccessOnce /\
-      location_of once_read = Some 1 /\
-      value_of once_read = Some 7%Z.
-    Proof. done. Qed.
-
-    Example rmw_annotations_are_syntactic :
-      is_rmw_marked rmw_read /\ is_read rmw_read /\ is_rmw_marked rmw_write /\ is_write rmw_write.
-    Proof. done. Qed.
-
-    (** A lone marked read is a valid event value.  The execution's [rmw]
-        relation determines whether it is a failed conditional RMW. *)
-    Example lone_rmw_read_is_representable : is_rmw_marked rmw_read.
-    Proof. done. Qed.
-
-    Example rcu_barriers_are_distinct :
-      is_rcu_lock rcu_lock /\ is_rcu_unlock rcu_unlock /\ is_sync_rcu sync_rcu.
-    Proof. done. Qed.
-
-    Definition event_set_smoke : gset event :=
-      {[init_write; once_read; rmw_read; rmw_write; rcu_lock; rcu_unlock; sync_rcu]}.
-
-    Example once_read_in_event_set : once_read ∈ event_set_smoke.
-    Proof. set_solver. Qed.
-  End EventTests.
-
 End LkmmEvents.

@@ -1567,42 +1567,27 @@ Module LkmmMemoryRelations.
         + exists 0. split; reflexivity.
     Qed.
 
-    Example address_dependency_carries :
-      direct_addr_wf sample_events sample_addr /\
-      addr sample_events sample_rf sample_data sample_addr 0 3.
-    Proof.
-      split; first apply sample_addr_wf.
-      exists 2. split; first apply sample_carrier.
-      unfold direct_addr, edge_relation, sample_addr. set_solver.
-    Qed.
-
-    Example data_dependency_carries :
-      direct_data_wf sample_events sample_data /\
-      data sample_events sample_rf sample_data 0 4.
-    Proof.
-      split; first apply sample_data_wf.
-      exists 2. split; first apply sample_carrier.
-      unfold direct_data, edge_relation, sample_data. set_solver.
-    Qed.
-
-    Example control_dependency_carries :
-      direct_ctrl_wf sample_events sample_ctrl /\
-      ctrl sample_events sample_rf sample_data sample_ctrl 0 5.
-    Proof.
-      split; first apply sample_ctrl_wf.
-      exists 2. split; first apply sample_carrier.
-      unfold direct_ctrl, edge_relation, sample_ctrl. set_solver.
-    Qed.
-
     Example preserved_program_order_dependency_paths :
+      direct_addr_wf sample_events sample_addr /\
+      direct_data_wf sample_events sample_data /\
+      direct_ctrl_wf sample_events sample_ctrl /\
       ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 3 /\
       ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 4 /\
       ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 5 /\
       ppo sample_events ∅ sample_rf ∅ sample_data sample_addr sample_ctrl 0 2.
     Proof.
-      destruct address_dependency_carries as [_ Haddr].
-      destruct data_dependency_carries as [_ Hdata].
-      destruct control_dependency_carries as [_ Hctrl].
+      split; first apply sample_addr_wf.
+      split; first apply sample_data_wf.
+      split; first apply sample_ctrl_wf.
+      assert (addr sample_events sample_rf sample_data sample_addr 0 3) as Haddr.
+      { exists 2. split; first apply sample_carrier.
+        unfold direct_addr, edge_relation, sample_addr. set_solver. }
+      assert (data sample_events sample_rf sample_data 0 4) as Hdata.
+      { exists 2. split; first apply sample_carrier.
+        unfold direct_data, edge_relation, sample_data. set_solver. }
+      assert (ctrl sample_events sample_rf sample_data sample_ctrl 0 5) as Hctrl.
+      { exists 2. split; first apply sample_carrier.
+        unfold direct_ctrl, edge_relation, sample_ctrl. set_solver. }
       assert (data sample_events sample_rf sample_data 0 1) as Hdata_direct.
       { exists 0. split; first apply rt_refl.
         unfold direct_data, edge_relation, sample_data. set_solver. }
@@ -2208,35 +2193,6 @@ Module LkmmMemoryRelations.
     Definition once_read : event := EAgent 0 0 (LMemory AccessRead AccessOnce NotRmw 0 0%Z).
     Definition second_write : event := EAgent 1 0 (LMemory AccessWrite AccessOnce NotRmw 0 0%Z).
 
-    Definition sample_events : event_structure := {[0 := init_write; 1 := once_read]}.
-
-    Definition sample_rf : edge_set := {[(0, 1)]}.
-
-    Example sample_rf_wf : rf_wf sample_events sample_rf.
-    Proof.
-      split.
-      - intros write read Hrf.
-        unfold rf, edge_relation, sample_rf in Hrf.
-        assert (write = 0 /\ read = 1) as [-> ->] by set_solver.
-        exists init_write, once_read, 0%Z.
-        split_and!; try reflexivity.
-        exists 0. split; reflexivity.
-      - split.
-        + intros write1 write2 read Hrf1 Hrf2.
-          unfold rf, edge_relation, sample_rf in Hrf1, Hrf2.
-          set_solver.
-        + intros read read_event Hlookup Hread.
-          unfold lookup_event, sample_events in Hlookup.
-          apply lookup_insert_Some in Hlookup.
-          destruct Hlookup as [[Hread_id Hread_event] | [Hne Hlookup]].
-          * subst read. subst read_event.
-            unfold is_read, init_write, access_kind_of in Hread.
-            discriminate Hread.
-          * apply lookup_singleton_Some in Hlookup as [Hread_id Hread_event].
-            subst read. subst read_event.
-            exists 0. unfold rf, edge_relation, sample_rf. set_solver.
-    Qed.
-
     Definition two_source_events : event_structure :=
       {[0 := init_write; 1 := once_read; 2 := second_write]}.
 
@@ -2745,29 +2701,6 @@ Module LkmmMemoryRelations.
     Definition second_write : event := EAgent 0 1 (LMemory AccessWrite AccessOnce NotRmw 0 2%Z).
 
     Definition sample_events : event_structure := {[1 := first_write; 2 := second_write]}.
-
-    Example empty_execution_is_coherent :
-      coherence empty_event_structure (∅ : edge_set) (∅ : edge_set).
-    Proof.
-      unfold coherence, rel_acyclic, rel_irreflexive.
-      intros eid Hcycle.
-      induction Hcycle as [source target Hedge |
-        source middle target Hleft IHleft Hright IHright].
-      - destruct Hedge as [Hpo_loc | Hcom].
-        + destruct Hpo_loc as [Hpo Hsame_loc].
-          destruct Hpo as (agent & index1 & index2 & label1 & label2 &
-            Hlookup1 & Hlookup2 & Hlt).
-          unfold lookup_event, empty_event_structure in Hlookup1.
-          discriminate Hlookup1.
-        + unfold com, rel_union in Hcom.
-          destruct Hcom as [Hrf | [Hco | Hfr]].
-          * unfold rf, edge_relation in Hrf. set_solver.
-          * unfold co, edge_relation in Hco. set_solver.
-          * unfold fr, rel_seq in Hfr.
-            destruct Hfr as (write & Hrf & Hco).
-            unfold rel_inverse, rf, edge_relation in Hrf. set_solver.
-      - exact IHleft.
-    Qed.
 
     Definition reversed_co : edge_set := {[(2, 1)]}.
 

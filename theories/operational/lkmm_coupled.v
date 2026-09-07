@@ -518,36 +518,22 @@ Module LkmmCoupled.
         candidate_co (coupled_candidate s) = sample_co.
     Proof.
       intros Hconsistent.
-      destruct (consistent_candidate_is_incrementally_schedulable _
-        finite_graph_wf Hconsistent) as (b & Hbuilder & Hraw & _).
-      destruct machine_run as [Hmachine Hcomplete].
-      assert (machine_matches_raw finished b.(bs_raw)) as Hmatches.
-      { rewrite Hraw. split_and!; done. }
-      assert (generated_prefix finished b.(bs_raw)) as Hprefix.
-      { destruct Hmatches as (HE & HRMW & HADDR & HDATA & HCTRL). split_and!.
-        - rewrite HE. intros eid ev Hlookup. done.
-        - rewrite HRMW. done.
-        - rewrite HADDR. done.
-        - rewrite HDATA. done.
-        - rewrite HCTRL. done. }
-      destruct (lift_builder_run program finished _ _ Hbuilder Hprefix)
-        as [builder_actions Hlift].
-      assert (coupled_run program (initial_coupled program)
-        (map CoupledMachineAction [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)] ++
-          builder_actions) (CoupledState finished b)) as Hrun.
-      { eapply coupled_run_trans; last done. by apply lift_machine_run. }
-      assert (coupled_program_graph_obligations (CoupledState finished b)) as Hobligations.
-      { unfold coupled_program_graph_obligations, coupled_candidate. simpl. rewrite Hraw.
-        pose proof (program_graph_wf _ _ two_agent_program_graph) as Hcandidate.
-        destruct Hcandidate as (_ & Hrf & Hco & _). split; done. }
-      destruct (coupled_run_soundness program _ (CoupledState finished b)
-        Hrun (conj Hcomplete Hmatches) Hobligations) as [Hprogram_graph Hlkmm].
-      eexists _, (CoupledState finished b). split; first exact Hrun.
-      split_and!; first by split.
-      - exact Hprogram_graph.
-      - exact Hlkmm.
-      - simpl. by rewrite Hraw.
-      - simpl. by rewrite Hraw.
+      assert (consistent_program_candidate program finite_graph) as Hcandidate.
+      { split; first apply finite_graph_wf.
+        split; first done.
+        exists [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)], finished.
+        split; first apply machine_run. split_and!; done. }
+      destruct (consistent_program_candidate_is_schedulable _ _ Hcandidate)
+        as (actions & s & Hrun & Hcomplete & Hraw).
+      assert (coupled_program_graph_obligations s) as Hobligations.
+      { unfold coupled_program_graph_obligations, coupled_candidate. rewrite Hraw.
+        destruct (program_graph_wf _ _ two_agent_program_graph) as (_ & Hrf & Hco & _).
+        split; done. }
+      destruct (coupled_run_soundness _ _ _ Hrun Hcomplete Hobligations)
+        as [Hprogram_graph Hlkmm].
+      exists actions, s. split; first done. split; first done.
+      split; first done. split; first done.
+      unfold coupled_candidate. rewrite Hraw. split; done.
     Qed.
 
     Example malformed_rf_is_an_explicit_obligation :

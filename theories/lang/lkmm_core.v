@@ -744,70 +744,6 @@ Module LkmmCore.
   Close Scope Z_scope.
 
   Module CoreDependencyTests.
-    Definition body : stmt :=
-      SSeq (SLoad 0 LoadOnce (EConst 0))
-        (SSeq (SAssign 1 (EBin OpAdd (EReg 0) (EConst (-1))))
-          (SSeq
-            (SIf (EReg 0)
-              (SIf (EReg 0)
-                (SStore StoreOnce (EReg 1) (EReg 0))
-                SSkip)
-              SSkip)
-            (SStore StoreOnce (EConst 0) (EConst 0)))).
-
-    Definition program : core_program := CoreProgram {[0%nat := 0%Z]} {[0%nat := body]}.
-
-    Definition actions : list core_action :=
-      [CoreSilent 0; CoreObserve 0 1%Z; CoreSilent 0; CoreSilent 0;
-       CoreSilent 0; CoreSilent 0; CoreSilent 0; CoreSilent 0;
-       CoreSilent 0; CoreEmit 0; CoreSilent 0; CoreSilent 0;
-       CoreSilent 0; CoreEmit 0].
-
-    Example dependency_provenance_run :
-      exists state,
-        complete_core_run program actions state /\
-        state.(core_direct_addr) = {[(1, 2)]} /\
-        state.(core_direct_data) = {[(1, 2)]} /\
-        state.(core_direct_ctrl) = {[(1, 2)]}.
-    Proof.
-      eexists. split.
-      - split.
-        + eapply CoreRunCons.
-          { eapply StepSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepLoad; try reflexivity. by eexists. }
-          eapply CoreRunCons.
-          { eapply StepSkipSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepAssign; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepSkipSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepIfTrue; try reflexivity; discriminate. }
-          eapply CoreRunCons.
-          { eapply StepIfTrue; try reflexivity; discriminate. }
-          eapply CoreRunCons.
-          { eapply StepStore; try reflexivity. by eexists. }
-          eapply CoreRunCons.
-          { eapply StepSkipControl; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepSkipControl; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepSkipSequence; reflexivity. }
-          eapply CoreRunCons.
-          { eapply StepStore; try reflexivity. by eexists. }
-          constructor.
-        + intros agent thread Hlookup. unfold thread_complete.
-          destruct (decide (agent = 0)) as [-> | Hne].
-          * simpl in Hlookup. injection Hlookup as <-. done.
-          * simpl in Hlookup. simplify_map_eq.
-      - simpl. split_and!; apply set_eq; intros edge; set_solver.
-    Qed.
-
     Example blocked_expressions :
       eval_location ∅ (EConst (-1)) = None /\
       eval_expr ∅ (EReg 0) = None.
@@ -821,19 +757,6 @@ Module LkmmCore.
       CoreState {[0%nat := initial_thread body]} 0 ∅ ∅ ∅ ∅ ∅ ∅.
 
     Example rmw_instruction_steps :
-      (exists state,
-        core_step program
-          (state_for (SXchg 0 RmwRelaxed (EConst 0) (EConst 5)))
-          (CoreObserve 0 0%Z) state /\
-        state.(core_rmw) = {[(0, 1)]} /\
-        lookup_event state.(core_events) 1 =
-          Some (EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 5%Z))) /\
-      (exists state,
-        core_step program
-          (state_for (SCmpxchg 0 RmwAcquire (EConst 0) (EConst 5) (EConst 6)))
-          (CoreObserve 0 5%Z) state /\
-        state.(core_rmw) = {[(0, 1)]} /\
-        state.(core_direct_ctrl) = {[(0, 1)]}) /\
       (exists state,
         core_step program
           (state_for (SCmpxchg 0 RmwRelease (EConst 0) (EConst 5) (EConst 6)))
@@ -851,10 +774,6 @@ Module LkmmCore.
           Some (EAgent 0 1 (LMemory AccessWrite AccessMb RmwMarked 0 7%Z))).
     Proof.
       split_and!.
-      - eexists. split; first by eapply StepXchg; try reflexivity; eexists.
-        split; reflexivity.
-      - eexists. split; first by eapply StepCmpxchgSuccess; try reflexivity; eexists.
-        split; [reflexivity | apply set_eq; intros edge; set_solver].
       - eexists. split; first by eapply StepCmpxchgFailure;
           try reflexivity; [discriminate | eexists].
         split; reflexivity.

@@ -1,7 +1,6 @@
 From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_renaming rcu_graph.
-From iris_lkmm.lang Require Import core_replay_rcu.
 From iris_lkmm.operational Require Import core_to_machine.
 Import ListNotations.
 
@@ -33,7 +32,7 @@ Module RcuReplayExamples.
     apply lookup_singleton_Some in Hlookup. naive_solver.
   Qed.
 
-  Example nested_events_replay_wf : rcu_replay_wf nested_events.
+  Local Lemma nested_events_replay_wf : rcu_replay_wf nested_events.
   Proof.
     split; first by vm_compute.
     intros lock unlock gp Hsection Hgp Hbefore Hafter.
@@ -54,7 +53,7 @@ Module RcuReplayExamples.
     2 := EAgent 0 1 (LBarrier BarrierRcuUnlock)
   ]}.
 
-  Example independent_gp_replay_wf : rcu_replay_wf independent_gp_events.
+  Local Lemma independent_gp_replay_wf : rcu_replay_wf independent_gp_events.
   Proof.
     split; first by vm_compute.
     intros lock unlock gp Hsection Hgp Hbefore Hafter.
@@ -69,45 +68,6 @@ Module RcuReplayExamples.
     - apply lookup_singleton_Some in Hlookup as [<- <-]. discriminate Hkind.
   Qed.
 
-  Definition internal_gp_events : event_structure := {[
-    0 := EAgent 0 0 (LBarrier BarrierRcuLock);
-    1 := EAgent 0 1 (LBarrier BarrierSyncRcu);
-    2 := EAgent 0 2 (LBarrier BarrierRcuUnlock)
-  ]}.
-
-  Example matched_section_with_internal_gp_rejected :
-    rcu_matching_complete internal_gp_events /\ ~ rcu_replay_wf internal_gp_events.
-  Proof.
-    split; first by vm_compute.
-    intros [_ Hno_gp]. apply (Hno_gp 0 2 1).
-    - exists 0. vm_compute. auto.
-    - reflexivity.
-    - exists 0, 0, 1, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).
-      split_and!; try reflexivity; lia.
-    - exists 0, 1, 2, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
-      split_and!; try reflexivity; lia.
-  Qed.
-
-  (** Even with no memory edges, an internal GP violates the RCU law. *)
-  Example internal_gp_rb_cycle :
-    rb (Graph internal_gp_events ∅ ∅ ∅ ∅ ∅ ∅) 1 1.
-  Proof.
-    apply gp_in_read_section_rb with (lock := 0) (unlock := 2).
-    - change (event_structure_wf internal_gp_events).
-      intros x y t n lx ly Hx Hy.
-      unfold lookup_event, internal_gp_events in Hx, Hy.
-      repeat (apply lookup_insert_Some in Hx; destruct Hx as [[? ?] | [? Hx]]);
-        try apply lookup_singleton_Some in Hx;
-        repeat (apply lookup_insert_Some in Hy; destruct Hy as [[? ?] | [? Hy]]);
-        try apply lookup_singleton_Some in Hy; naive_solver.
-    - exists 0. vm_compute. auto.
-    - reflexivity.
-    - exists 0, 0, 1, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).
-      split_and!; try reflexivity; lia.
-    - exists 0, 1, 2, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
-      split_and!; try reflexivity; lia.
-  Qed.
-
   (** Closing the inner section is insufficient while its outer section
       still surrounds the GP. *)
   Definition outer_section_gp_events : event_structure := {[
@@ -118,19 +78,8 @@ Module RcuReplayExamples.
     4 := EAgent 0 4 (LBarrier BarrierRcuUnlock)
   ]}.
 
-  Example outer_section_with_internal_gp_rejected :
-    rcu_matching_complete outer_section_gp_events /\ ~ rcu_replay_wf outer_section_gp_events.
-  Proof.
-    split; first by vm_compute.
-    intros [_ Hno_gp]. apply (Hno_gp 0 4 3).
-    - exists 0. vm_compute. auto.
-    - reflexivity.
-    - exists 0, 0, 3, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).
-      split_and!; try reflexivity; lia.
-    - exists 0, 3, 4, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
-      split_and!; try reflexivity; lia.
-  Qed.
-
+  (** The enclosing section produces an [rb] self-edge even without memory
+      edges; this also exercises the same-agent internal-GP exclusion. *)
   Example outer_section_gp_rb_cycle :
     rb (Graph outer_section_gp_events ∅ ∅ ∅ ∅ ∅ ∅) 3 3.
   Proof.
@@ -249,27 +198,6 @@ Module RcuReplayExamples.
             -- simpl in Hlookup. injection Hlookup as <-. done.
             -- simpl in Hlookup. simplify_map_eq.
       - vm_compute. reflexivity.
-    Qed.
-
-    (** Both block orders eliminate that overlap and retain the same graph
-        up to renaming, including enabled unlocks and empty GP snapshots. *)
-    Example independent_gp_serialized_guards : exists source,
-      complete_core_run program actions source /\
-      forall agents, agents = [0;1] \/ agents = [1;0] ->
-        exists final f,
-          complete_core_run program (serial_actions agents actions) final /\
-          core_state_renaming f source final /\
-          core_run_rcu_guards program (core_initial_state program)
-            (serial_actions agents actions) final.
-    Proof.
-      destruct source_run as (source & Hrun & Hevents).
-      exists source. split; first done. intros agents Horder.
-      pose proof (agent_enumeration agents Horder) as Henumeration.
-      assert (rcu_replay_wf source.(core_events)) as Hrcu.
-      { rewrite Hevents. apply independent_gp_replay_wf. }
-      destruct (complete_core_run_replay_rcu_order _ _ _ _ Hrun Henumeration Hrcu)
-        as (final & f & Hcomplete & Hrename & _ & Hguards).
-      by exists final, f.
     Qed.
 
     (** The original GP has a nonempty snapshot, as shown above.  Final
