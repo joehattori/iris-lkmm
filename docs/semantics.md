@@ -118,6 +118,27 @@ Core states. Their sufficiency for machine reconstruction and derivation
 from consistent program graphs remain to be proved. The renaming regression
 reverses numeric event IDs while preserving both nested matching pairs.
 
+`lang/core_rcu.v` proves the local prefix guards in
+`core_step_rcu_local_guards`: if a Core step extends to events satisfying
+`rcu_replay_wf`, an unlock has a nonempty stack and a synchronization has an
+empty stack for its own agent. An unmatched unlock cannot disappear during
+later execution. An open lock's eventual matching unlock must occur later,
+so synchronizing before it would violate `no_gp_in_read_section`. These facts
+apply to any Core schedule with such a continuation, including nested sections.
+
+`lang/core_replay_rcu.v` strengthens this for serialized replay.
+`complete_core_run_replay_rcu_order` accepts any enumeration of whole agent
+blocks; `complete_core_run_replay_rcu` supplies the enumeration. Both return
+a completed Core run, its whole-state renaming, the preserved RCU premises,
+and a `core_run_rcu_guards` certificate. Every unlock has an open reader, and
+every synchronization has an empty global snapshot: other agents' stacks
+remain empty during the active block, and each block ends with all stacks
+empty. The certificate records these properties of existing Core steps;
+it does not change Core semantics or construct a machine run. A regression
+starts with an interleaved reader/GP execution whose GP snapshot is nonempty
+and proves that both serialized agent orders satisfy the guards. Lifting
+these steps to machine actions remains the next completeness step.
+
 ## Core-driven RCU machine
 
 `operational/lkmm_machine.v` executes LKMM-Core with a snapshot-based

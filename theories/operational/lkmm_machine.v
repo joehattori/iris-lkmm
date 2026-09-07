@@ -1,6 +1,6 @@
 From Stdlib Require Import List Lia.
 From stdpp Require Import gmap tactics.
-From iris_lkmm.lang Require Import lkmm_core.
+From iris_lkmm.lang Require Import lkmm_core core_rcu.
 From iris_lkmm.lkmm Require Import rcu_matching.
 Import ListNotations.
 
@@ -10,7 +10,7 @@ Import ListNotations.
     This machine neither chooses [rf]/[co] nor tests final LKMM consistency. *)
 Module LkmmMachine.
   Export LkmmCore.
-  Import RcuMatching.
+  Import RcuMatching LkmmCoreRcu.
 
   Record gp_certificate := GpCertificate {
     gc_event : event_id;
@@ -198,49 +198,6 @@ Module LkmmMachine.
     step P s (FinishGp agent) (finish_gp s agent thread locks).
   Proof. intros. by econstructor. Qed.
 
-  Local Lemma next_event_tail core agent label :
-    core_allocation_wf core ->
-    rcu_agent_tail core.(core_events) core.(core_next_id)
-      (EAgent agent (next_agent_index core agent) label).
-  Proof.
-    intros Hwf. split; first by apply core_next_id_fresh.
-    destruct Hwf as (_ & _ & Hindices).
-    destruct label as [kind mode mark loc val | barrier]; simpl; first done.
-    destruct barrier; simpl; try done;
-      rewrite Forall_forall; intros token Hin;
-      destruct (rcu_agent_token_trace_lookup _ _ _ Hin) as [Hagent Hlookup];
-      unfold event_of_rcu_token in Hlookup;
-      destruct (token_kind token); simpl in Hlookup;
-      pose proof (Hindices _ _ _ _ Hlookup) as Hindex;
-      unfold rcu_token_le; simpl; naive_solver lia.
-  Qed.
-
-  Local Lemma next_rmw_matching core agent thread mode loc old new regs addr data ctrl reader :
-    core_allocation_wf core ->
-    compute_agent_match_state
-      (add_rmw_events core agent thread mode loc old new regs addr data ctrl).(core_events)
-      reader = compute_agent_match_state core.(core_events) reader.
-  Proof.
-    intros Hwf. cbn.
-    rewrite compute_agent_state_insert_non_rcu; last done.
-    - rewrite compute_agent_state_insert_non_rcu; [done | by apply core_next_id_fresh | done].
-    - apply lookup_insert_None. split; last lia.
-      apply eq_None_not_Some. intros [ev Hlookup].
-      destruct Hwf as (_ & Hids & _). specialize (Hids _ _ Hlookup). lia.
-  Qed.
-
-  Local Lemma core_step_sections_mono P core a core' :
-    core_step P core a core' -> core_allocation_wf core ->
-    rel_included (rcu_rscs core.(core_events)) (rcu_rscs core'.(core_events)).
-  Proof.
-    intros Hstep Hwf. destruct Hstep;
-      try solve [intros x y Hxy; exact Hxy];
-      try solve [apply rcu_rscs_agent_tail_mono; by apply next_event_tail];
-      intros lock unlock [reader Hsection]; exists reader;
-      unfold compute_agent_matching, result_of_state in *;
-      by rewrite next_rmw_matching.
-  Qed.
-
   Local Lemma ordinary_step_matching P core a core' thread reader :
     core.(core_threads) !! action_agent a = Some thread ->
     ordinary_statement thread.(thread_statement) ->
@@ -293,26 +250,6 @@ Module LkmmMachine.
       + rewrite (compute_agent_state_insert_other _ _
           (EAgent agent (next_agent_index s.(machine_core) agent) (LBarrier BarrierRcuUnlock))
           (RcuToken _ agent _ RcuTokenUnlock) reader Hfresh eq_refl Hother). apply Hsafe.
-  Qed.
-
-  Local Lemma initial_agent_matching P agent :
-    compute_agent_match_state (core_initial_state P).(core_events) agent = empty_match_state.
-  Proof.
-    unfold compute_agent_match_state.
-    assert (rcu_agent_token_trace (core_initial_state P).(core_events) agent = []) as ->.
-    { apply nil_length_inv. destruct (rcu_agent_token_trace
-        (core_initial_state P).(core_events) agent) as [|token tokens] eqn:Htrace; first done.
-      exfalso. assert (In token
-        (rcu_agent_token_trace (core_initial_state P).(core_events) agent)) as Hin.
-      { rewrite Htrace. by left. }
-      apply rcu_agent_token_trace_lookup in Hin as [_ Hlookup].
-      assert (forall eid ev, lookup_event (∅ : event_structure) eid = Some ev ->
-        exists loc val, ev = EInitWrite loc val) as Hempty.
-      { intros eid ev Hnone. discriminate Hnone. }
-      destruct (insert_initial_events_shape (initial_entries P) 0 ∅ _ _
-        Hempty Hlookup) as (loc & val & Hshape).
-      unfold event_of_rcu_token in Hshape. discriminate. }
-    done.
   Qed.
 
   Lemma step_preserves_no_unmatched_unlocks P s a s' :

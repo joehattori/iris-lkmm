@@ -44,7 +44,9 @@ Core replay is proved for individual agents and for whole programs serialized
 in any enumeration of their agents. The serialized execution is a completed
 Core run, with the original per-agent actions and a single event-ID renaming
 preserving the whole final Core state, RMW pairs, dependencies, and RCU
-matching. Reconstructing completed snapshot-machine runs remains a separate
+matching. Under the event-level RCU replay premises, every serialized unlock
+has an open reader and every synchronization has an empty snapshot.
+Reconstructing completed snapshot-machine runs remains a separate
 completeness obligation.
 
 The relational RCU recursion is proved equivalent to an independent finite

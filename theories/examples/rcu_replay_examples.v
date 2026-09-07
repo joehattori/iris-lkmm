@@ -1,6 +1,7 @@
 From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_renaming.
+From iris_lkmm.lang Require Import core_replay_rcu.
 Import ListNotations.
 
 Module RcuReplayExamples.
@@ -155,5 +156,77 @@ Module RcuReplayExamples.
     - eapply rcu_rscs_rename_forward; [apply reverse_nested_renaming | done |].
       exists 0. vm_compute. auto.
   Qed.
+
+  Module CoreGuards.
+    Import LkmmCoreReplayRcu.
+
+    Definition program := CoreProgram ∅
+      {[0 := SSeq SRcuReadLock SRcuReadUnlock; 1 := SSynchronizeRcu]}.
+    Definition actions := [CoreSilent 0; CoreEmit 0; CoreEmit 1; CoreSilent 0; CoreEmit 0].
+    Definition lock_thread := ThreadState SRcuReadLock [KSeq SRcuReadUnlock] ∅.
+    Definition after_lock := add_single_event
+      (update_thread (core_initial_state program) 0 lock_thread) 0 lock_thread
+      (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅.
+
+    Local Lemma lock_prefix :
+      core_run program (core_initial_state program) [CoreSilent 0; CoreEmit 0] after_lock.
+    Proof.
+      eapply CoreRunCons; first by eapply StepSequence.
+      eapply CoreRunCons; [by eapply StepRcuReadLock | constructor].
+    Qed.
+
+    (** The source can emit the other agent's GP while the reader is open.
+        This prefix fails the empty-snapshot guard used by serial replay. *)
+    Example interleaved_gp_snapshot_nonempty :
+      ~ core_rcu_step_guards after_lock (CoreEmit 1).
+    Proof.
+      intros Hguards.
+      destruct (Hguards (initial_thread SSynchronizeRcu) eq_refl) as [_ Hsync].
+      specialize (Hsync eq_refl). discriminate Hsync.
+    Qed.
+
+    Local Lemma source_run : exists final,
+      complete_core_run program actions final /\ final.(core_events) = independent_gp_events.
+    Proof.
+      eexists. split.
+      - split.
+        + eapply core_run_append with (xs := [CoreSilent 0; CoreEmit 0])
+            (ys := [CoreEmit 1; CoreSilent 0; CoreEmit 0]); first exact lock_prefix.
+          eapply CoreRunCons; first by eapply StepSynchronizeRcu.
+          eapply CoreRunCons; first by eapply StepSkipSequence.
+          eapply CoreRunCons; [by eapply StepRcuReadUnlock | constructor].
+        + intros agent thread Hlookup. destruct (decide (agent = 0)) as [-> | Hne0].
+          * simpl in Hlookup. injection Hlookup as <-. done.
+          * destruct (decide (agent = 1)) as [-> | Hne1].
+            -- simpl in Hlookup. injection Hlookup as <-. done.
+            -- simpl in Hlookup. simplify_map_eq.
+      - vm_compute. reflexivity.
+    Qed.
+
+    (** Both block orders eliminate that overlap and retain the same graph
+        up to renaming, including enabled unlocks and empty GP snapshots. *)
+    Example independent_gp_serialized_guards : exists source,
+      complete_core_run program actions source /\
+      forall agents, agents = [0;1] \/ agents = [1;0] ->
+        exists final f,
+          complete_core_run program (serial_actions agents actions) final /\
+          core_state_renaming f source final /\
+          core_run_rcu_guards program (core_initial_state program)
+            (serial_actions agents actions) final.
+    Proof.
+      destruct source_run as (source & Hrun & Hevents).
+      exists source. split; first done. intros agents Horder.
+      assert (program_agent_enumeration program agents) as Henumeration.
+      { destruct Horder as [-> | ->]; split;
+          try (repeat constructor; set_solver);
+          intros agent; unfold program; simpl;
+          rewrite !lookup_insert_is_Some, lookup_singleton_is_Some; simpl; set_solver. }
+      assert (rcu_replay_wf source.(core_events)) as Hrcu.
+      { rewrite Hevents. apply independent_gp_replay_wf. }
+      destruct (complete_core_run_replay_rcu_order _ _ _ _ Hrun Henumeration Hrcu)
+        as (final & f & Hcomplete & Hrename & _ & Hguards).
+      by exists final, f.
+    Qed.
+  End CoreGuards.
 
 End RcuReplayExamples.

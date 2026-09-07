@@ -17,6 +17,8 @@ theories/lang/program_graph.v
 theories/lang/core_agent_replay.v
 theories/lang/core_renaming.v
 theories/lang/core_replay.v
+theories/lang/core_rcu.v
+theories/lang/core_replay_rcu.v
 theories/operational/lkmm_machine.v
 theories/operational/rcu_builder.v
 theories/operational/rcu_candidate.v

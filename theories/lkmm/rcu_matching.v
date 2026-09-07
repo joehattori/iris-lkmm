@@ -1877,6 +1877,105 @@ Module RcuMatching.
     by rewrite (compute_agent_state_insert_non_rcu E eid ev agent Hfresh Hnone).
   Qed.
 
+  Lemma match_token_unmatched_unlocks_mono st token unlock :
+    In unlock st.(match_unmatched_unlocks) ->
+    In unlock (match_token st token).(match_unmatched_unlocks).
+  Proof.
+    intros Hin. unfold match_token. destruct (token_kind token); first done.
+    destruct (token_stack st (token_agent token)); simpl; by right || done.
+  Qed.
+
+  Lemma match_token_section_source st token section :
+    In section (match_token st token).(match_sections) ->
+    In section st.(match_sections) \/
+      (section.(cs_unlock) = token.(token_id) /\ token.(token_kind) = RcuTokenUnlock).
+  Proof.
+    unfold match_token. destruct (token_kind token) eqn:Hkind; first by left.
+    destruct (token_stack st (token_agent token)) as [|lock rest]; first by left.
+    intros [<- | Hin]; [by right | by left].
+  Qed.
+
+  Lemma computed_agent_stack_lookup E agent lock :
+    event_structure_wf E -> In lock (computed_agent_stack E agent) ->
+    exists index, lookup_event E lock = Some (EAgent agent index (LBarrier BarrierRcuLock)).
+  Proof.
+    intros HE Hin. apply in_map_iff in Hin as (token & <- & Hin).
+    destruct (compute_agent_match_state_wf E agent HE) as [Hstacks _].
+    unfold token_stack in Hin.
+    destruct (match_stacks (compute_agent_match_state E agent) !! agent)
+      as [stack |] eqn:Hstack; last done.
+    destruct (Hstacks agent stack Hstack token Hin) as (_ & Hagent & Hkind & Hvalid).
+    exists (token_index token). unfold rcu_token_valid, event_of_rcu_token in Hvalid.
+    by rewrite Hagent, Hkind in Hvalid.
+  Qed.
+
+  Lemma computed_agent_stack_unmatched E agent lock unlock :
+    event_structure_wf E -> In lock (computed_agent_stack E agent) ->
+    ~ rcu_rscs E lock unlock.
+  Proof.
+    intros HE Hopen [matched_agent Hsection].
+    destruct (computed_agent_stack_lookup E agent lock HE Hopen) as [index Hlookup].
+    destruct (compute_agent_matching_section_agent E matched_agent
+      (CriticalSection lock unlock) HE Hsection) as (li & ui & Hlock & _).
+    cbn in Hlock. unfold lookup_event in Hlookup.
+    assert (matched_agent = agent) as -> by congruence.
+    destruct (compute_agent_match_state_unique E agent) as [Hunique _].
+    unfold agent_lock_ids in Hunique.
+    apply (proj1 (stdpp.list_relations.list.NoDup_app _ _)) in Hunique
+      as (_ & Hdisjoint & _).
+    apply (Hdisjoint lock); last by rewrite list_elem_of_In.
+    rewrite list_elem_of_In. apply in_map_iff.
+    exists (CriticalSection lock unlock). done.
+  Qed.
+
+  Lemma rcu_matching_complete_agent_stack E agent :
+    event_structure_wf E -> rcu_matching_complete E -> computed_agent_stack E agent = [].
+  Proof.
+    intros HE Hcomplete.
+    destruct (computed_agent_stack E agent) as [|lock rest] eqn:Hstack; first done.
+    assert (In lock (computed_agent_stack E agent)) as Hin by (rewrite Hstack; by left).
+    destruct (computed_agent_stack_lookup E agent lock HE Hin) as [index Hlookup].
+    assert (event_has_barrier_kind E BarrierRcuLock lock) as Htag.
+    { apply event_has_barrier_kind_lookup. eexists. split; [exact Hlookup | done]. }
+    destruct (rcu_matching_complete_covers_lock E lock Hcomplete Htag) as [unlock Hsection].
+    exfalso. by eapply computed_agent_stack_unmatched.
+  Qed.
+
+  Lemma rcu_matching_complete_agent_unlocks E agent :
+    event_structure_wf E -> rcu_matching_complete E ->
+    (compute_agent_match_state E agent).(match_unmatched_unlocks) = [].
+  Proof.
+    intros HE Hcomplete. apply (compute_agent_matching_unlocks_empty_of_covered E agent HE).
+    intros unlock Htag. by apply rcu_matching_complete_covers_unlock.
+  Qed.
+
+  Lemma computed_agent_stacks_empty E :
+    event_structure_wf E -> (forall agent, computed_agent_stack E agent = []) ->
+    (compute_rcu_matching E).(unmatched_locks) = [].
+  Proof.
+    intros HE Hempty.
+    assert (forall agent, (compute_agent_matching E agent).(unmatched_locks) = []) as Hlocal.
+    { intros agent. apply nil_length_inv.
+      destruct (compute_agent_matching E agent).(unmatched_locks)
+        as [|lock rest] eqn:Hlocks; first done. exfalso.
+      assert (In lock (compute_agent_matching E agent).(unmatched_locks)) as Hin.
+      { rewrite Hlocks. by left. }
+      apply in_map_iff in Hin as (token & <- & Hin).
+      apply stacked_tokens_spec in Hin as (owner & stack & Hstack & Hin).
+      destruct (compute_agent_match_state_wf E agent HE) as [Hstacks _].
+      destruct (Hstacks owner stack Hstack token Hin) as (Htrace & Howner & _).
+      pose proof (rcu_agent_token_trace_lookup E agent token Htrace) as [Hagent _].
+      assert (owner = agent) as -> by congruence.
+      assert (In (token_id token) (computed_agent_stack E agent)) as Hopen.
+      { apply in_map_iff. exists token. split; first done.
+        unfold token_stack. by rewrite Hstack. }
+      rewrite Hempty in Hopen. done. }
+    unfold compute_rcu_matching. induction (rcu_agents E) as [|agent agents IH]; first done.
+    change ((compute_agent_matching E agent).(unmatched_locks) ++
+      (combine_agent_matchings E agents).(unmatched_locks) = []).
+    by rewrite Hlocal, IH.
+  Qed.
+
   Lemma rcu_rscs_tail_mono E eid ev :
     rcu_trace_tail E eid ev ->
     rel_included (rcu_rscs E) (rcu_rscs (<[eid := ev]> E)).
