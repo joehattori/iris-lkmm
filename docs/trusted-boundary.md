@@ -13,68 +13,20 @@ For the current LKMM-Core prototype, the trusted boundary includes:
   pairs.  The builder soundness theorem is constructive and closed under
   Rocq's global context.
 
-Rocq computes normal-RCU matching from the canonical event map and proves
-endpoint tags, agent/order shape, endpoint uniqueness, non-crossing nesting,
-and total lock/unlock coverage for complete candidates.  The per-agent
-relation is equivalent to its aggregate Bell view, and completeness is
-equivalent to both Bell unmatched-event flags being empty.  Rocq also checks
-the recursive/independent-chain equivalence and the generic
-list/counter characterization independently of operational executions.
-It also checks monotonicity of the RCU graph relations, persistence and
-soundness of incremental link commitments, monotonicity of derived propagation,
-the five-relation consistency monitor invariant, structural validity of every
-committed base and direct-dependency prefix, full consistency for every builder
-run, and finite candidate scheduling completeness. Iris checks exclusive reader entry/exit,
-registered pending/done GP transitions, monotone epoch advancement,
-persistence of completion certificates, and arbitrary-frame preservation.
-Rocq also checks LKMM-Core event allocation and provenance, proves generated
-RMW and direct-dependency relations well formed for every Core run, and checks
-their exact agreement in `program_graph`.  The `rf` and `co` relations remain
-finite candidate choices rather than trusted program inputs.
-Per-agent Core replay is also mechanized: the original action subsequence
-executes with preserved values, branch behavior, RMW pairing, and dependency
-origins under an injective renaming of that agent's events. The contextual
-replay theorem preserves existing events and edges and other agents' thread
-states. Whole-program serialization composes these replays in any enumeration
-of all program agents and proves completion of every agent, retaining the
-per-agent correspondence certificates and a single renaming for the entire
-final Core state. Event renaming preserves program order, computed RCU
-matching, and the RCU replay premises. Under those premises, serialized Core
-replay also has a nonempty reader stack at every unlock and an empty global
-snapshot at every synchronization. These guards are proved from execution
-prefixes and final event properties, without changing the transition rules.
-Guarded Core executions now lift constructively to machine executions with
-exactly the same Core state and projected actions. Core completion plus
-complete final RCU matching yields a completed machine run. The lifting
-executes empty-snapshot GPs in two steps and restores an empty pending map
-between Core steps. Composing replay and lifting establishes conditional
-Core-to-machine completeness from a completed Core run and its final
-`rcu_replay_wf` premises. The original run needs no guard certificate;
-the proof constructs one for its replay and returns a completed machine run
-with the final Core state preserved under renaming.
-`program_graph_rcu_replay_wf` derives the RCU replay premises from a consistent
-program graph: well-formedness supplies complete matching, and a GP inside
-a matched section produces an `rb` self-edge forbidden by RCU consistency.
-These proofs add no axioms. Full operational completeness still needs
-transport of the complete candidate through renaming and its connection to
-the constructed coupled run.
-For the Core-driven RCU machine, Rocq checks run projection into Core,
-absence of unmatched unlocks, preservation of completed-section witnesses,
-and snapshot-clear safety for completed GP certificates.  Reader bookkeeping
-uses the canonical matcher. The Core-aware coupling connects these results
-to the builder's LKMM consistency invariant. Every reachable committed event,
-RMW pair, and dependency edge comes from the machine; completion requires exact
-agreement.
-Its scheduling theorem assumes a complete snapshot-machine run
-and inherits the candidate scheduler's excluded-middle dependency.  Its
-soundness proof adds no axioms.  `coupled_run_program_graph` proves the
-`program_graph` connection under explicit `rf`/`co` well-formedness premises;
-RMW and direct-dependency well-formedness are derived from the projected Core
-run.  The remaining premises are obligations for callers, not new axioms or
-transition guards.
-LKMM consistency transfers to the extracted candidate because the builder and
-candidate share the same fields and derive the same coherence, atomicity,
-`hb`, `pb`, and `rb` relations.
+The mechanized results, proof constructions, and regression coverage are
+documented in [semantics.md](semantics.md). Core replay, the derivation of its
+[RCU premises](semantics.md#rcu-replay-premises), machine lifting, and coupled
+soundness add no axioms.
+
+Coupled soundness and the `program_graph` connection require explicit `rf`/`co`
+well-formedness obligations. These relations remain finite candidate choices;
+RMW and direct-dependency well-formedness follow from Core execution. The
+obligations are premises for callers, not new axioms or transition guards.
+
+Coupled scheduling assumes a compatible completed machine run and inherits
+the candidate scheduler's excluded-middle dependency. Full operational
+completeness remains open; its remaining construction is described with the
+[Core-to-machine results](semantics.md#core-driven-rcu-machine).
 
 `lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
 Core-driven GP certificates, including certificates in coupled executions.

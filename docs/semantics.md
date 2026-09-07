@@ -104,6 +104,8 @@ traces, matched sections, and complete RCU matching. A renaming need not
 preserve numeric ID order: the matcher sorts by agent and local position,
 and event-structure well-formedness rules out duplicate positions.
 
+## RCU replay premises
+
 The event-level premises for machine reconstruction are defined in
 `lkmm/rcu_replay.v`. `rcu_replay_wf E` combines `rcu_matching_complete E`
 with `no_gp_in_read_section E`: no `BarrierSyncRcu` event lies strictly

@@ -40,21 +40,10 @@ under explicit `rf`/`co` well-formedness obligations. Candidate scheduling is
 relative to a compatible completed machine run; unrestricted operational
 completeness remains open.
 
-Core replay is proved for individual agents and for whole programs serialized
-in any enumeration of their agents. The serialized execution is a completed
-Core run, with the original per-agent actions and a single event-ID renaming
-preserving the whole final Core state, RMW pairs, dependencies, and RCU
-matching. Under the event-level RCU replay premises, every serialized unlock
-has an open reader and every synchronization has an empty snapshot.
-A Core run with these guards and complete final RCU matching lifts to a
-completed machine run, preserving its Core state and projected actions
-exactly. `complete_core_run_machine_replay` composes replay with this lifting:
-every completed Core run satisfying `rcu_replay_wf` admits a completed
-machine run, with the final Core state preserved up to event-ID renaming.
-The original run need not satisfy the guards or execute agents serially.
-`program_graph_rcu_replay_wf` derives these RCU premises from a consistent
-program graph: matching is complete, and a grace period inside its own
-agent's matched section would create a forbidden `rb` self-edge.
+Core executions satisfying the [RCU replay premises](docs/semantics.md#rcu-replay-premises)
+can be serialized and lifted to completed machine runs, preserving the final
+Core state up to event-ID renaming. Consistent program graphs satisfy these
+premises.
 
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion
