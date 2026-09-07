@@ -47,8 +47,13 @@ Guarded Core executions now lift constructively to machine executions with
 exactly the same Core state and projected actions. Core completion plus
 complete final RCU matching yields a completed machine run. The lifting
 executes empty-snapshot GPs in two steps and restores an empty pending map
-between Core steps. These proofs add no axioms. Packaging the lifting with
-replay and establishing full operational completeness remain separate work.
+between Core steps. Composing replay and lifting establishes conditional
+Core-to-machine completeness from a completed Core run and its final
+`rcu_replay_wf` premises. The original run needs no guard certificate;
+the proof constructs one for its replay and returns a completed machine run
+with the final Core state preserved under renaming. These proofs add no
+axioms. Full operational completeness still needs the connection from
+consistent program graphs to the RCU premises and the renamed coupled run.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping

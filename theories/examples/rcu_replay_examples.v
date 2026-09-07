@@ -2,6 +2,7 @@ From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_renaming.
 From iris_lkmm.lang Require Import core_replay_rcu.
+From iris_lkmm.operational Require Import core_to_machine.
 Import ListNotations.
 
 Module RcuReplayExamples.
@@ -158,7 +159,7 @@ Module RcuReplayExamples.
   Qed.
 
   Module CoreGuards.
-    Import LkmmCoreReplayRcu.
+    Import LkmmCoreToMachine.
 
     Definition program := CoreProgram ∅
       {[0 := SSeq SRcuReadLock SRcuReadUnlock; 1 := SSynchronizeRcu]}.
@@ -167,6 +168,14 @@ Module RcuReplayExamples.
     Definition after_lock := add_single_event
       (update_thread (core_initial_state program) 0 lock_thread) 0 lock_thread
       (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅.
+
+    Local Lemma agent_enumeration agents :
+      agents = [0;1] \/ agents = [1;0] -> program_agent_enumeration program agents.
+    Proof.
+      intros [-> | ->]; split; try (repeat constructor; set_solver);
+        intros agent; unfold program; simpl;
+        rewrite !lookup_insert_is_Some, lookup_singleton_is_Some; simpl; set_solver.
+    Qed.
 
     Local Lemma lock_prefix :
       core_run program (core_initial_state program) [CoreSilent 0; CoreEmit 0] after_lock.
@@ -216,16 +225,30 @@ Module RcuReplayExamples.
     Proof.
       destruct source_run as (source & Hrun & Hevents).
       exists source. split; first done. intros agents Horder.
-      assert (program_agent_enumeration program agents) as Henumeration.
-      { destruct Horder as [-> | ->]; split;
-          try (repeat constructor; set_solver);
-          intros agent; unfold program; simpl;
-          rewrite !lookup_insert_is_Some, lookup_singleton_is_Some; simpl; set_solver. }
+      pose proof (agent_enumeration agents Horder) as Henumeration.
       assert (rcu_replay_wf source.(core_events)) as Hrcu.
       { rewrite Hevents. apply independent_gp_replay_wf. }
       destruct (complete_core_run_replay_rcu_order _ _ _ _ Hrun Henumeration Hrcu)
         as (final & f & Hcomplete & Hrename & _ & Hguards).
       by exists final, f.
+    Qed.
+
+    (** The original GP has a nonempty snapshot, as shown above.  Final
+        RCU well-formedness alone suffices to construct a completed machine
+        execution in either block order, without a source guard certificate. *)
+    Example independent_gp_machine_replay : exists source,
+      complete_core_run program actions source /\
+      forall agents, agents = [0;1] \/ agents = [1;0] ->
+        exists machine_actions s f,
+          complete_run program machine_actions s /\
+          core_state_renaming f source s.(machine_core) /\
+          project_actions machine_actions = serial_actions agents actions.
+    Proof.
+      destruct source_run as (source & Hrun & Hevents).
+      exists source. split; first done. intros agents Horder.
+      eapply complete_core_run_machine_replay_order;
+        [done | by apply agent_enumeration |].
+      rewrite Hevents. apply independent_gp_replay_wf.
     Qed.
   End CoreGuards.
 

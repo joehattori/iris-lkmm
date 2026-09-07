@@ -48,8 +48,10 @@ matching. Under the event-level RCU replay premises, every serialized unlock
 has an open reader and every synchronization has an empty snapshot.
 A Core run with these guards and complete final RCU matching lifts to a
 completed machine run, preserving its Core state and projected actions
-exactly. Packaging this lifting with replay remains the next completeness
-step.
+exactly. `complete_core_run_machine_replay` composes replay with this lifting:
+every completed Core run satisfying `rcu_replay_wf` admits a completed
+machine run, with the final Core state preserved up to event-ID renaming.
+The original run need not satisfy the guards or execute agents serially.
 
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion

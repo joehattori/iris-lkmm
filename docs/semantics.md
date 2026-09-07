@@ -80,8 +80,8 @@ The source's final event map defines the naming correspondence in the proof
 only. Core transitions and states are unchanged, and reads do not require
 their eventual source writes to have executed. This result needs neither
 LKMM consistency nor a completed RCU-machine run and adds no axioms. It is
-the Core replay component of the proposed completeness construction;
-composition with machine lifting and full coupled completeness remain open.
+the Core replay component of the conditional Core-to-machine completeness
+theorem below; full coupled completeness remains open.
 Regressions exercise nested control/address/data provenance, successful
 and failed `cmpxchg`, replay after another agent has already executed,
 whole-program completion in either two-agent order, and the empty program.
@@ -137,8 +137,8 @@ empty. The certificate records these properties of existing Core steps;
 it does not change Core semantics or construct a machine run. A regression
 starts with an interleaved reader/GP execution whose GP snapshot is nonempty
 and proves that both serialized agent orders satisfy the guards. The machine
-lifting below consumes such a certificate; packaging the two constructions
-is the next completeness step.
+lifting below consumes this certificate, and the composed theorem constructs
+a completed machine run from the original execution's final RCU premises.
 
 ## Core-driven RCU machine
 
@@ -185,10 +185,35 @@ threads can finish with an open reader even when every executed step meets
 the guards. Regressions cover nested sections, RMW/register provenance, two
 successive GPs, and that final-matching distinction.
 
-This construction preserves the supplied Core schedule, performs no event
-renaming, and adds no transition rules or axioms. Composition with the
-serialized replay theorem remains a separate step; full coupled
-completeness additionally needs the connection to consistent candidate graphs.
+This stepwise lifting preserves the supplied Core schedule, performs no event
+renaming, and adds no transition rules or axioms.
+
+`complete_core_run_machine_replay` composes serialized replay with lifting
+to prove conditional Core-to-machine completeness:
+
+```text
+complete_core_run P actions source
+-> rcu_replay_wf source.core_events
+-> exists machine_actions s f,
+     complete_run P machine_actions s /\
+     core_state_renaming f source s.machine_core /\
+     project_actions machine_actions = serial_actions (program_agents_list P) actions
+```
+
+The original run need not satisfy `core_run_rcu_guards`: those guards are
+proved for the constructed replay and discharged inside the theorem.
+`complete_core_run_machine_replay_order` accepts any enumeration of whole
+agent blocks; the canonical theorem supplies that enumeration. The projected
+machine actions retain every agent's original action subsequence, including
+observed values and silent steps. The final correspondence preserves all
+Core state components under one event-ID renaming. A regression constructs
+machine executions in both block orders from the interleaved reader/GP
+example whose original GP has a nonempty snapshot.
+
+Full coupled completeness remains open. It still requires deriving the RCU
+premises from consistent program graphs, transporting the complete candidate
+(including `rf` and `co`) through renaming, and using the constructed machine
+run in coupled scheduling to establish the final candidate correspondence.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model

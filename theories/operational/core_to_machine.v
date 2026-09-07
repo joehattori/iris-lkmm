@@ -4,9 +4,10 @@ From iris_lkmm.lang Require Import core_replay_rcu.
 From iris_lkmm.operational Require Import lkmm_machine.
 Import ListNotations.
 
-(** Construct machine executions from Core runs with proved RCU guards.
-    The Core schedule and state are preserved exactly.  This lifting does
-    not perform replay or assume final LKMM consistency. *)
+(** Construct machine executions by lifting guarded Core runs, then compose
+    this lifting with serialized replay for completed Core runs satisfying
+    the event-level RCU premises.  The resulting correspondence to the
+    original Core state is recorded by an event-ID renaming. *)
 Module LkmmCoreToMachine.
   Export LkmmMachine LkmmCoreReplayRcu.
 
@@ -116,5 +117,35 @@ Module LkmmCoreToMachine.
       as (machine_actions & s & Hrun & Hcore & Hpending & Hproject).
     exists machine_actions, s. split; last done. split; first done.
     unfold complete. rewrite Hcore. split_and!; done.
+  Qed.
+
+  (** Conditional Core-to-machine completeness.  Replay establishes the
+      guards internally; the original execution need not satisfy them.
+      The chosen enumeration orders whole agent blocks, preserving each
+      agent's original action subsequence. *)
+  Theorem complete_core_run_machine_replay_order P actions source agents :
+    complete_core_run P actions source -> program_agent_enumeration P agents ->
+    rcu_replay_wf source.(core_events) ->
+    exists machine_actions s f,
+      complete_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
+      project_actions machine_actions = serial_actions agents actions.
+  Proof.
+    intros Hsource Henumeration Hrcu.
+    destruct (complete_core_run_replay_rcu_order _ _ _ _ Hsource Henumeration Hrcu)
+      as (replayed & f & Hcomplete & Hrename & Hreplayed_rcu & Hguards).
+    destruct (complete_core_run_machine_lift _ _ _ Hcomplete Hguards (proj1 Hreplayed_rcu))
+      as (machine_actions & s & Hrun & Hcore & Hproject).
+    exists machine_actions, s, f. split; first done. split; last done.
+    by rewrite Hcore.
+  Qed.
+
+  Theorem complete_core_run_machine_replay P actions source :
+    complete_core_run P actions source -> rcu_replay_wf source.(core_events) ->
+    exists machine_actions s f,
+      complete_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
+      project_actions machine_actions = serial_actions (program_agents_list P) actions.
+  Proof.
+    intros Hsource Hrcu. eapply complete_core_run_machine_replay_order;
+      [done | apply program_agents_list_enumeration | done].
   Qed.
 End LkmmCoreToMachine.
