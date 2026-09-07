@@ -180,7 +180,7 @@ prefix, starting from any machine state with the same Core state and no
 pending GPs. Its result has exactly the requested final Core state, no
 pending GPs, and an action projection equal to the original Core actions.
 `complete_core_run_machine_lift` adds Core completion and complete final RCU
-matching to obtain `complete_run`. The matching premise is essential: Core
+matching to obtain `complete_machine_run`. The matching premise is essential: Core
 threads can finish with an open reader even when every executed step meets
 the guards. Regressions cover nested sections, RMW/register provenance, two
 successive GPs, and that final-matching distinction.
@@ -195,7 +195,7 @@ to prove conditional Core-to-machine completeness:
 complete_core_run P actions source
 -> rcu_replay_wf source.core_events
 -> exists machine_actions s f,
-     complete_run P machine_actions s /\
+     complete_machine_run P machine_actions s /\
      core_state_renaming f source s.machine_core /\
      project_actions machine_actions = serial_actions (program_agents_list P) actions
 ```

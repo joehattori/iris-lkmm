@@ -61,7 +61,7 @@ Module CoreToMachineExamples.
   (** A two-event RMW and its register provenance survive the lifting
       exactly, through nested sections and two successive synchronizations. *)
   Example nested_rmw_and_repeated_gp_lift : exists final machine_actions s,
-    complete_core_run program actions final /\ complete_run program machine_actions s /\
+    complete_core_run program actions final /\ complete_machine_run program machine_actions s /\
     s.(machine_core) = final /\ project_actions machine_actions = actions /\
     s.(machine_core).(core_rmw) = {[(3,4)]} /\
     s.(machine_core).(core_threads) !! 0 =

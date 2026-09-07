@@ -109,7 +109,7 @@ Module LkmmCoreToMachine.
     core_run_rcu_guards P (core_initial_state P) actions final ->
     rcu_matching_complete final.(core_events) ->
     exists machine_actions s,
-      complete_run P machine_actions s /\ s.(machine_core) = final /\
+      complete_machine_run P machine_actions s /\ s.(machine_core) = final /\
       project_actions machine_actions = actions.
   Proof.
     intros [_ Hcomplete] Hguards Hmatching.
@@ -127,7 +127,7 @@ Module LkmmCoreToMachine.
     complete_core_run P actions source -> program_agent_enumeration P agents ->
     rcu_replay_wf source.(core_events) ->
     exists machine_actions s f,
-      complete_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
+      complete_machine_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
       project_actions machine_actions = serial_actions agents actions.
   Proof.
     intros Hsource Henumeration Hrcu.
@@ -142,7 +142,7 @@ Module LkmmCoreToMachine.
   Theorem complete_core_run_machine_replay P actions source :
     complete_core_run P actions source -> rcu_replay_wf source.(core_events) ->
     exists machine_actions s f,
-      complete_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
+      complete_machine_run P machine_actions s /\ core_state_renaming f source s.(machine_core) /\
       project_actions machine_actions = serial_actions (program_agents_list P) actions.
   Proof.
     intros Hsource Hrcu. eapply complete_core_run_machine_replay_order;

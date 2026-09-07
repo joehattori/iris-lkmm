@@ -200,7 +200,7 @@ Module LkmmCoupled.
     destruct (run_rcu_safety _ _ _ Hmachine) as [Hsafe Hcerts].
     pose proof (run_allocation_wf _ _ _ Hmachine) as Halloc.
     split_and!; try done.
-    - apply complete_run_core_projection. split; done.
+    - apply complete_machine_run_core_projection. split; done.
     - by eapply completed_builder_run_consistent.
   Qed.
 
@@ -313,7 +313,7 @@ Module LkmmCoupled.
   Definition consistent_program_candidate (P : core_program) (C : finite_candidate) : Prop :=
     candidate_well_formed C /\ graph_consistent (candidate_graph C) /\
     exists actions m,
-      LkmmMachine.complete_run P actions m /\ machine_matches_raw m (candidate_raw C).
+      LkmmMachine.complete_machine_run P actions m /\ machine_matches_raw m (candidate_raw C).
 
   Theorem consistent_program_candidate_is_schedulable P C :
     consistent_program_candidate P C ->
@@ -353,7 +353,7 @@ Module LkmmCoupled.
         [(0, 1)] [(0, 2)] [(1, 2)] [] [] [].
 
     Local Lemma machine_run :
-      LkmmMachine.complete_run program [Execute (CoreObserve 0 0%Z)] finished.
+      LkmmMachine.complete_machine_run program [Execute (CoreObserve 0 0%Z)] finished.
     Proof.
       split.
       - econstructor; last constructor. eapply StepCore; try done.
@@ -478,7 +478,7 @@ Module LkmmCoupled.
         [(1, 2)] [(0, 1)] [] [] [] [].
 
     Local Lemma machine_run :
-      LkmmMachine.complete_run program [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)]
+      LkmmMachine.complete_machine_run program [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)]
         finished.
     Proof.
       split.

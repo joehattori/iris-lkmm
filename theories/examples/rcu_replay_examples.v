@@ -240,7 +240,7 @@ Module RcuReplayExamples.
       complete_core_run program actions source /\
       forall agents, agents = [0;1] \/ agents = [1;0] ->
         exists machine_actions s f,
-          complete_run program machine_actions s /\
+          complete_machine_run program machine_actions s /\
           core_state_renaming f source s.(machine_core) /\
           project_actions machine_actions = serial_actions agents actions.
     Proof.

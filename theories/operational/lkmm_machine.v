@@ -106,7 +106,7 @@ Module LkmmMachine.
     core_complete s.(machine_core) /\ s.(pending_gp) = ∅ /\
     rcu_matching_complete s.(machine_core).(core_events).
 
-  Definition complete_run (P : core_program) (actions : list action) (s : state) : Prop :=
+  Definition complete_machine_run (P : core_program) (actions : list action) (s : state) : Prop :=
     run P (initial_state P) actions s /\ complete s.
 
   Definition core_actions_of (a : action) : list core_action :=
@@ -152,8 +152,9 @@ Module LkmmMachine.
     eapply core_run_app; last done. by apply step_core_projection.
   Qed.
 
-  Theorem complete_run_core_projection P actions s :
-    complete_run P actions s -> complete_core_run P (project_actions actions) s.(machine_core).
+  Theorem complete_machine_run_core_projection P actions s :
+    complete_machine_run P actions s ->
+    complete_core_run P (project_actions actions) s.(machine_core).
   Proof.
     intros [Hrun [Hcomplete _]]. split; last done.
     by apply run_core_projection in Hrun.
