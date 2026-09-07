@@ -43,8 +43,12 @@ matching, and the RCU replay premises. Under those premises, serialized Core
 replay also has a nonempty reader stack at every unlock and an empty global
 snapshot at every synchronization. These guards are proved from execution
 prefixes and final event properties, without changing the transition rules.
-These proofs add no axioms and do not yet establish snapshot-machine
-reconstruction or full operational completeness.
+Guarded Core executions now lift constructively to machine executions with
+exactly the same Core state and projected actions. Core completion plus
+complete final RCU matching yields a completed machine run. The lifting
+executes empty-snapshot GPs in two steps and restores an empty pending map
+between Core steps. These proofs add no axioms. Packaging the lifting with
+replay and establishing full operational completeness remain separate work.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping

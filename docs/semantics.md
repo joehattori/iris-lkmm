@@ -81,8 +81,8 @@ only. Core transitions and states are unchanged, and reads do not require
 their eventual source writes to have executed. This result needs neither
 LKMM consistency nor a completed RCU-machine run and adds no axioms. It is
 the Core replay component of the proposed completeness construction;
-reconstruction of snapshot-machine runs and full coupled completeness remain
-open. Regressions exercise nested control/address/data provenance, successful
+composition with machine lifting and full coupled completeness remain open.
+Regressions exercise nested control/address/data provenance, successful
 and failed `cmpxchg`, replay after another agent has already executed,
 whole-program completion in either two-agent order, and the empty program.
 
@@ -114,8 +114,8 @@ ones. These premises describe a completed event structure, not a prefix;
 they do not assume a machine run, change the transition rules, or add a new
 LKMM consistency constraint. `rcu_replay_wf_rename` transfers these premises
 through event renaming, and `core_state_renaming_rcu` specializes this to
-Core states. Their sufficiency for machine reconstruction and derivation
-from consistent program graphs remain to be proved. The renaming regression
+Core states. Deriving these premises from consistent program graphs remains
+open. The renaming regression
 reverses numeric event IDs while preserving both nested matching pairs.
 
 `lang/core_rcu.v` proves the local prefix guards in
@@ -136,8 +136,9 @@ remain empty during the active block, and each block ends with all stacks
 empty. The certificate records these properties of existing Core steps;
 it does not change Core semantics or construct a machine run. A regression
 starts with an interleaved reader/GP execution whose GP snapshot is nonempty
-and proves that both serialized agent orders satisfy the guards. Lifting
-these steps to machine actions remains the next completeness step.
+and proves that both serialized agent orders satisfy the guards. The machine
+lifting below consumes such a certificate; packaging the two constructions
+is the next completeness step.
 
 ## Core-driven RCU machine
 
@@ -164,6 +165,30 @@ certificate.  `completed_snapshot_clear` proves that captured readers of
 completed GPs are absent from the current open-reader snapshot.  Completion
 also requires all Core threads to finish, no pending GPs, and complete RCU
 matching; execution prefixes may still contain open readers.
+
+`operational/core_to_machine.v` proves the converse construction for Core
+runs carrying `core_run_rcu_guards`. `lift_core_action` translates ordinary
+steps to `Execute`, locks/unlocks to their machine actions, and each
+synchronization to `BeginGp` followed immediately by `FinishGp`.
+`empty_snapshot_gp_run` proves that this pair captures an empty snapshot,
+records its completion certificate, and clears the pending entry.
+
+`core_step_machine_lift` proves the translation for one step, preserving its
+resulting Core state and restoring an empty pending map.
+`core_run_machine_lift` composes these translations for any guarded Core
+prefix, starting from any machine state with the same Core state and no
+pending GPs. Its result has exactly the requested final Core state, no
+pending GPs, and an action projection equal to the original Core actions.
+`complete_core_run_machine_lift` adds Core completion and complete final RCU
+matching to obtain `complete_run`. The matching premise is essential: Core
+threads can finish with an open reader even when every executed step meets
+the guards. Regressions cover nested sections, RMW/register provenance, two
+successive GPs, and that final-matching distinction.
+
+This construction preserves the supplied Core schedule, performs no event
+renaming, and adds no transition rules or axioms. Composition with the
+serialized replay theorem remains a separate step; full coupled
+completeness additionally needs the connection to consistent candidate graphs.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model
