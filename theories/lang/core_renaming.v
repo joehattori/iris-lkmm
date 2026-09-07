@@ -7,9 +7,6 @@ Import ListNotations.
 Module LkmmCoreRenaming.
   Export LkmmCoreAgentReplay RcuRenaming.
 
-  Definition rename_edges (f : event_id -> event_id) (edges : edge_set) : edge_set :=
-    set_map (fun p : edge => (f p.1, f p.2)) edges.
-
   Record core_state_renaming (f : event_id -> event_id) (source target : core_state) : Prop := {
     core_renaming_events : event_renaming f source.(core_events) target.(core_events);
     core_renaming_threads : target.(core_threads) = rename_thread f <$> source.(core_threads);

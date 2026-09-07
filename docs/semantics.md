@@ -104,6 +104,21 @@ traces, matched sections, and complete RCU matching. A renaming need not
 preserve numeric ID order: the matcher sorts by agent and local position,
 and event-structure well-formedness rules out duplicate positions.
 
+`lang/candidate_renaming.v` defines `candidate_renaming f source target` for
+the complete candidate data. It combines `event_renaming` with exact images
+of all six base edge sets: `rf`, `co`, RMW pairing, and direct address, data,
+and control dependencies. Core and candidate correspondences share
+`rename_edges` from `lkmm/event_renaming.v`. The definition imposes no
+well-formedness, consistency, or execution premise.
+`candidate_renaming_wf` proves that a renamed well-formed candidate is
+well formed. Its memory-relation lemmas in `lkmm/memory_renaming.v` preserve
+read-source uniqueness and totality, coherence ordering and initial writes,
+RMW partners, and dependency endpoints; complete RCU matching uses the
+existing renaming theorem. Injectivity is required only on allocated events,
+whose membership follows from source well-formedness. A regression swaps
+writer/reader IDs and their `rf`/`co` endpoints while preserving candidate
+well-formedness. Preservation of LKMM consistency remains open.
+
 ## RCU replay premises
 
 The event-level premises for machine reconstruction are defined in
