@@ -1,12 +1,12 @@
-From Stdlib Require Import Lia.
+From Stdlib Require Import Lia Relations.Relation_Operators.
 From stdpp Require Import tactics.
-From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_matching.
+From iris_lkmm.lkmm Require Import execution_graph memory_relations rcu_matching rcu_replay.
 
 (** The finite normal-RCU graph kernel.
     The shared graph record derives [prop], [hb], and [pb]; this file adds only
     the normal-RCU classifications and consistency condition. *)
 Module RcuGraph.
-  Export LkmmExecutionGraph RcuMatching.
+  Export LkmmExecutionGraph RcuMatching RcuReplay.
 
   Definition is_gp (G : graph) : event_id -> Prop :=
     event_has_barrier_kind G.(events) BarrierSyncRcu.
@@ -131,6 +131,41 @@ Module RcuGraph.
       (rel_id_on (graph_marked G)).
 
   Definition rcu_consistent (G : graph) : Prop := forall e, ~ rb G e e.
+
+  (** A GP inside one of its own agent's matched sections creates an [rb]
+      self-edge: [lock -> gp] supplies the link, hence [unlock -> gp]
+      belongs to [rcu-order], and [gp -> unlock] closes the fence. *)
+  Lemma gp_in_read_section_rb G lock unlock gp :
+    event_structure_wf G.(events) ->
+    rcu_rscs G.(events) lock unlock ->
+    is_gp G gp -> graph_po G lock gp -> graph_po G gp unlock ->
+    rb G gp gp.
+  Proof.
+    intros HE Hsection Hgp Hbefore Hafter.
+    destruct (rcu_rscs_tags_agent_po _ _ _ HE Hsection) as [Hlock _].
+    pose proof (LkmmMemoryRelations.barrier_marked _ _ _ Hlock) as Hlock_marked.
+    pose proof (LkmmMemoryRelations.barrier_marked _ _ _ Hgp) as Hgp_marked.
+    assert (Hlink : rcu_link G lock gp).
+    { exists lock, lock, lock, lock. split; first by left.
+      split; first apply rt_refl. split; first apply rt_refl.
+      split; last done. by apply LkmmMemoryRelations.prop_marked_refl. }
+    assert (Hfence : rcu_fence G gp gp).
+    { exists unlock, gp. split; first done. split; last by left.
+      by eapply RO_rscs_gp. }
+    unfold rb. apply rel_seq_id_on_r. split; last done.
+    exists gp. split; last apply rt_refl.
+    exists gp. split; last apply rt_refl.
+    exists gp. split; last done.
+    by apply LkmmMemoryRelations.prop_marked_refl.
+  Qed.
+
+  Theorem rcu_consistent_no_gp_in_read_section G :
+    event_structure_wf G.(events) ->
+    rcu_consistent G -> no_gp_in_read_section G.(events).
+  Proof.
+    intros HE Hconsistent lock unlock gp Hsection Hgp Hbefore Hafter.
+    apply (Hconsistent gp). by eapply gp_in_read_section_rb.
+  Qed.
 
   Definition graph_consistent (G : graph) : Prop :=
     graph_coherence G /\ graph_atomicity G /\ graph_happens_before G /\

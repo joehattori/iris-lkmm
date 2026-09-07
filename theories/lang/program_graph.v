@@ -1109,6 +1109,19 @@ Module LkmmProgramGraph.
   Definition lkmm_consistent (C : core_candidate) : Prop :=
     graph_consistent (core_candidate_graph C).
 
+  (** Candidate well-formedness supplies complete RCU matching.  The RCU
+      consistency law excludes a GP inside any matched section, so replay
+      needs no additional RCU premise for a consistent program graph. *)
+  Theorem program_graph_rcu_replay_wf P C :
+    program_graph P C -> lkmm_consistent C ->
+    rcu_replay_wf C.(candidate_events).
+  Proof.
+    intros [_ (HE & _ & _ & _ & _ & _ & _ & Hmatching)]
+      (_ & _ & _ & _ & Hrcu).
+    split; first done.
+    by apply (rcu_consistent_no_gp_in_read_section (core_candidate_graph C)).
+  Qed.
+
   (** Allocation, RMW pairing, and dependency provenance are invariants of
       Core execution, independently of the candidate's well-formedness field. *)
   Theorem program_graph_execution_invariants P C :

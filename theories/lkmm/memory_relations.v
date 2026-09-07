@@ -64,6 +64,19 @@ Module LkmmMemoryRelations.
   Definition marked (E : event_structure) (eid : event_id) : Prop :=
     in_event_structure E eid /\ ~ plain E eid.
 
+  Lemma barrier_marked E kind eid :
+    event_has_barrier_kind E kind eid -> marked E eid.
+  Proof.
+    intros Hbarrier.
+    apply event_has_barrier_kind_lookup in Hbarrier as (ev & Hlookup & Hkind).
+    split; first by eapply lookup_event_in.
+    intros [Hplain _].
+    apply event_has_access_mode_lookup in Hplain as (ev' & Hlookup' & Hmode).
+    assert (ev' = ev) as -> by congruence.
+    destruct ev as [loc val | agent index label]; first discriminate.
+    destruct label; discriminate.
+  Qed.
+
   (** Linux v6.18: [acq-po = [Acquire] ; po ; [M]] *)
   Definition acq_po (E : event_structure) (rmw_edges : edge_set) : relation :=
     rel_seq (rel_seq (rel_id_on (acquire E rmw_edges)) (po E))
@@ -316,6 +329,17 @@ Module LkmmMemoryRelations.
           (rel_id_on (marked E)))
         (optional (rfe E rf_edges)))
       (rel_id_on (marked E)).
+
+  Lemma prop_marked_refl E rmw_edges rf_edges co_edges eid :
+    marked E eid -> prop E rmw_edges rf_edges co_edges eid eid.
+  Proof.
+    intros Hmarked. unfold prop.
+    apply rel_seq_id_on_r. split; last done.
+    exists eid. split; last by left.
+    apply rel_seq_id_on_r. split; last done.
+    exists eid. split; last apply rt_refl.
+    apply rel_seq_id_on_l. split; [done | by left].
+  Qed.
 
   Section PropMonotonicity.
     Context (E1 E2 : event_structure) (rmw1 rmw2 rf1 rf2 co1 co2 : edge_set).

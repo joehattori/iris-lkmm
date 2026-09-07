@@ -1,12 +1,12 @@
 From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
-From iris_lkmm.lkmm Require Import rcu_renaming.
+From iris_lkmm.lkmm Require Import rcu_renaming rcu_graph.
 From iris_lkmm.lang Require Import core_replay_rcu.
 From iris_lkmm.operational Require Import core_to_machine.
 Import ListNotations.
 
 Module RcuReplayExamples.
-  Import RcuRenaming.
+  Import RcuRenaming RcuGraph.
 
   (** Grace periods before and after nested sections of the same agent. *)
   Definition nested_events : event_structure := {[
@@ -88,6 +88,26 @@ Module RcuReplayExamples.
       split_and!; try reflexivity; lia.
   Qed.
 
+  (** Even with no memory edges, an internal GP violates the RCU law. *)
+  Example internal_gp_rb_cycle :
+    rb (Graph internal_gp_events ∅ ∅ ∅ ∅ ∅ ∅) 1 1.
+  Proof.
+    apply gp_in_read_section_rb with (lock := 0) (unlock := 2).
+    - change (event_structure_wf internal_gp_events).
+      intros x y t n lx ly Hx Hy.
+      unfold lookup_event, internal_gp_events in Hx, Hy.
+      repeat (apply lookup_insert_Some in Hx; destruct Hx as [[? ?] | [? Hx]]);
+        try apply lookup_singleton_Some in Hx;
+        repeat (apply lookup_insert_Some in Hy; destruct Hy as [[? ?] | [? Hy]]);
+        try apply lookup_singleton_Some in Hy; naive_solver.
+    - exists 0. vm_compute. auto.
+    - reflexivity.
+    - exists 0, 0, 1, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).
+      split_and!; try reflexivity; lia.
+    - exists 0, 1, 2, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
+      split_and!; try reflexivity; lia.
+  Qed.
+
   (** Closing the inner section is insufficient while its outer section
       still surrounds the GP. *)
   Definition outer_section_gp_events : event_structure := {[
@@ -103,6 +123,25 @@ Module RcuReplayExamples.
   Proof.
     split; first by vm_compute.
     intros [_ Hno_gp]. apply (Hno_gp 0 4 3).
+    - exists 0. vm_compute. auto.
+    - reflexivity.
+    - exists 0, 0, 3, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).
+      split_and!; try reflexivity; lia.
+    - exists 0, 3, 4, (LBarrier BarrierSyncRcu), (LBarrier BarrierRcuUnlock).
+      split_and!; try reflexivity; lia.
+  Qed.
+
+  Example outer_section_gp_rb_cycle :
+    rb (Graph outer_section_gp_events ∅ ∅ ∅ ∅ ∅ ∅) 3 3.
+  Proof.
+    apply gp_in_read_section_rb with (lock := 0) (unlock := 4).
+    - change (event_structure_wf outer_section_gp_events).
+      intros x y t n lx ly Hx Hy.
+      unfold lookup_event, outer_section_gp_events in Hx, Hy.
+      repeat (apply lookup_insert_Some in Hx; destruct Hx as [[? ?] | [? Hx]]);
+        try apply lookup_singleton_Some in Hx;
+        repeat (apply lookup_insert_Some in Hy; destruct Hy as [[? ?] | [? Hy]]);
+        try apply lookup_singleton_Some in Hy; naive_solver.
     - exists 0. vm_compute. auto.
     - reflexivity.
     - exists 0, 0, 3, (LBarrier BarrierRcuLock), (LBarrier BarrierSyncRcu).

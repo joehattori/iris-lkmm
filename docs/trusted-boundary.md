@@ -51,9 +51,13 @@ between Core steps. Composing replay and lifting establishes conditional
 Core-to-machine completeness from a completed Core run and its final
 `rcu_replay_wf` premises. The original run needs no guard certificate;
 the proof constructs one for its replay and returns a completed machine run
-with the final Core state preserved under renaming. These proofs add no
-axioms. Full operational completeness still needs the connection from
-consistent program graphs to the RCU premises and the renamed coupled run.
+with the final Core state preserved under renaming.
+`program_graph_rcu_replay_wf` derives the RCU replay premises from a consistent
+program graph: well-formedness supplies complete matching, and a GP inside
+a matched section produces an `rb` self-edge forbidden by RCU consistency.
+These proofs add no axioms. Full operational completeness still needs
+transport of the complete candidate through renaming and its connection to
+the constructed coupled run.
 For the Core-driven RCU machine, Rocq checks run projection into Core,
 absence of unmatched unlocks, preservation of completed-section witnesses,
 and snapshot-clear safety for completed GP certificates.  Reader bookkeeping

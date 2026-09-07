@@ -114,9 +114,25 @@ ones. These premises describe a completed event structure, not a prefix;
 they do not assume a machine run, change the transition rules, or add a new
 LKMM consistency constraint. `rcu_replay_wf_rename` transfers these premises
 through event renaming, and `core_state_renaming_rcu` specializes this to
-Core states. Deriving these premises from consistent program graphs remains
-open. The renaming regression
-reverses numeric event IDs while preserving both nested matching pairs.
+Core states. The renaming regression reverses numeric event IDs while
+preserving both nested matching pairs.
+
+`program_graph_rcu_replay_wf` derives the replay premises from a consistent
+program graph:
+
+```text
+program_graph P C -> lkmm_consistent C -> rcu_replay_wf C.candidate_events
+```
+
+Complete matching comes from `program_graph` well-formedness.
+`rcu_consistent_no_gp_in_read_section` supplies the other conjunct: if
+`lock -> gp -> unlock` holds in program order for a matched section,
+`gp_in_read_section_rb` constructs `rb gp gp`, contradicting RCU consistency.
+The construction uses `rcu_link lock gp`, then `rcu_order unlock gp`, then
+`rcu_fence gp gp`; barriers are marked, so the reflexive cases of `prop`,
+`hb*`, and `pb*` complete the self-edge. Regressions cover both a single
+section and a still-open outer section after its inner section closes,
+with no memory edges in either graph.
 
 `lang/core_rcu.v` proves the local prefix guards in
 `core_step_rcu_local_guards`: if a Core step extends to events satisfying
@@ -210,10 +226,10 @@ Core state components under one event-ID renaming. A regression constructs
 machine executions in both block orders from the interleaved reader/GP
 example whose original GP has a nonempty snapshot.
 
-Full coupled completeness remains open. It still requires deriving the RCU
-premises from consistent program graphs, transporting the complete candidate
-(including `rf` and `co`) through renaming, and using the constructed machine
-run in coupled scheduling to establish the final candidate correspondence.
+Full coupled completeness remains open. It still requires transporting the
+complete candidate (including `rf` and `co`) through renaming and using the
+constructed machine run in coupled scheduling to establish the final
+candidate correspondence.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model

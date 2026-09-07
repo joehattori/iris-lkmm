@@ -52,6 +52,9 @@ exactly. `complete_core_run_machine_replay` composes replay with this lifting:
 every completed Core run satisfying `rcu_replay_wf` admits a completed
 machine run, with the final Core state preserved up to event-ID renaming.
 The original run need not satisfy the guards or execute agents serially.
+`program_graph_rcu_replay_wf` derives these RCU premises from a consistent
+program graph: matching is complete, and a grace period inside its own
+agent's matched section would create a forbidden `rb` self-edge.
 
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion
