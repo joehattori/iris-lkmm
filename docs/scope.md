@@ -31,7 +31,9 @@ empty builder. `lkmm_coupled.v` interleaves the machine and builder, requiring
 generated-event/relation provenance and exact agreement at completion.
 `coupled_run_soundness` establishes both `program_graph` and `lkmm_consistent`
 under explicit completion-time `rf`/`co` well-formedness obligations.
-Coupled scheduling assumes a compatible completed snapshot-machine run.
+[Coupled completeness](semantics.md#coupled-operational-completeness)
+constructs a completed run for every consistent program graph, up to event-ID
+renaming, and proves its completion obligations.
 
 The Iris protocol supplies exclusive reader tokens, authoritative pending/done
 GP registrations, a MaxNat completion epoch, and a framed completion update.
@@ -39,8 +41,8 @@ Completed Core-machine and coupled GP certificates justify that update's
 snapshot-clear premise. Authoritative ownership and a registered pending-GP
 token remain explicit resource premises.
 
-Unrestricted operational completeness, a ghost-state interpretation maintained
-by every step, Iris WP/adequacy, differential testing against `herd7`,
+A ghost-state interpretation maintained by every step, Iris WP/adequacy,
+differential testing against `herd7`,
 source-language refinement, and the `percpu_ref` case study remain future
 work. SRCU, kernel locks, and grace-period liveness remain outside the selected
 fragment.

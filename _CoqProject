@@ -27,6 +27,7 @@ theories/operational/lkmm_machine.v
 theories/operational/core_to_machine.v
 theories/operational/rcu_builder.v
 theories/operational/rcu_candidate.v
+theories/operational/candidate_encoding.v
 theories/operational/lkmm_coupled.v
 theories/logic/rcu_ghost.v
 theories/logic/lkmm_machine_ghost.v

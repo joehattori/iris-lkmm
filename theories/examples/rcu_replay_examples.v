@@ -1,7 +1,7 @@
 From Stdlib Require Import Arith Lia List.
 From stdpp Require Import gmap tactics.
 From iris_lkmm.lkmm Require Import rcu_renaming rcu_graph.
-From iris_lkmm.operational Require Import core_to_machine.
+From iris_lkmm.operational Require Import core_to_machine candidate_encoding rcu_builder.
 Import ListNotations.
 
 Module RcuReplayExamples.
@@ -133,17 +133,21 @@ Module RcuReplayExamples.
   Example reversed_ids_preserve_nested_rcu :
     rcu_replay_wf reversed_nested_events /\
     rcu_rscs reversed_nested_events (reverse_id 1) (reverse_id 4) /\
-    rcu_rscs reversed_nested_events (reverse_id 2) (reverse_id 3).
+    rcu_rscs reversed_nested_events (reverse_id 2) (reverse_id 3) /\
+    token_id <$> collect_rcu_tokens
+      ((fun e => (RcuBuilder.le_id e, RcuBuilder.le_event e)) <$>
+        LkmmCandidateEncoding.canonical_events reversed_nested_events) = [1;2;3;4].
   Proof.
     assert (event_structure_wf nested_events) as HE.
     { intros x y t n lx ly Hx Hy. apply nested_lookup in Hx, Hy. naive_solver. }
-    split; [| split].
+    split; [| split; [| split]].
     - eapply rcu_replay_wf_rename; [apply reverse_nested_renaming | done |].
       apply nested_events_replay_wf.
     - eapply rcu_rscs_rename_forward; [apply reverse_nested_renaming | done |].
       exists 0. vm_compute. auto.
     - eapply rcu_rscs_rename_forward; [apply reverse_nested_renaming | done |].
       exists 0. vm_compute. auto.
+    - vm_compute. reflexivity.
   Qed.
 
   Module CoreGuards.

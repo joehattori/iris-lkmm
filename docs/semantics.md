@@ -80,8 +80,8 @@ The source's final event map defines the naming correspondence in the proof
 only. Core transitions and states are unchanged, and reads do not require
 their eventual source writes to have executed. This result needs neither
 LKMM consistency nor a completed RCU-machine run and adds no axioms. It is
-the Core replay component of the conditional Core-to-machine completeness
-theorem below; full coupled completeness remains open.
+the Core replay component used by machine lifting and
+[coupled completeness](#coupled-operational-completeness) below.
 Regressions exercise nested control/address/data provenance, successful
 and failed `cmpxchg`, replay after another agent has already executed,
 whole-program completion in either two-agent order, and the empty program.
@@ -250,10 +250,8 @@ Core state components under one event-ID renaming. A regression constructs
 machine executions in both block orders from the interleaved reader/GP
 example whose original GP has a nonempty snapshot.
 
-Full coupled completeness remains open. It still requires transporting the
-complete candidate (including `rf` and `co`) through renaming and using the
-constructed machine run in coupled scheduling to establish the final
-candidate correspondence.
+[Coupled completeness](#coupled-operational-completeness) uses this machine
+run together with the renamed candidate, including its `rf` and `co` choices.
 
 This is an event-generating operational component, not yet the full LKMM
 operational semantics.  It does not choose `rf` or `co`, enforce memory-model
@@ -405,8 +403,8 @@ given a complete snapshot-machine run and a well-formed, LKMM-consistent finite
 candidate with the same events, RMW pairs, and direct dependencies, there is a
 completed coupled run.
 The proof may execute the machine first and then commit the graph.  Neither
-the initial state nor the step rules contain the candidate.  This does not
-prove that every consistent `program_graph` admits a snapshot-machine run.
+the initial state nor the step rules contain the candidate. The completeness
+theorem below supplies this helper's machine-run premise.
 
 `coupled_candidate` extracts every event and relation field from the builder.
 `coupled_run_program_graph` proves that a completed coupled run yields a
@@ -421,6 +419,39 @@ committed fields and derive the same relations. `coupled_run_soundness`
 combines that result with `coupled_run_program_graph`; only completion-time
 well-formedness of the independently chosen `rf` and `co` remains an explicit
 premise.
+
+## Coupled operational completeness
+
+`LkmmCoupled.coupled_run_completeness` establishes the converse to soundness
+for the selected finite LKMM-Core fragment:
+
+```text
+program_graph P G -> lkmm_consistent G ->
+exists actions s f,
+  coupled_run P (initial_coupled P) actions s /\
+  coupled_complete s /\
+  coupled_program_graph_obligations s /\
+  candidate_renaming f G (coupled_candidate s)
+```
+
+The proof extracts the Core execution, derives its RCU replay premises,
+and constructs a completed machine run. The replayed candidate uses that
+machine's events and generated relations together with the images of `G`'s
+`rf` and `co`. Candidate renaming preserves its well-formedness and consistency.
+
+`operational/candidate_encoding.v` converts this map/set candidate to the
+scheduler's lists. `canonical_events` sorts RCU events into reverse loading
+order; non-RCU events impose no trace-order constraint. The encoding preserves
+the graph exactly and supplies the scheduler's canonical-order premise.
+Coupled scheduling then constructs the run, and the transported `rf`/`co`
+well-formedness proves the completion obligations.
+
+A regression combines completeness and soundness on the existing two-agent
+program graph. The reversed-ID nested-RCU example also checks the encoding's
+concrete RCU loading order. No new axioms or transition rules are added;
+completeness inherits the candidate scheduler's excluded-middle dependency.
+This is existence of a completed run for each permitted graph, with no claim
+that arbitrary schedules terminate or grace periods make progress.
 
 ## Iris reader and grace-period protocol
 
@@ -456,8 +487,8 @@ all execution steps, primitive WP rules, and adequacy remain to be developed.
 ## Deliberate limitations
 
 - Coupled operational soundness requires completion-time `rf`/`co`
-  well-formedness. Unrestricted operational completeness and Iris WP/adequacy
-  remain deferred.
+  well-formedness; completeness constructs runs satisfying those obligations.
+  Iris WP/adequacy remains deferred.
 - `program_graph` accepts finite well-formed `rf` and `co` choices; it does not
   compute a single choice from the program.  Quantification over candidates is
   therefore required when stating a property for every allowed execution.

@@ -36,14 +36,9 @@ opam list --locked
 LKMM-Core execution uses normal-RCU snapshot waiting and an incremental
 graph builder. The builder maintains all five selected LKMM consistency
 conditions. Completed coupled runs yield a program graph and LKMM consistency
-under explicit `rf`/`co` well-formedness obligations. Candidate scheduling is
-relative to a compatible completed machine run; unrestricted operational
-completeness remains open.
-
-Core executions satisfying the [RCU replay premises](docs/semantics.md#rcu-replay-premises)
-can be serialized and lifted to completed machine runs, preserving the final
-Core state up to event-ID renaming. Consistent program graphs satisfy these
-premises.
+under explicit `rf`/`co` well-formedness obligations. Conversely, every consistent
+program graph has a completed coupled execution up to event-ID renaming, by
+[coupled completeness](docs/semantics.md#coupled-operational-completeness).
 
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion

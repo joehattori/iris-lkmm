@@ -23,10 +23,10 @@ well-formedness obligations. These relations remain finite candidate choices;
 RMW and direct-dependency well-formedness follow from Core execution. The
 obligations are premises for callers, not new axioms or transition guards.
 
-Coupled scheduling assumes a compatible completed machine run and inherits
-the candidate scheduler's excluded-middle dependency. Full operational
-completeness remains open; its remaining construction is described with the
-[Core-to-machine results](semantics.md#core-driven-rcu-machine).
+[Coupled completeness](semantics.md#coupled-operational-completeness)
+constructs the compatible machine run and inherits only the candidate
+scheduler's existing excluded-middle dependency. Candidate encoding and
+renaming add no axioms.
 
 `lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
 Core-driven GP certificates, including certificates in coupled executions.

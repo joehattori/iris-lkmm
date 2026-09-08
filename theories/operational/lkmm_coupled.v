@@ -1,8 +1,9 @@
 From Stdlib Require Import List Lia.
 From stdpp Require Import gmap sets tactics.
 From iris_lkmm.lkmm Require Import memory_relations rcu_graph rcu_mono.
-From iris_lkmm.lang Require Import program_graph.
-From iris_lkmm.operational Require Import lkmm_machine rcu_builder rcu_candidate.
+From iris_lkmm.lang Require Import program_graph candidate_renaming.
+From iris_lkmm.operational Require Import
+  lkmm_machine rcu_builder rcu_candidate candidate_encoding core_to_machine.
 Import ListNotations.
 
 (** Core execution coupled to the incremental graph builder.  Builder commitments
@@ -11,7 +12,8 @@ Import ListNotations.
     [hb]/[pb] are derived; neither transition rule consults a completed candidate. *)
 Module LkmmCoupled.
   Import LkmmMachine RcuGraph RcuMono RcuBuilder RcuCandidate.
-  Import LkmmProgramGraph LkmmMemoryRelations.
+  Import LkmmProgramGraph LkmmMemoryRelations LkmmCandidateRenaming
+    LkmmCandidateEncoding LkmmCoreToMachine.
 
   Definition generated_prefix (m : LkmmMachine.state) (r : raw_graph) : Prop :=
     event_structure_included r.(raw_events) m.(machine_core).(core_events) /\
@@ -338,6 +340,55 @@ Module LkmmCoupled.
     split; last done. split; first done. simpl. by rewrite Hraw.
   Qed.
 
+  (** Every consistent program graph has a completed coupled execution.
+      Replay supplies the machine run; the builder then commits the same
+      events and relations, with [rf]/[co] transported by the replay's ID map. *)
+  Theorem coupled_run_completeness P G :
+    program_graph P G -> lkmm_consistent G ->
+    exists actions s f,
+      coupled_run P (initial_coupled P) actions s /\
+      coupled_complete s /\ coupled_program_graph_obligations s /\
+      candidate_renaming f G (coupled_candidate s).
+  Proof.
+    intros Hprogram Hconsistent.
+    pose proof (program_graph_rcu_replay_wf P G Hprogram Hconsistent) as Hrcu.
+    destruct Hprogram as [(source_actions & source & Hsource & Hevents &
+      Hrmw_eq & Haddr_eq & Hdata_eq & Hctrl_eq) Hwf].
+    rewrite <- Hevents in Hrcu.
+    destruct (complete_core_run_machine_replay P source_actions source Hsource Hrcu)
+      as (machine_actions0 & m & f & Hmachine & Hcore_rename & _).
+    pose (replayed := CoreCandidate m.(machine_core).(core_events)
+      (rename_edges f G.(candidate_rf)) (rename_edges f G.(candidate_co))
+      m.(machine_core).(core_rmw) m.(machine_core).(core_direct_addr)
+      m.(machine_core).(core_direct_data) m.(machine_core).(core_direct_ctrl)).
+    assert (candidate_renaming f G replayed) as Hrename.
+    { destruct Hcore_rename as [Hren _ _ _ Hrmw Haddr Hdata Hctrl].
+      constructor; cbn [replayed]; try done.
+      - by rewrite <- Hevents.
+      - by rewrite <- Hrmw_eq.
+      - by rewrite <- Haddr_eq.
+      - by rewrite <- Hdata_eq.
+      - by rewrite <- Hctrl_eq. }
+    pose proof (candidate_renaming_wf _ _ _ Hrename Hwf) as Hreplayed_wf.
+    pose proof (candidate_renaming_consistent _ _ _ Hrename Hwf Hconsistent) as Hreplayed_consistent.
+    assert (consistent_program_candidate P (finite_candidate_of_core replayed)) as Hcandidate.
+    { split; first by apply finite_candidate_of_core_wf.
+      split; first by rewrite finite_candidate_of_core_graph.
+      exists machine_actions0, m. split; first done.
+      unfold machine_matches_raw. rewrite finite_candidate_of_core_raw.
+      cbn [raw_events raw_rmw raw_direct_addr raw_direct_data raw_direct_ctrl].
+      rewrite !list_to_set_elements_L. split_and!; done. }
+    destruct (consistent_program_candidate_is_schedulable P _ Hcandidate)
+      as (actions & s & Hrun & Hcomplete & Hraw).
+    assert (coupled_candidate s = replayed) as Hfinal.
+    { unfold coupled_candidate. rewrite Hraw, finite_candidate_of_core_raw.
+      cbn. by rewrite !list_to_set_elements_L. }
+    exists actions, s, f. split; first done. split; first done.
+    rewrite Hfinal. split; last done.
+    unfold coupled_program_graph_obligations. rewrite Hfinal.
+    destruct Hreplayed_wf as (_ & Hrf & Hco & _). done.
+  Qed.
+
   Module CouplingTests.
     Definition program : core_program :=
       CoreProgram {[0 := 0%Z]} {[0 := SXchg 0 RmwRelaxed (EConst 0) (EConst 1)]}.
@@ -473,67 +524,23 @@ Module LkmmCoupled.
       State (add_single_event written 1 (initial_thread reader)
         (LMemory AccessRead AccessOnce NotRmw 0 1%Z)
         {[0 := RegValue 1%Z {[2]}]} ∅ ∅ ∅) ∅ [].
-    Definition finite_graph : finite_candidate :=
-      FiniteCandidate [LabeledEvent 2 read; LabeledEvent 1 write; LabeledEvent 0 init_write]
-        [(1, 2)] [(0, 1)] [] [] [] [].
 
-    Local Lemma machine_run :
-      LkmmMachine.complete_machine_run program [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)]
-        finished.
-    Proof.
-      split.
-      - eapply RunCons with (s2 := State written ∅ []).
-        { eapply StepCore; try done.
-          eapply StepStore with (mode := StoreOnce) (result := RegValue 1%Z ∅);
-            try done. by eexists. }
-        eapply RunCons; last constructor.
-        eapply StepCore; try done.
-        eapply StepLoad with (mode := LoadOnce) (dst := 0); try done. by eexists.
-      - unfold complete. split_and!; try done.
-        intros agent thread Hlookup.
-        change (({[1 := ThreadState SSkip [] {[0 := RegValue 1%Z {[2]}]};
-          0 := ThreadState SSkip [] ∅]} : gmap agent_id thread_state) !! agent = Some thread)
-          in Hlookup.
-        apply lookup_insert_Some in Hlookup as [[<- <-] | [_ Hlookup]]; first done.
-        apply lookup_singleton_Some in Hlookup as [<- <-]. done.
-    Qed.
-
-    Local Lemma finite_graph_wf : candidate_well_formed finite_graph.
-    Proof.
-      destruct (program_graph_wf _ _ two_agent_program_graph)
-        as (HE & Hrf & Hco & Hrmw & _ & _ & _ & Hmatching).
-      unfold candidate_well_formed. split_and!; try done.
-      - vm_compute. repeat constructor; set_solver.
-      - by apply rf_wf_prefix.
-      - by apply co_wf_prefix.
-    Qed.
-
-    Example completed_coupled_run_has_program_graph :
-      graph_consistent (candidate_graph finite_graph) ->
-      exists actions s,
+    (** Exercise completeness from a program graph, including both completion
+        obligations, then use soundness to check the reconstructed execution. *)
+    Example consistent_program_graph_has_completed_coupled_run :
+      lkmm_consistent candidate ->
+      exists actions s f,
         coupled_run program (initial_coupled program) actions s /\ coupled_complete s /\
+        coupled_program_graph_obligations s /\
         program_graph program (coupled_candidate s) /\
         lkmm_consistent (coupled_candidate s) /\
-        candidate_rf (coupled_candidate s) = sample_rf /\
-        candidate_co (coupled_candidate s) = sample_co.
+        candidate_renaming f candidate (coupled_candidate s).
     Proof.
       intros Hconsistent.
-      assert (consistent_program_candidate program finite_graph) as Hcandidate.
-      { split; first apply finite_graph_wf.
-        split; first done.
-        exists [Execute (CoreEmit 0); Execute (CoreObserve 1 1%Z)], finished.
-        split; first apply machine_run. split_and!; done. }
-      destruct (consistent_program_candidate_is_schedulable _ _ Hcandidate)
-        as (actions & s & Hrun & Hcomplete & Hraw).
-      assert (coupled_program_graph_obligations s) as Hobligations.
-      { unfold coupled_program_graph_obligations, coupled_candidate. rewrite Hraw.
-        destruct (program_graph_wf _ _ two_agent_program_graph) as (_ & Hrf & Hco & _).
-        split; done. }
-      destruct (coupled_run_soundness _ _ _ Hrun Hcomplete Hobligations)
-        as [Hprogram_graph Hlkmm].
-      exists actions, s. split; first done. split; first done.
-      split; first done. split; first done.
-      unfold coupled_candidate. rewrite Hraw. split; done.
+      destruct (coupled_run_completeness _ _ two_agent_program_graph Hconsistent)
+        as (actions & s & f & Hrun & Hcomplete & Hobligations & Hrename).
+      destruct (coupled_run_soundness _ _ _ Hrun Hcomplete Hobligations) as [Hprogram Hlkmm].
+      exists actions, s, f. split_and!; done.
     Qed.
 
     Example malformed_rf_is_an_explicit_obligation :
