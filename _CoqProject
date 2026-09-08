@@ -4,6 +4,7 @@ theories/lkmm/prelude.v
 theories/lkmm/events.v
 theories/lkmm/execution.v
 theories/lkmm/event_renaming.v
+theories/lkmm/relation_renaming.v
 theories/lkmm/execution_graph.v
 theories/lkmm/memory_relations.v
 theories/lkmm/memory_renaming.v
@@ -11,6 +12,7 @@ theories/lkmm/rcu_matching.v
 theories/lkmm/rcu_replay.v
 theories/lkmm/rcu_renaming.v
 theories/lkmm/rcu_graph.v
+theories/lkmm/graph_renaming.v
 theories/lkmm/rcu_mono.v
 theories/lkmm/rcu_obligations.v
 theories/lang/lkmm_core.v

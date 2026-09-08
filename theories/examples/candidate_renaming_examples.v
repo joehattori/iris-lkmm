@@ -41,13 +41,18 @@ Module CandidateRenamingExamples.
         try reflexivity; discriminate.
   Qed.
 
-  Example candidate_swap_wf :
-    core_candidate_wf
-      (CoreCandidate swapped_events {[(2, 1)]} {[(0, 2)]} ∅ ∅ ∅ ∅).
+  Example candidate_swap_wf_and_consistency :
+    let swapped := CoreCandidate swapped_events {[(2, 1)]} {[(0, 2)]} ∅ ∅ ∅ ∅ in
+    core_candidate_wf swapped /\
+    (lkmm_consistent Sample.candidate -> lkmm_consistent swapped).
   Proof.
-    eapply candidate_renaming_wf with (f := swap_id) (source := Sample.candidate).
-    - constructor; first apply swapped_events_renaming.
-      all: vm_compute; reflexivity.
-    - exact (program_graph_wf _ _ Sample.two_agent_program_graph).
+    intros swapped.
+    assert (candidate_renaming swap_id Sample.candidate swapped) as Hrename.
+    { constructor; first apply swapped_events_renaming.
+      all: vm_compute; reflexivity. }
+    pose proof (program_graph_wf _ _ Sample.two_agent_program_graph) as Hwf.
+    split.
+    - by eapply candidate_renaming_wf.
+    - by eapply candidate_renaming_consistent.
   Qed.
 End CandidateRenamingExamples.

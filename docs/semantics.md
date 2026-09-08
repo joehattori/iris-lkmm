@@ -115,9 +115,17 @@ well formed. Its memory-relation lemmas in `lkmm/memory_renaming.v` preserve
 read-source uniqueness and totality, coherence ordering and initial writes,
 RMW partners, and dependency endpoints; complete RCU matching uses the
 existing renaming theorem. Injectivity is required only on allocated events,
-whose membership follows from source well-formedness. A regression swaps
-writer/reader IDs and their `rf`/`co` endpoints while preserving candidate
-well-formedness. Preservation of LKMM consistency remains open.
+whose membership follows from source well-formedness.
+
+`candidate_renaming_consistent` additionally transfers `lkmm_consistent`
+from a well-formed source candidate to its renamed target. The relation
+algebra in `lkmm/relation_renaming.v` handles composition, closures, filters,
+and identity tests on allocated events; `lkmm/memory_renaming.v` transports
+the derived memory relations. `lkmm/graph_renaming.v` transports recursive
+RCU ordering and `rb`, then reflects all five consistency violations back
+to the source. This proves consistency preservation without an execution
+premise or global injectivity. The existing writer/reader swap regression
+checks both candidate well-formedness and consistency transport.
 
 ## RCU replay premises
 

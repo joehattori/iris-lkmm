@@ -1,11 +1,11 @@
 From stdpp Require Import gmap tactics.
-From iris_lkmm.lkmm Require Import event_renaming memory_relations.
+From iris_lkmm.lkmm Require Import relation_renaming memory_relations.
 
-(** Preservation of base-relation well-formedness under event-ID renaming.
-    Injectivity is needed only on allocated events; edge well-formedness
-    supplies that domain for each use below. *)
+(** Well-formedness and derived memory relations under event-ID renaming.
+    Injectivity is needed only on allocated events; well-formed base edges
+    supply that domain, including for negative event-class and identity tests. *)
 Module MemoryRenaming.
-  Export EventRenaming LkmmMemoryRelations.
+  Export RelationRenaming LkmmMemoryRelations.
 
   Section Renaming.
     Context (f : event_id -> event_id) (E F : event_structure).
@@ -174,4 +174,183 @@ Module MemoryRenaming.
       direct_ctrl_wf E edges -> direct_ctrl_wf F (rename_edges f edges).
     Proof. apply direct_data_wf_rename. Qed.
   End Renaming.
+
+  Section Relations.
+    Context (f : event_id -> event_id) (E F : event_structure).
+    Context (Hren : event_renaming f E F).
+    Context (rmw0 rf0 co0 data0 addr0 ctrl0 : edge_set).
+    Context (HRMW : relation_supported E (rmw rmw0)).
+    Context (HRF : relation_supported E (rf rf0)) (HCO : relation_supported E (co co0)).
+    Context (HDATA : relation_supported E (direct_data data0)).
+    Context (HADDR : relation_supported E (direct_addr addr0)).
+    Context (HCTRL : relation_supported E (direct_ctrl ctrl0)).
+
+    Let RMWren := relation_renaming_edges f E F Hren rmw0 HRMW.
+    Let RFren := relation_renaming_edges f E F Hren rf0 HRF.
+    Let COren := relation_renaming_edges f E F Hren co0 HCO.
+    Let DATAren := relation_renaming_edges f E F Hren data0 HDATA.
+    Let ADDRren := relation_renaming_edges f E F Hren addr0 HADDR.
+    Let CTRLren := relation_renaming_edges f E F Hren ctrl0 HCTRL.
+
+    Local Lemma read_rename x : in_event_structure E x ->
+      (event_is_read F (f x) <-> event_is_read E x).
+    Proof. apply renaming_event_predicate, Hren. Qed.
+
+    Local Lemma write_rename x : in_event_structure E x ->
+      (event_is_write F (f x) <-> event_is_write E x).
+    Proof. apply renaming_event_predicate, Hren. Qed.
+
+    Local Lemma memory_rename x : in_event_structure E x ->
+      (event_is_memory F (f x) <-> event_is_memory E x).
+    Proof. apply renaming_event_predicate, Hren. Qed.
+
+    Local Lemma mode_rename mode x : in_event_structure E x ->
+      (event_has_access_mode F mode (f x) <-> event_has_access_mode E mode x).
+    Proof. intros Hx. rewrite !event_has_access_mode_lookup. by apply renaming_event_predicate. Qed.
+
+    Local Lemma kind_rename kind x : in_event_structure E x ->
+      (event_has_access_kind F kind (f x) <-> event_has_access_kind E kind x).
+    Proof.
+      intros Hx. change (((lookup_event F (f x) ≫= access_kind_of) = Some kind) <->
+        (lookup_event E x ≫= access_kind_of) = Some kind).
+      by rewrite (renaming_attribute f E F Hren access_kind_of x Hx).
+    Qed.
+
+    Local Lemma rmw_mark_rename x : in_event_structure E x ->
+      (event_is_rmw_marked F (f x) <-> event_is_rmw_marked E x).
+    Proof. intros Hx. rewrite !event_is_rmw_marked_lookup. by apply renaming_event_predicate. Qed.
+
+    Local Lemma failed_rmw_rename x : in_event_structure E x ->
+      (failed_rmw F (rename_edges f rmw0) (f x) <-> failed_rmw E rmw0 x).
+    Proof.
+      intros Hx. unfold failed_rmw.
+      by rewrite (rmw_mark_rename x Hx),
+        (relation_renaming_domain f E F Hren _ _ x RMWren Hx),
+        (relation_renaming_range f E F Hren _ _ x RMWren Hx).
+    Qed.
+
+    Lemma marked_rename x : in_event_structure E x ->
+      (marked F (f x) <-> marked E x).
+    Proof.
+      intros Hx. unfold marked, plain.
+      rewrite (mode_rename AccessPlain x Hx), (rmw_mark_rename x Hx).
+      pose proof (renaming_member f E F Hren x Hx). tauto.
+    Qed.
+
+    (** Normalize the CAT relation expressions to their algebraic operators;
+        event classes and negative tests are transported by equivalences. *)
+    Local Ltac transport_class :=
+      let x := fresh "eid" in let Hx := fresh "Hin" in
+      intros x Hx;
+      unfold acquire, release, mb_event, r4_rmb, noreturn, plain;
+      rewrite ?(read_rename x Hx), ?(write_rename x Hx), ?(memory_rename x Hx),
+        ?(rmw_mark_rename x Hx), ?(failed_rmw_rename x Hx), ?(marked_rename x Hx),
+        ?(mode_rename _ x Hx), ?(kind_rename _ x Hx),
+        ?(event_renaming_barrier f E F x _ Hren Hx);
+      done.
+
+    Local Ltac transport :=
+      first [exact RMWren | exact RFren | exact COren | exact DATAren | exact ADDRren | exact CTRLren |
+      lazymatch goal with
+      | |- relation_renaming _ _ _ (po _) _ => apply relation_renaming_po; exact Hren
+      | |- relation_renaming _ _ _ rel_id _ => apply relation_renaming_id; exact Hren
+      | |- relation_renaming _ _ _ (rel_id_on _) _ =>
+          apply relation_renaming_id_on; [exact Hren | transport_class]
+      | |- relation_renaming _ _ _ (rel_union _ _) _ => apply relation_renaming_union; transport
+      | |- relation_renaming _ _ _ (rel_seq _ _) _ =>
+          apply relation_renaming_seq; [exact Hren | transport | transport]
+      | |- relation_renaming _ _ _ (rel_inverse _) _ => apply relation_renaming_inverse; transport
+      | |- relation_renaming _ _ _ (optional _) _ =>
+          apply relation_renaming_optional; [exact Hren | transport]
+      | |- relation_renaming _ _ _ (rtc _) _ => apply relation_renaming_rtc; [exact Hren | transport]
+      | |- relation_renaming _ _ _ (rel_difference _ _) _ => apply relation_renaming_difference; transport
+      | |- relation_renaming _ _ _ (rel_intersection _ _) _ =>
+          apply relation_renaming_intersection; [transport |];
+          let x := fresh "x" in let y := fresh "y" in
+          let Hx := fresh "Hx" in let Hy := fresh "Hy" in
+          intros x y Hx Hy;
+          first [apply event_renaming_same_attribute; done
+          | unfold ext, same_agent;
+            rewrite (event_renaming_same_attribute agent_of f E F x y Hren Hx Hy); done
+          | apply (relation_renaming_iff f E F _ _); [transport | exact Hx | exact Hy]]
+      end].
+
+    Local Ltac expand_memory :=
+      cbv [ppo to_r to_w rwdep dep addr data ctrl carry_dep
+        fence nonrw_fence strong_fence mb gp po_rel acq_po wmb rmb fencerel
+        prop cumul_fence a_cumul rmw_sequence overwrite fr rfi rfe coe fre].
+
+    Lemma ppo_renaming : relation_renaming f E F
+      (ppo E rmw0 rf0 co0 data0 addr0 ctrl0)
+      (ppo F (rename_edges f rmw0) (rename_edges f rf0) (rename_edges f co0)
+        (rename_edges f data0) (rename_edges f addr0) (rename_edges f ctrl0)).
+    Proof. expand_memory. transport. Qed.
+
+    Lemma prop_renaming : relation_renaming f E F
+      (prop E rmw0 rf0 co0)
+      (prop F (rename_edges f rmw0) (rename_edges f rf0) (rename_edges f co0)).
+    Proof. expand_memory. transport. Qed.
+
+    Lemma hb_renaming : relation_renaming f E F
+      (hb E rmw0 rf0 co0 data0 addr0 ctrl0)
+      (hb F (rename_edges f rmw0) (rename_edges f rf0) (rename_edges f co0)
+        (rename_edges f data0) (rename_edges f addr0) (rename_edges f ctrl0)).
+    Proof.
+      unfold hb. repeat apply relation_renaming_seq; try done.
+      - apply relation_renaming_id_on; [done | transport_class].
+      - apply relation_renaming_union; first apply ppo_renaming.
+        apply relation_renaming_union.
+        + unfold rfe. transport.
+        + apply relation_renaming_intersection.
+          * apply relation_renaming_difference; [apply prop_renaming | transport].
+          * intros x y Hx Hy. by apply event_renaming_same_attribute.
+      - apply relation_renaming_id_on; [done | transport_class].
+    Qed.
+
+    Lemma pb_renaming : relation_renaming f E F
+      (pb E rmw0 rf0 co0 data0 addr0 ctrl0)
+      (pb F (rename_edges f rmw0) (rename_edges f rf0) (rename_edges f co0)
+        (rename_edges f data0) (rename_edges f addr0) (rename_edges f ctrl0)).
+    Proof.
+      unfold pb. apply relation_renaming_seq; first done.
+      - apply relation_renaming_seq; first done.
+        + apply relation_renaming_seq; first done.
+          * apply prop_renaming.
+          * expand_memory. transport.
+        + apply relation_renaming_rtc; [done | apply hb_renaming].
+      - apply relation_renaming_id_on; [done | transport_class].
+    Qed.
+
+    Lemma coherence_order_renaming : relation_renaming f E F
+      (rel_union (po_loc E) (com rf0 co0))
+      (rel_union (po_loc F) (com (rename_edges f rf0) (rename_edges f co0))).
+    Proof. unfold po_loc, com, fr. transport. Qed.
+
+    Lemma atomicity_violation_renaming : relation_renaming f E F
+      (rel_intersection (rmw rmw0) (rel_seq (fre E rf0 co0) (coe E co0)))
+      (rel_intersection (rmw (rename_edges f rmw0))
+        (rel_seq (fre F (rename_edges f rf0) (rename_edges f co0))
+          (coe F (rename_edges f co0)))).
+    Proof. unfold fre, coe, fr. transport. Qed.
+  End Relations.
+
+  Lemma marked_tail_supported E r :
+    relation_domain E (rel_seq r (rel_id_on (marked E))) ->
+    relation_supported E (rel_seq r (rel_id_on (marked E))).
+  Proof.
+    intros Hdomain x y Hxy. pose proof Hxy as Htail.
+    apply rel_seq_id_on_r in Htail as [_ [Hy _]]. split; last done.
+    by eapply relation_domain_right.
+  Qed.
+
+  Lemma coherence_order_supported E rf0 co0 :
+    relation_supported E (rf rf0) -> relation_supported E (co co0) ->
+    relation_supported E (rel_union (po_loc E) (com rf0 co0)).
+  Proof.
+    intros Hrf Hco x y [[Hpo _] | [H | [H | (z & Hrf' & Hco')]]].
+    - by apply po_endpoints.
+    - by apply Hrf.
+    - by apply Hco.
+    - split; [exact (proj2 (Hrf z x Hrf')) | exact (proj2 (Hco z y Hco'))].
+  Qed.
 End MemoryRenaming.
