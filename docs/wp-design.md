@@ -14,22 +14,26 @@ ownership from that write, especially when the write is emitted later.
 ## Implemented
 
 Stage 1 provides the [execution domain](../theories/logic/graph_domain.v) and
-[Iris quantifier interface](../theories/logic/graph_judgment.v). Definitions
-and their invariants are documented in those files. The guarded WP and its
-resource interpretation remain to be implemented.
+[Iris quantifier interface](../theories/logic/graph_judgment.v).
+
+Stage 2 proves [coupled correspondence](../theories/logic/graph_correspondence.v):
+every accepted run and each of its cuts project to the Core domain, preserving
+the actual schedule and event IDs. Coupled witnesses retain pending-GP snapshots,
+certificates, and builder state. Reverse graph coverage uses existing completeness
+up to renaming; it does not prescribe a schedule. The
+[coupled quantifier interface](../theories/logic/coupled_graph_judgment.v)
+specializes Core assertions to these witnesses. Guarded WP and its resource
+interpretation remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
 a write emitted later. These are graph-level results; WP load rules still
 require resource reasoning.
+[Correspondence regressions](../theories/examples/graph_correspondence_examples.v)
+cover the read-before-write trace, GP state omitted by Core projection, and renaming.
 
 ## Remaining stages
 
-2. **Correspondence:** cover every accepted coupled execution, preserving its
-   actions, intermediate machine information, and event-ID correspondence.
-   Core positions omit pending-GP snapshots, certificates, and builder actions.
-   A replay of the same final graph is insufficient for trace-sensitive claims;
-   reverse graph coverage need only establish existence up to renaming.
 3. **State interpretation and WP:** allocate the initial Iris resources,
    maintain them across steps, and define the guarded WP.
 4. **Structural rules:** consequence, framing, sequencing, assignment,

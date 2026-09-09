@@ -183,7 +183,7 @@ Module GraphDomainExamples.
       - intros x H. by destruct (no_rb _ _ H).
     Qed.
 
-    Example admissible : admissible_candidate Sample.program candidate.
+    Example consistent_graph : consistent_program_graph Sample.program candidate.
     Proof. split; [apply graph | apply consistent]. Qed.
 
     Lemma at_read : candidate_position Sample.program candidate position.
@@ -200,7 +200,7 @@ Module GraphDomainExamples.
     Qed.
 
     (** The source exists in the complete candidate but is absent from the
-        current event map.  [admissible] also proves this graph LKMM-consistent.
+        current event map.  [consistent_graph] also proves this graph LKMM-consistent.
         This is a domain regression; it is not yet a WP load proof. *)
     Example source_need_not_have_been_emitted :
       candidate_position Sample.program candidate position /\
@@ -320,7 +320,7 @@ Module GraphDomainExamples.
         Ψ FutureSource.candidate FutureSource.position.
     Proof.
       apply all_candidate_positions_elim.
-      - apply FutureSource.admissible.
+      - apply FutureSource.consistent_graph.
       - apply FutureSource.at_read.
     Qed.
   End quantification.

@@ -23,8 +23,9 @@ well-formedness obligations. These relations remain finite candidate choices;
 RMW and direct-dependency well-formedness follow from Core execution. The
 obligations are premises for callers, not new axioms or transition guards.
 
-The graph-relative [WP domain](wp-design.md) adds no axioms or operational
-transition guards. Its adequacy and prefix-safety obligations remain open.
+The graph-relative [WP domain and coupled correspondence](wp-design.md) add no
+axioms or operational transition guards. Reverse graph coverage inherits the
+completeness dependency below. WP adequacy and prefix safety remain open.
 
 [Coupled completeness](semantics.md#coupled-operational-completeness)
 constructs the compatible machine run and inherits only the candidate

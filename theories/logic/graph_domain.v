@@ -11,7 +11,7 @@ Module LkmmGraphDomain.
   Export LkmmCoreAgentReplay.
   Import LkmmMemoryRelations.
 
-  Definition admissible_candidate (P : core_program) (G : core_candidate) : Prop :=
+  Definition consistent_program_graph (P : core_program) (G : core_candidate) : Prop :=
     program_graph P G /\ lkmm_consistent G.
 
   (** [rf] and [co] belong to [G], not to the executing Core state. *)

@@ -12,7 +12,7 @@ Module LkmmGraphJudgment.
     Context {Σ : gFunctors}.
 
     Definition all_candidates (P : core_program) (Ψ : core_candidate -> iProp Σ) : iProp Σ :=
-      (∀ G, ⌜admissible_candidate P G⌝ -∗ Ψ G)%I.
+      (∀ G, ⌜consistent_program_graph P G⌝ -∗ Ψ G)%I.
 
     Definition all_candidate_executions (P : core_program)
         (Ψ : core_candidate -> list core_action -> core_state -> iProp Σ) : iProp Σ :=
@@ -24,11 +24,11 @@ Module LkmmGraphJudgment.
       all_candidates P (fun G => ∀ p, ⌜candidate_position P G p⌝ -∗ Ψ G p)%I.
 
     Lemma all_candidates_elim P Ψ G :
-      admissible_candidate P G -> all_candidates P Ψ ⊢ Ψ G.
+      consistent_program_graph P G -> all_candidates P Ψ ⊢ Ψ G.
     Proof. iIntros (HG) "H". by iApply ("H" $! G). Qed.
 
     Lemma all_candidate_executions_elim P Ψ G actions final :
-      admissible_candidate P G -> candidate_execution P G actions final ->
+      consistent_program_graph P G -> candidate_execution P G actions final ->
       all_candidate_executions P Ψ ⊢ Ψ G actions final.
     Proof.
       iIntros (HG Hrun) "H".
@@ -37,7 +37,7 @@ Module LkmmGraphJudgment.
     Qed.
 
     Lemma all_candidate_positions_elim P Ψ G p :
-      admissible_candidate P G -> candidate_position P G p ->
+      consistent_program_graph P G -> candidate_position P G p ->
       all_candidate_positions P Ψ ⊢ Ψ G p.
     Proof.
       iIntros (HG Hpos) "H".
