@@ -23,17 +23,17 @@ well-formedness obligations. These relations remain finite candidate choices;
 RMW and direct-dependency well-formedness follow from Core execution. The
 obligations are premises for callers, not new axioms or transition guards.
 
+The graph-relative [WP domain](wp-design.md) adds no axioms or operational
+transition guards. Its adequacy and prefix-safety obligations remain open.
+
 [Coupled completeness](semantics.md#coupled-operational-completeness)
 constructs the compatible machine run and inherits only the candidate
 scheduler's existing excluded-middle dependency. Candidate encoding and
 renaming add no axioms.
 
-`lkmm_machine_ghost.v` derives the Iris snapshot-clear premise from completed
-Core-driven GP certificates, including certificates in coupled executions.
-The reclamation rules require authoritative ownership of the current open
-readers and a registered pending-GP token for the captured snapshot.  They do
-not manufacture either from a pure certificate.  No per-step ghost-state
-interpretation or full WP adequacy is established by this bridge.
+The [Iris completion bridge](semantics.md#iris-reader-and-grace-period-protocol)
+assumes ghost ownership supplied by its caller; it does not yet establish a
+state interpretation maintained across execution steps.
 
 The finite adjacent-unmatched Bell iteration remains a manual Rocq
 transcription; its regression agrees with the stack matcher, but this is not

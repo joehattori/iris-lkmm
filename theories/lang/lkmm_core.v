@@ -115,6 +115,9 @@ Module LkmmCore.
     program_agents : gmap agent_id stmt
   }.
 
+  (** [KSeq] resumes the next statement when the current one finishes.
+      [KControl] retains the chosen branch's condition origins to populate
+      [core_direct_ctrl] for writes inside it; it is popped at branch exit. *)
   Inductive frame :=
   | KSeq (next : stmt)
   | KControl (condition_origins : origins).

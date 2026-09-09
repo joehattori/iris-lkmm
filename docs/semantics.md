@@ -453,36 +453,20 @@ completeness inherits the candidate scheduler's excluded-middle dependency.
 This is existence of a completed run for each permitted graph, with no claim
 that arbitrary schedules terminate or grace periods make progress.
 
+## Graph-relative WP domain
+
+The logic uses a complete candidate as a shared proof parameter. See the
+[WP design](wp-design.md) for the implemented domain and remaining stages.
+
 ## Iris reader and grace-period protocol
 
-`rcu_ghost.v` uses three ghost components:
-
-- an authoritative ghost map of open reader IDs, with an exclusive token for
-  each reader;
-- an authoritative GP map whose entries change from an exact pending snapshot
-  to a persistent done certificate; and
-- an authoritative MaxNat epoch with persistent lower bounds.
-
-Reader entry allocates a fresh exclusive map entry; reader exit consumes it
-and deletes the entry.  GP begin registers `dom(open)` as an immutable
-snapshot.  GP completion requires that snapshot to be disjoint from the
-current open domain, updates the registered GP entry to done, advances the
-MaxNat epoch, and returns a persistent certificate.  `rcu_gp_finish_frame`
-proves the update while preserving an arbitrary client resource `R`.
-
-`lkmm_machine_ghost.v` defines `open_reader_map` from the Core-driven machine's
-current canonical snapshot.  `completed_certificate_enables_iris_finish`
-converts `completed_snapshot_clear` into disjointness between a completed GP's
-captured set and that map's domain.  `completed_machine_gp_reclamation_frame`
-and `completed_coupled_gp_reclamation_frame` compose this fact with the Iris
-update, preserving an arbitrary client frame.  A completed GP certificate is
-enough; the whole program need not have finished, and later readers may remain
-active.
-
-Both rules require ownership of the authoritative current-open map and the
-registered pending-GP token for the captured snapshot.  A machine certificate
-does not create those resources.  A ghost-state interpretation maintained by
-all execution steps, primitive WP rules, and adequacy remain to be developed.
+[rcu_ghost.v](../theories/logic/rcu_ghost.v) defines the reader-token and
+grace-period protocol. [lkmm_machine_ghost.v](../theories/logic/lkmm_machine_ghost.v)
+connects completed machine and coupled GP certificates to its framed completion
+update. This bridge works before whole-program completion, while later readers
+may still be active. It requires ownership of the authoritative current-reader
+map and the registered pending-GP token; the certificate supplies the
+snapshot-clear fact, not those resources.
 
 ## Deliberate limitations
 

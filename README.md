@@ -42,9 +42,9 @@ program graph has a completed coupled execution up to event-ID renaming, by
 
 The relational RCU recursion is proved equivalent to an independent finite
 chain. Completed machine grace periods also support a framed Iris completion
-update; primitive WP rules and adequacy remain future work. See
-[`docs/semantics.md`](docs/semantics.md) for the architecture and proofs, and
-[`docs/scope.md`](docs/scope.md) for the current scope and remaining work.
+update. The [WP design](docs/wp-design.md) records the implemented proof domain
+and remaining stages. See [semantics](docs/semantics.md) for the architecture
+and proofs, and [scope](docs/scope.md) for the supported fragment.
 
 The broad package constraint supports Rocq 9.0.x and 9.1.x. The lock file is
 the reproducible, tested development configuration and should be updated
