@@ -35,11 +35,13 @@ theories/logic/graph_domain.v
 theories/logic/graph_correspondence.v
 theories/logic/graph_judgment.v
 theories/logic/coupled_graph_judgment.v
+theories/logic/state_interp.v
 theories/examples/rcu_graph_examples.v
 theories/examples/rcu_ghost_examples.v
 theories/examples/core_replay_examples.v
 theories/examples/candidate_renaming_examples.v
 theories/examples/graph_domain_examples.v
 theories/examples/graph_correspondence_examples.v
+theories/examples/state_interp_examples.v
 theories/examples/rcu_replay_examples.v
 theories/examples/core_to_machine_examples.v

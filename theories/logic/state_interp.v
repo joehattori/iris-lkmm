@@ -1,0 +1,136 @@
+From Stdlib Require Import List.
+From stdpp Require Import gmap countable.
+From iris.base_logic.lib Require Import ghost_map.
+From iris.proofmode Require Import proofmode.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled rcu_builder.
+From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost.
+
+Module LkmmStateInterp.
+  Import LkmmMachine LkmmCoupled RcuBuilder RcuGhost LkmmMachineGhost.
+
+  (** A waiting agent emits no events until GP finish. Its local event index
+      identifies the GP before the global event ID is allocated. *)
+  Definition gp_identity (agent : agent_id) (index : event_index) : gp_id :=
+    encode_nat (agent, index).
+
+  Lemma gp_identity_inj agent index agent' index' :
+    gp_identity agent index = gp_identity agent' index' ->
+    agent = agent' /\ index = index'.
+  Proof. unfold gp_identity. intros H. apply (inj encode_nat) in H. by simplify_eq. Qed.
+
+  Definition pending_gp_at (s : LkmmMachine.state) (gid : gp_id)
+      (captured : gset rscs_id) : Prop :=
+    exists agent locks, s.(pending_gp) !! agent = Some locks /\
+      gid = gp_identity agent (next_agent_index s.(machine_core) agent) /\
+      captured = list_to_set locks.
+
+  Definition completed_gp_at (s : LkmmMachine.state) (gid : gp_id)
+      (captured : gset rscs_id) : Prop :=
+    exists cert agent index, In cert s.(gp_certificates) /\
+      lookup_event s.(machine_core).(core_events) cert.(gc_event) =
+        Some (EAgent agent index (LBarrier BarrierSyncRcu)) /\
+      gid = gp_identity agent index /\ captured = list_to_set cert.(gc_snapshot).
+
+  (** Both directions exclude missing and phantom protocol entries. Epochs
+      count completed GPs; their allocation and evolution are proved separately. *)
+  Definition rcu_state_matches (s : LkmmMachine.state)
+      (gps : gmap gp_id gp_status) : Prop :=
+    (forall gid captured, pending_gp_at s gid captured <->
+      exists start, gps !! gid = Some (GpPending captured start)) /\
+    (forall gid captured, completed_gp_at s gid captured <->
+      exists start finish, gps !! gid = Some (GpDone captured start finish)) /\
+    (forall gid status, gps !! gid = Some status ->
+      match status with
+      | GpPending _ start => start <= length s.(gp_certificates)
+      | GpDone _ start finish => start < finish /\ finish <= length s.(gp_certificates)
+      end).
+
+  Definition stateΣ : gFunctors :=
+    #[ghost_mapΣ agent_id thread_state; ghost_mapΣ event_id event; rcuΣ].
+
+  Class stateG Σ := StateG {
+    #[local] state_threads_G :: ghost_mapG Σ agent_id thread_state;
+    #[local] state_events_G :: ghost_mapG Σ event_id event;
+    #[local] state_rcu_G :: rcuG Σ
+  }.
+
+  Global Instance subG_stateΣ Σ : subG stateΣ Σ -> stateG Σ.
+  Proof. solve_inG. Qed.
+
+  Record state_names := StateNames {
+    threads_name : gname;
+    events_name : gname;
+    rcu_name : rcu_names
+  }.
+
+  Section resources.
+    Context `{!stateG Σ}.
+
+    Definition thread_token (γ : state_names) (agent : agent_id)
+        (thread : thread_state) : iProp Σ :=
+      agent ↪[γ.(threads_name)] thread.
+
+    (** Records an emitted event, without granting ownership of its location. *)
+    Definition event_fact (γ : state_names) (eid : event_id) (ev : event) : iProp Σ :=
+      eid ↪[γ.(events_name)]□ ev.
+
+    Global Instance event_fact_persistent γ eid ev : Persistent (event_fact γ eid ev).
+    Proof. apply _. Qed.
+
+    (** Interpret the current coupled state. The final graph and execution
+        witnesses stay in [coupled_position], outside this resource assertion.
+        Thread, reader, and pending-GP tokens are held separately by clients. *)
+    Definition state_interp (γ : state_names) (s : coupled_state) : iProp Σ :=
+      ⌜generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw)⌝ ∗
+      ghost_map_auth γ.(threads_name) 1 s.(coupled_machine).(machine_core).(core_threads) ∗
+      ghost_map_auth γ.(events_name) 1 s.(coupled_machine).(machine_core).(core_events) ∗
+      ∃ gps, ⌜rcu_state_matches s.(coupled_machine) gps⌝ ∗
+        rcu_auth γ.(rcu_name) (open_reader_map s.(coupled_machine)) gps
+          (length s.(coupled_machine).(gp_certificates)).
+
+    Lemma state_interp_thread γ s agent thread :
+      state_interp γ s -∗ thread_token γ agent thread -∗
+      ⌜s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread⌝.
+    Proof.
+      iIntros "(_ & Hthreads & _) Hthread".
+      iApply (ghost_map_lookup with "Hthreads Hthread").
+    Qed.
+
+    Lemma state_interp_event γ s eid ev :
+      state_interp γ s -∗ event_fact γ eid ev -∗
+      ⌜lookup_event s.(coupled_machine).(machine_core).(core_events) eid = Some ev⌝.
+    Proof.
+      iIntros "(_ & _ & Hevents & _) Hevent".
+      iApply (ghost_map_lookup with "Hevents Hevent").
+    Qed.
+
+    Lemma state_interp_reader γ s rid :
+      state_interp γ s -∗ reader_token γ.(rcu_name) rid -∗
+      ⌜open_reader_map s.(coupled_machine) !! rid = Some tt⌝.
+    Proof.
+      iIntros "(_ & _ & _ & Hrcu) Hreader".
+      iDestruct "Hrcu" as (gps) "(_ & Hopen & _)".
+      iApply (ghost_map_lookup with "Hopen Hreader").
+    Qed.
+
+    Lemma state_interp_pending γ s gid captured start :
+      state_interp γ s -∗ gp_pending γ.(rcu_name) gid captured start -∗
+      ⌜pending_gp_at s.(coupled_machine) gid captured⌝.
+    Proof.
+      iIntros "(_ & _ & _ & Hrcu) Hpending".
+      iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".
+      iDestruct (ghost_map_lookup with "Hgps Hpending") as %Hlookup.
+      iPureIntro. apply (proj2 (proj1 Hmatch gid captured)). by exists start.
+    Qed.
+
+    Lemma state_interp_done γ s gid captured start finish :
+      state_interp γ s -∗ gp_done γ.(rcu_name) gid captured start finish -∗
+      ⌜completed_gp_at s.(coupled_machine) gid captured⌝.
+    Proof.
+      iIntros "(_ & _ & _ & Hrcu) [Hdone _]".
+      iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".
+      iDestruct (ghost_map_lookup with "Hgps Hdone") as %Hlookup.
+      iPureIntro. apply (proj2 (proj1 (proj2 Hmatch) gid captured)). by exists start, finish.
+    Qed.
+  End resources.
+End LkmmStateInterp.

@@ -290,8 +290,7 @@ Module RcuBuilder.
       (rel_union left.(cr_propagation) right.(cr_propagation))
       (rel_union left.(cr_rb) right.(cr_rb)).
 
-  Definition consistency_relations_exact
-      (G : graph) (seen : consistency_relations) : Prop :=
+  Definition consistency_relations_exact (G : graph) (seen : consistency_relations) : Prop :=
     (forall x y, seen.(cr_coherence) x y <-> tc (graph_coherence_order G) x y) /\
     (forall x y, seen.(cr_atomicity) x y <-> graph_atomicity_violation G x y) /\
     (forall x y, seen.(cr_happens_before) x y <-> tc (graph_hb G) x y) /\

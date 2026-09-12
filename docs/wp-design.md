@@ -22,8 +22,13 @@ the actual schedule and event IDs. Coupled witnesses retain pending-GP snapshots
 certificates, and builder state. Reverse graph coverage uses existing completeness
 up to renaming; it does not prescribe a schedule. The
 [coupled quantifier interface](../theories/logic/coupled_graph_judgment.v)
-specializes Core assertions to these witnesses. Guarded WP and its resource
-interpretation remain to be implemented.
+specializes Core assertions to these witnesses.
+
+Stage 3 starts with the [state interpretation](../theories/logic/state_interp.v):
+authoritative thread and emitted-event maps, the builder's generated-prefix
+invariant, and RCU resources matching current readers, pending GPs, and completed
+certificates. The final graph remains in the execution domain. Initial allocation,
+step preservation, and guarded WP remain to be proved.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
