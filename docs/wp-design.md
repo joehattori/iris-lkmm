@@ -35,7 +35,8 @@ for newly emitted events. They use allocation well-formedness from the execution
 prefix. Builder steps preserve the interpretation without changing ghost resources.
 Read-lock steps allocate a fresh reader token; read-unlock steps consume the
 innermost token while preserving outer readers and captured GP snapshots.
-Preservation for GP steps, and guarded WP, remain to be implemented.
+GP-begin steps register the captured reader set and supply a pending token.
+Preservation for GP-finish steps, and guarded WP, remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from

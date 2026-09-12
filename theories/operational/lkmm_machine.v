@@ -14,7 +14,7 @@ Module LkmmMachine.
 
   Record gp_certificate := GpCertificate {
     gc_event : event_id;
-    gc_snapshot : list event_id
+    gc_captured_readers : list event_id
   }.
 
   Record state := State {
@@ -305,7 +305,7 @@ Module LkmmMachine.
 
   Definition certificates_sound (s : state) : Prop :=
     forall cert, In cert s.(gp_certificates) ->
-      all_closed s.(machine_core).(core_events) cert.(gc_snapshot).
+      all_closed s.(machine_core).(core_events) cert.(gc_captured_readers).
 
   Local Lemma all_closed_mono E E' locks :
     rel_included (rcu_rscs E) (rcu_rscs E') -> all_closed E locks -> all_closed E' locks.
@@ -391,7 +391,7 @@ Module LkmmMachine.
 
   Theorem completed_snapshot_clear P actions s cert :
     run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
-    forall lock, In lock cert.(gc_snapshot) -> ~ In lock (all_open_readers s).
+    forall lock, In lock cert.(gc_captured_readers) -> ~ In lock (all_open_readers s).
   Proof.
     intros Hrun Hcert lock Hlock.
     destruct (run_rcu_safety _ _ _ Hrun) as [_ Hsound].

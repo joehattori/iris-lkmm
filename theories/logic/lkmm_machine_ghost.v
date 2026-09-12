@@ -17,7 +17,7 @@ Module LkmmMachineGhost.
   Definition open_reader_map (s : LkmmMachine.state) : gmap rscs_id unit :=
     list_to_map (map (fun lock => (lock, tt)) (all_open_readers s)).
 
-  Local Lemma dom_open_reader_map s :
+  Lemma dom_open_reader_map s :
     dom (open_reader_map s) = (list_to_set (all_open_readers s) : gset rscs_id).
   Proof.
     unfold open_reader_map. rewrite dom_list_to_map_L.
@@ -131,7 +131,7 @@ Module LkmmMachineGhost.
 
   Lemma completed_certificate_enables_iris_finish P actions s cert :
     LkmmMachine.run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
-    (list_to_set cert.(gc_snapshot) : gset rscs_id) ## dom (open_reader_map s).
+    (list_to_set cert.(gc_captured_readers) : gset rscs_id) ## dom (open_reader_map s).
   Proof.
     intros Hrun Hcert. rewrite dom_open_reader_map.
     apply elem_of_disjoint. intros lock Hcaptured Hopen.
@@ -146,10 +146,10 @@ Module LkmmMachineGhost.
     Theorem completed_machine_gp_reclamation_update P actions s cert γ gps epoch gid start :
       LkmmMachine.run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
       rcu_auth γ (open_reader_map s) gps epoch ∗
-        gp_pending γ gid (list_to_set cert.(gc_snapshot)) start ==∗
+        gp_pending γ gid (list_to_set cert.(gc_captured_readers)) start ==∗
       rcu_auth γ (open_reader_map s)
-          (<[gid := GpDone (list_to_set cert.(gc_snapshot)) start (S epoch)]> gps) (S epoch) ∗
-        gp_done γ gid (list_to_set cert.(gc_snapshot)) start (S epoch).
+          (<[gid := GpDone (list_to_set cert.(gc_captured_readers)) start (S epoch)]> gps) (S epoch) ∗
+        gp_done γ gid (list_to_set cert.(gc_captured_readers)) start (S epoch).
     Proof.
       intros Hrun Hcert. apply rcu_gp_finish.
       by eapply completed_certificate_enables_iris_finish.
@@ -159,10 +159,10 @@ Module LkmmMachineGhost.
         P actions s cert γ gps epoch gid start (R : iProp Σ) :
       LkmmMachine.run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
       rcu_auth γ (open_reader_map s) gps epoch ∗
-        gp_pending γ gid (list_to_set cert.(gc_snapshot)) start ∗ R ==∗
+        gp_pending γ gid (list_to_set cert.(gc_captured_readers)) start ∗ R ==∗
       rcu_auth γ (open_reader_map s)
-          (<[gid := GpDone (list_to_set cert.(gc_snapshot)) start (S epoch)]> gps) (S epoch) ∗
-        gp_done γ gid (list_to_set cert.(gc_snapshot)) start (S epoch) ∗ R.
+          (<[gid := GpDone (list_to_set cert.(gc_captured_readers)) start (S epoch)]> gps) (S epoch) ∗
+        gp_done γ gid (list_to_set cert.(gc_captured_readers)) start (S epoch) ∗ R.
     Proof.
       intros Hrun Hcert. apply rcu_gp_finish_frame.
       by eapply completed_certificate_enables_iris_finish.
@@ -173,10 +173,10 @@ Module LkmmMachineGhost.
       coupled_run P (initial_coupled P) actions s ->
       In cert s.(coupled_machine).(gp_certificates) ->
       rcu_auth γ (open_reader_map s.(coupled_machine)) gps epoch ∗
-        gp_pending γ gid (list_to_set cert.(gc_snapshot)) start ∗ R ==∗
+        gp_pending γ gid (list_to_set cert.(gc_captured_readers)) start ∗ R ==∗
       rcu_auth γ (open_reader_map s.(coupled_machine))
-          (<[gid := GpDone (list_to_set cert.(gc_snapshot)) start (S epoch)]> gps) (S epoch) ∗
-        gp_done γ gid (list_to_set cert.(gc_snapshot)) start (S epoch) ∗ R.
+          (<[gid := GpDone (list_to_set cert.(gc_captured_readers)) start (S epoch)]> gps) (S epoch) ∗
+        gp_done γ gid (list_to_set cert.(gc_captured_readers)) start (S epoch) ∗ R.
     Proof.
       intros Hrun Hcert.
       pose proof (coupled_run_machine_projection _ _ _ _ Hrun) as Hmachine.

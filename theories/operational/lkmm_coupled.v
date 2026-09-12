@@ -223,7 +223,7 @@ Module LkmmCoupled.
   Theorem coupled_completed_certificate_snapshot_clear P actions s cert :
     coupled_run P (initial_coupled P) actions s ->
     In cert s.(coupled_machine).(gp_certificates) ->
-    forall lock, In lock cert.(gc_snapshot) -> ~ In lock (all_open_readers s.(coupled_machine)).
+    forall lock, In lock cert.(gc_captured_readers) -> ~ In lock (all_open_readers s.(coupled_machine)).
   Proof.
     intros Hrun Hcert.
     pose proof (coupled_run_machine_projection _ _ _ _ Hrun) as Hmachine.

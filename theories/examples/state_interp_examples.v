@@ -86,11 +86,14 @@ Module StateInterpExamples.
 
   Module NestedReaders.
     Definition program := CoreProgram ∅
-      {[0 := SSeq SRcuReadLock (SSeq SRcuReadLock (SSeq SRcuReadUnlock SRcuReadUnlock))]}.
+      {[0 := SSeq SRcuReadLock (SSeq SRcuReadLock (SSeq SRcuReadUnlock SRcuReadUnlock));
+        1 := SSynchronizeRcu]}.
 
-    Example inner_unlock_preserves_outer_token `{!stateG Σ} :
+    Example gp_snapshot_survives_inner_unlock `{!stateG Σ} :
       ⊢ |==> ∃ γ s, state_interp (Σ := Σ) γ s ∗
         thread_token γ 0 (ThreadState SSkip [KSeq SRcuReadUnlock] ∅) ∗
+        thread_token γ 1 (initial_thread SSynchronizeRcu) ∗
+        gp_pending γ.(rcu_name) (gp_encoding 1 0) {[1; 0]} 0 ∗
         reader_token γ.(rcu_name) 0 ∗
         event_fact γ 0 (EAgent 0 0 (LBarrier BarrierRcuLock)) ∗
         event_fact γ 1 (EAgent 0 1 (LBarrier BarrierRcuLock)) ∗
@@ -98,7 +101,8 @@ Module StateInterpExamples.
         ⌜open_readers s.(coupled_machine) 0 = [0]⌝.
     Proof.
       iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & _)".
-      iDestruct (big_sepM_lookup _ _ 0 with "Hthreads") as "Hthread"; first reflexivity.
+      iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[Hthread Hthreads]"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 1 with "Hthreads") as "Hgpthread"; first reflexivity.
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
       { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
@@ -124,6 +128,15 @@ Module StateInterpExamples.
       { change (core_allocation_wf (add_single_event (core_initial_state program) 0
           (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
         apply add_single_event_allocation_wf, core_initial_allocation_wf. }
+      iMod (state_interp_begin_gp program γ _ 1 _ _ with "[$Hstate $Hgpthread]")
+        as "(Hstate & Hgpthread & Hpending)".
+      { apply CoupledStepMachine. eapply StepBeginGp; [split; reflexivity | reflexivity]. }
+      { change (core_allocation_wf (add_single_event
+          (add_single_event (core_initial_state program) 0
+            (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅) 0
+          (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
+        apply add_single_event_allocation_wf, add_single_event_allocation_wf,
+          core_initial_allocation_wf. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
       { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
@@ -144,14 +157,15 @@ Module StateInterpExamples.
         apply add_single_event_allocation_wf, add_single_event_allocation_wf,
           core_initial_allocation_wf. }
       { reflexivity. }
-      iModIntro. iExists γ, _. iFrame "Hstate Hthread Hreader0 Hlock0 Hlock1 Hunlock1".
+      iModIntro. iExists γ, _.
+      iFrame "Hstate Hthread Hgpthread Hpending Hreader0 Hlock0 Hlock1 Hunlock1".
       by iPureIntro.
     Qed.
   End NestedReaders.
 
   Local Lemma waiting_pending gid captured :
     pending_gp_at GP.waiting.(coupled_machine) gid captured <->
-    gid = gp_identity 0 0 /\ captured = ∅.
+    gid = gp_encoding 0 0 /\ captured = ∅.
   Proof.
     split.
     - intros (agent & locks & Hlookup & Hgid & Hcaptured).
@@ -162,7 +176,7 @@ Module StateInterpExamples.
 
   Local Lemma finished_completed gid captured :
     completed_gp_at GP.finished.(coupled_machine) gid captured <->
-    gid = gp_identity 0 0 /\ captured = ∅.
+    gid = gp_encoding 0 0 /\ captured = ∅.
   Proof.
     split.
     - intros (cert & agent & index & Hcert & Hlookup & Hgid & Hcaptured).
@@ -176,7 +190,7 @@ Module StateInterpExamples.
 
   Example waiting_protocol_matches :
     rcu_state_matches GP.waiting.(coupled_machine)
-      {[gp_identity 0 0 := GpPending ∅ 0]}.
+      {[gp_encoding 0 0 := GpPending ∅ 0]}.
   Proof.
     split.
     - intros gid captured. rewrite waiting_pending. split.
@@ -194,7 +208,7 @@ Module StateInterpExamples.
 
   Example finished_protocol_matches :
     rcu_state_matches GP.finished.(coupled_machine)
-      {[gp_identity 0 0 := GpDone ∅ 0 1]}.
+      {[gp_encoding 0 0 := GpDone ∅ 0 1]}.
   Proof.
     split.
     - intros gid captured. split.
@@ -217,7 +231,7 @@ Module StateInterpExamples.
     ~ rcu_state_matches GP.waiting.(coupled_machine) ∅.
   Proof.
     split; first reflexivity. intros [Hpending _].
-    destruct (proj1 (Hpending (gp_identity 0 0) ∅)) as (start & Hlookup).
+    destruct (proj1 (Hpending (gp_encoding 0 0) ∅)) as (start & Hlookup).
     - apply waiting_pending. done.
     - by rewrite lookup_empty in Hlookup.
   Qed.
