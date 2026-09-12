@@ -160,6 +160,17 @@ Module LkmmStateInterp.
       iFrame "Hthreads Hevents". iExists gps. iFrame "Hrcu". by iPureIntro.
     Qed.
 
+    (** Builder steps supply the new generated-prefix condition and leave
+        the machine, hence every ghost resource, unchanged. *)
+    Lemma state_interp_builder_step P γ s s' :
+      coupled_step P s CoupledBuilderAction s' ->
+      state_interp γ s ⊢ state_interp γ s'.
+    Proof.
+      intros Hstep. inversion Hstep; subst.
+      iIntros "(_ & Hthreads & Hevents & Hrcu)".
+      rewrite /state_interp /=. iFrame. by iPureIntro.
+    Qed.
+
     Lemma state_interp_event γ s eid ev :
       state_interp γ s -∗ event_fact γ eid ev -∗
       ⌜lookup_event s.(coupled_machine).(machine_core).(core_events) eid = Some ev⌝.
