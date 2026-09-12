@@ -28,7 +28,7 @@ Module LkmmMachine.
   Definition open_readers (s : state) (agent : agent_id) : list event_id :=
     computed_agent_stack s.(machine_core).(core_events) agent.
 
-  Definition snapshot (s : state) : list event_id :=
+  Definition all_open_readers (s : state) : list event_id :=
     (compute_rcu_matching s.(machine_core).(core_events)).(unmatched_locks).
 
   Definition all_closed (E : event_structure) (locks : list event_id) : Prop :=
@@ -57,7 +57,7 @@ Module LkmmMachine.
       thread.(thread_registers) ∅ ∅ ∅.
 
   Definition begin_gp (s : state) (agent : agent_id) : state :=
-    State s.(machine_core) (<[agent := snapshot s]> s.(pending_gp)) s.(gp_certificates).
+    State s.(machine_core) (<[agent := all_open_readers s]> s.(pending_gp)) s.(gp_certificates).
 
   Definition finish_gp (s : state) (agent : agent_id) (thread : thread_state)
       (locks : list event_id) : state :=
@@ -391,7 +391,7 @@ Module LkmmMachine.
 
   Theorem completed_snapshot_clear P actions s cert :
     run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
-    forall lock, In lock cert.(gc_snapshot) -> ~ In lock (snapshot s).
+    forall lock, In lock cert.(gc_snapshot) -> ~ In lock (all_open_readers s).
   Proof.
     intros Hrun Hcert lock Hlock.
     destruct (run_rcu_safety _ _ _ Hrun) as [_ Hsound].
@@ -402,7 +402,7 @@ Module LkmmMachine.
 
   Lemma captured_reader_blocks_finish P s agent locks lock :
     core_allocation_wf s.(machine_core) -> s.(pending_gp) !! agent = Some locks ->
-    In lock locks -> In lock (snapshot s) -> forall s', ~ step P s (FinishGp agent) s'.
+    In lock locks -> In lock (all_open_readers s) -> forall s', ~ step P s (FinishGp agent) s'.
   Proof.
     intros [HE _] Hpending Hlock Hopen s' Hstep.
     destruct (pending_agent_only_finishes _ _ _ _ _ _ Hstep eq_refl Hpending) as [_ Hclosed].
@@ -469,7 +469,7 @@ Module LkmmMachine.
         run program (initial_state program) prefix waiting /\
         waiting.(pending_gp) !! 1 = Some [2; 1] /\
         open_readers waiting 0 = [1] /\
-        In 1 (snapshot waiting) /\
+        In 1 (all_open_readers waiting) /\
         (forall next, ~ step program waiting (FinishGp 1) next) /\
         run program waiting through_gp finished /\
         finished.(pending_gp) !! 1 = None /\

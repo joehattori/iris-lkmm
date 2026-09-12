@@ -80,22 +80,23 @@ Module LkmmStateInterp.
 
   Lemma initial_open_reader_map P : open_reader_map (initial_state P) = ∅.
   Proof.
-    assert (snapshot (initial_state P) = nil) as Hsnapshot.
-    { unfold snapshot. apply computed_agent_stacks_empty.
+    assert (all_open_readers (initial_state P) = nil) as Hreaders.
+    { unfold all_open_readers. apply computed_agent_stacks_empty.
       - exact (proj1 (core_initial_allocation_wf P)).
       - intros agent. unfold computed_agent_stack.
         by rewrite initial_agent_matching. }
-    unfold open_reader_map. by rewrite Hsnapshot.
+    unfold open_reader_map. by rewrite Hreaders.
   Qed.
 
-  Lemma rcu_state_matches_read_lock s agent thread gps :
+  Lemma rcu_state_matches_emit_rcu s agent thread kind gps :
+    kind <> BarrierSyncRcu ->
     core_allocation_wf s.(machine_core) -> s.(pending_gp) !! agent = None ->
     rcu_state_matches s gps ->
-    rcu_state_matches (with_core s (emit_rcu s agent thread BarrierRcuLock)) gps.
+    rcu_state_matches (with_core s (emit_rcu s agent thread kind)) gps.
   Proof.
-    intros Hwf Hready Hmatches.
+    intros Hkind Hwf Hready Hmatches.
     assert (forall gid captured,
-      pending_gp_at (with_core s (emit_rcu s agent thread BarrierRcuLock)) gid captured <->
+      pending_gp_at (with_core s (emit_rcu s agent thread kind)) gid captured <->
       pending_gp_at s gid captured) as Hpending.
     { intros gid captured. unfold pending_gp_at. cbn.
       split; intros (owner & locks & Hlookup & Hgid & Hcaptured);
@@ -106,7 +107,7 @@ Module LkmmStateInterp.
         by rewrite lookup_insert_ne in Hgid.
       - unfold next_agent_index. cbn. by rewrite lookup_insert_ne. }
     assert (forall eid owner index,
-      lookup_event (emit_rcu s agent thread BarrierRcuLock).(core_events) eid =
+      lookup_event (emit_rcu s agent thread kind).(core_events) eid =
         Some (EAgent owner index (LBarrier BarrierSyncRcu)) <->
       lookup_event s.(machine_core).(core_events) eid =
         Some (EAgent owner index (LBarrier BarrierSyncRcu))) as Hgp.
@@ -268,7 +269,7 @@ Module LkmmStateInterp.
       iFrame "Hthread Hfacts". iSplit; first by iPureIntro; apply Hprefix'.
       rewrite Hthreads'. iFrame "Hthreads Hevents".
       iExists gps. iSplit; first by iPureIntro; apply Hmatches'.
-      by rewrite /open_reader_map /snapshot /= Hmatching.
+      by rewrite /open_reader_map /all_open_readers /= Hmatching.
     Qed.
 
     Lemma state_interp_read_lock P γ s agent s' thread :
@@ -301,8 +302,43 @@ Module LkmmStateInterp.
       iModIntro. rewrite /state_interp /thread_token /event_fact /=.
       iFrame "Hthread Hlock Hreader". iSplit; first by iPureIntro; apply Hprefix'.
       iFrame "Hthreads Hevents". iExists gps. iSplit.
-      { iPureIntro. by apply rcu_state_matches_read_lock. }
+      { iPureIntro. apply rcu_state_matches_emit_rcu; done. }
       by rewrite open_reader_map_read_lock.
+    Qed.
+
+    (** Unlock consumes the innermost reader token. Captured GP snapshots
+        retain the lock's identity after it leaves the open-reader map. *)
+    Lemma state_interp_read_unlock P γ s agent s' thread lock rest :
+      coupled_step P s (CoupledMachineAction (ReadUnlock agent)) s' ->
+      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      open_readers s.(coupled_machine) agent = lock :: rest ->
+      state_interp γ s ∗ thread_token γ agent thread ∗ reader_token γ.(rcu_name) lock ==∗
+      state_interp γ s' ∗
+        thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
+        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+            (LBarrier BarrierRcuUnlock)).
+    Proof.
+      intros Hstep Hwf Hstack.
+      pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
+      inversion Hstep as [m m' b action Hmachine |]; subst.
+      inversion Hmachine as [| |m0 agent0 actual lock0 rest0 [Hlookup Hstmt] Hready Hstack0| |]; subst.
+      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread & Hreader)".
+      iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
+      cbn in Howned.
+      assert (thread = actual) as -> by congruence.
+      iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
+      iMod (ghost_map_update (emitted_thread actual actual.(thread_registers))
+        with "Hthreads Hthread") as "[Hthreads Hthread]".
+      iMod (ghost_map_insert_persist m.(machine_core).(core_next_id)
+        (EAgent agent (next_agent_index m.(machine_core) agent) (LBarrier BarrierRcuUnlock))
+        with "Hevents") as "[Hevents #Hunlock]"; first by apply core_next_id_fresh.
+      iMod (rcu_reader_exit with "[$Hrcu $Hreader]") as "Hrcu".
+      iModIntro. rewrite /state_interp /thread_token /event_fact /=.
+      iFrame "Hthread Hunlock". iSplit; first by iPureIntro; apply Hprefix'.
+      iFrame "Hthreads Hevents". iExists gps. iSplit.
+      { iPureIntro. apply rcu_state_matches_emit_rcu; done. }
+      by rewrite (open_reader_map_read_unlock _ _ _ lock rest Hwf Hstack).
     Qed.
 
     Lemma state_interp_event γ s eid ev :

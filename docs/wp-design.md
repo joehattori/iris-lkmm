@@ -33,9 +33,9 @@ The final graph remains in the execution domain. Ordinary machine steps preserve
 the interpretation, update the acting thread's token, and supply persistent facts
 for newly emitted events. They use allocation well-formedness from the execution
 prefix. Builder steps preserve the interpretation without changing ghost resources.
-Read-lock steps additionally allocate a fresh reader token, including for nested
-locks. Preservation for read-unlock and GP steps, and guarded WP, remain to be
-implemented.
+Read-lock steps allocate a fresh reader token; read-unlock steps consume the
+innermost token while preserving outer readers and captured GP snapshots.
+Preservation for GP steps, and guarded WP, remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from

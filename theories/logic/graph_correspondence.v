@@ -174,7 +174,7 @@ Module LkmmGraphCorrespondence.
     coupled_position P G p ->
     In cert p.(coupled_position_state).(coupled_machine).(gp_certificates) ->
     forall lock, In lock cert.(gc_snapshot) ->
-      ~ In lock (snapshot p.(coupled_position_state).(coupled_machine)).
+      ~ In lock (all_open_readers p.(coupled_position_state).(coupled_machine)).
   Proof.
     intros [Hprefix _] Hcert. by eapply coupled_completed_certificate_snapshot_clear.
   Qed.

@@ -15,13 +15,13 @@ Module LkmmMachineGhost.
   Import RcuMatching LkmmCoreRcu.
 
   Definition open_reader_map (s : LkmmMachine.state) : gmap rscs_id unit :=
-    list_to_map (map (fun lock => (lock, tt)) (snapshot s)).
+    list_to_map (map (fun lock => (lock, tt)) (all_open_readers s)).
 
   Local Lemma dom_open_reader_map s :
-    dom (open_reader_map s) = (list_to_set (snapshot s) : gset rscs_id).
+    dom (open_reader_map s) = (list_to_set (all_open_readers s) : gset rscs_id).
   Proof.
     unfold open_reader_map. rewrite dom_list_to_map_L.
-    induction (snapshot s) as [|lock locks IH]; simpl; first done. by f_equal.
+    induction (all_open_readers s) as [|lock locks IH]; simpl; first done. by f_equal.
   Qed.
 
   Lemma open_reader_map_lookup s lock :
@@ -29,7 +29,7 @@ Module LkmmMachineGhost.
     (open_reader_map s !! lock = Some tt <-> exists agent, In lock (open_readers s agent)).
   Proof.
     intros HE. rewrite <- (unmatched_lock_in_agent_stack _ _ HE).
-    change (open_reader_map s !! lock = Some tt <-> In lock (snapshot s)).
+    change (open_reader_map s !! lock = Some tt <-> In lock (all_open_readers s)).
     rewrite -list_elem_of_In -(elem_of_list_to_set (C := gset rscs_id))
       -dom_open_reader_map elem_of_dom.
     destruct (open_reader_map s !! lock) as [[]|]; naive_solver.
@@ -80,6 +80,53 @@ Module LkmmMachineGhost.
     - intros [[<- _]|(_ & reader & Hin)].
       + exists agent. rewrite Hstacks. case_decide; cbn; naive_solver.
       + exists reader. rewrite Hstacks. case_decide; cbn; naive_solver.
+  Qed.
+
+  Lemma open_reader_map_read_unlock s agent thread lock rest :
+    core_allocation_wf s.(machine_core) ->
+    open_readers s agent = lock :: rest ->
+    open_reader_map (with_core s (emit_rcu s agent thread BarrierRcuUnlock)) =
+      delete lock (open_reader_map s).
+  Proof.
+    intros Hwf Hstack.
+    pose proof Hstack as Hids. unfold open_readers, computed_agent_stack in Hids.
+    destruct (token_stack (compute_agent_match_state s.(machine_core).(core_events) agent) agent)
+      as [|lock_token tokens] eqn:Htokens; first discriminate.
+    injection Hids as <- <-.
+    pose proof (next_event_tail s.(machine_core) agent (LBarrier BarrierRcuUnlock) Hwf) as Htail.
+    pose proof (add_single_event_allocation_wf s.(machine_core) agent thread
+      (LBarrier BarrierRcuUnlock) thread.(thread_registers) ∅ ∅ ∅ Hwf) as Hwf'.
+    assert (forall reader, open_readers (with_core s (emit_rcu s agent thread BarrierRcuUnlock)) reader =
+      if decide (agent = reader) then token_id <$> tokens else open_readers s reader) as Hstacks.
+    { intros reader. unfold open_readers, emit_rcu. cbn.
+      destruct (decide (agent = reader)) as [<-|Hother].
+      - exact (computed_agent_stack_insert_unlock _ _ _
+          (RcuToken _ agent _ RcuTokenUnlock) lock_token tokens Htail eq_refl eq_refl Htokens).
+      - exact (computed_agent_stack_insert_other _ _
+          (EAgent agent (next_agent_index s.(machine_core) agent) (LBarrier BarrierRcuUnlock))
+          (RcuToken _ agent _ RcuTokenUnlock) reader (proj1 Htail) eq_refl Hother). }
+    assert (rcu_rscs (emit_rcu s agent thread BarrierRcuUnlock).(core_events)
+      lock_token.(token_id) s.(machine_core).(core_next_id)) as Hclosed.
+    { apply (proj2 (rcu_rscs_agent_tail_unlock _ _ _
+        (RcuToken _ agent _ RcuTokenUnlock) lock_token tokens _ _
+        Htail eq_refl eq_refl Htokens)). by left. }
+    assert (forall reader,
+      ~ In lock_token.(token_id) (open_readers
+        (with_core s (emit_rcu s agent thread BarrierRcuUnlock)) reader)) as Hnotopen.
+    { intros reader Hin. exact (computed_agent_stack_unmatched _ _ _ _ (proj1 Hwf') Hin Hclosed). }
+    apply map_eq. intros rid. apply option_eq. intros [].
+    rewrite lookup_delete_Some
+      (open_reader_map_lookup (with_core s (emit_rcu s agent thread BarrierRcuUnlock)) rid (proj1 Hwf'))
+      (open_reader_map_lookup s rid (proj1 Hwf)).
+    split.
+    - intros (reader & Hin). split.
+      { intros Heq. apply (Hnotopen reader). by rewrite Heq. }
+      exists reader. rewrite Hstacks in Hin.
+      destruct (decide (agent = reader)) as [<-|]; last done.
+      rewrite Hstack. by right.
+    - intros (Hneq & reader & Hin). exists reader. rewrite Hstacks.
+      destruct (decide (agent = reader)) as [<-|]; last done.
+      rewrite Hstack in Hin. cbn in Hin. naive_solver.
   Qed.
 
   Lemma completed_certificate_enables_iris_finish P actions s cert :

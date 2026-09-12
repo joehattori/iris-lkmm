@@ -22,7 +22,7 @@ Module LkmmCoreToMachine.
   (** Even an empty snapshot has a begin and a finish step.  Finishing
       retains previous certificates and clears the newly pending GP. *)
   Lemma empty_snapshot_gp_run P s agent thread :
-    current s agent thread SSynchronizeRcu -> s.(pending_gp) = ∅ -> snapshot s = [] ->
+    current s agent thread SSynchronizeRcu -> s.(pending_gp) = ∅ -> all_open_readers s = [] ->
     run P s [BeginGp agent; FinishGp agent]
       (State (emit_rcu s agent thread BarrierSyncRcu) ∅
         (GpCertificate s.(machine_core).(core_next_id) [] :: s.(gp_certificates))).

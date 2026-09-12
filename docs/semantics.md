@@ -202,7 +202,7 @@ snapshot is still a pending GP and must take its finish step.
 run projects to a Core run.  `run_rcu_safety` proves the absence of unmatched
 unlocks and the persistence of closed-section witnesses for every completed
 certificate.  `completed_snapshot_clear` proves that captured readers of
-completed GPs are absent from the current open-reader snapshot.  Completion
+completed GPs are absent from `all_open_readers`.  Completion
 also requires all Core threads to finish, no pending GPs, and complete RCU
 matching; execution prefixes may still contain open readers.
 
