@@ -141,6 +141,25 @@ Module LkmmStateInterp.
       iApply (ghost_map_lookup with "Hthreads Hthread").
     Qed.
 
+    Lemma state_interp_silent_step P γ s agent s' thread thread' :
+      coupled_step P s (CoupledMachineAction (Execute (CoreSilent agent))) s' ->
+      s'.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread' ->
+      state_interp γ s ∗ thread_token γ agent thread ==∗
+      state_interp γ s' ∗ thread_token γ agent thread'.
+    Proof.
+      intros Hstep Hlookup.
+      destruct (coupled_silent_step_update_thread _ _ _ _ Hstep) as (next & ->).
+      change (<[agent := next]> s.(coupled_machine).(machine_core).(core_threads) !! agent =
+        Some thread') in Hlookup.
+      rewrite lookup_insert_eq in Hlookup. injection Hlookup as ->.
+      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
+      iMod (ghost_map_update thread' with "Hthreads Hthread") as "[Hthreads Hthread]".
+      iModIntro. rewrite /state_interp /thread_token /=. iFrame "Hthread".
+      iSplit; first by iPureIntro.
+      iFrame "Hthreads Hevents". iExists gps. iFrame "Hrcu". by iPureIntro.
+    Qed.
+
     Lemma state_interp_event γ s eid ev :
       state_interp γ s -∗ event_fact γ eid ev -∗
       ⌜lookup_event s.(coupled_machine).(machine_core).(core_events) eid = Some ev⌝.

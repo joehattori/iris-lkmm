@@ -29,6 +29,42 @@ Module StateInterpExamples.
     iModIntro. iExists γ. iFrame "Hstate H0 H1 Hinit".
   Qed.
 
+  Module SilentAssignment.
+    Definition body := SAssign 0 (EConst 42%Z).
+    Definition program := CoreProgram {[3 := 7%Z]} {[0 := body; 1 := SSynchronizeRcu]}.
+    Definition after_thread := ThreadState SSkip [] {[0 := RegValue 42%Z ∅]}.
+    Definition after := CoupledState
+      (with_core (initial_state program) (update_thread (core_initial_state program) 0 after_thread))
+      (initial_coupled program).(coupled_builder).
+
+    Lemma silent_step :
+      coupled_step program (initial_coupled program)
+        (CoupledMachineAction (Execute (CoreSilent 0))) after.
+    Proof.
+      apply CoupledStepMachine. eapply StepCore with (thread := initial_thread body).
+      - reflexivity.
+      - done.
+      - reflexivity.
+      - eapply StepAssign with (thread := initial_thread body) (dst := 0)
+          (expression := EConst 42%Z) (result := RegValue 42%Z ∅); reflexivity.
+    Qed.
+
+    Example assignment_preserves_other_resources `{!stateG Σ} :
+      ⊢ |==> ∃ γ, state_interp (Σ := Σ) γ after ∗ thread_token γ 0 after_thread ∗
+        thread_token γ 1 (initial_thread SSynchronizeRcu) ∗ event_fact γ 0 (EInitWrite 3 7%Z).
+    Proof.
+      iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & #Hfacts)".
+      iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[H0 Hthreads]"; first reflexivity.
+      iDestruct (big_sepM_delete _ _ 1 with "Hthreads") as "[H1 _]"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 0 with "Hfacts") as "#Hinit"; first reflexivity.
+      iMod (state_interp_silent_step program γ (initial_coupled program) 0 after _ after_thread
+        with "[$Hstate $H0]") as "[Hstate H0]".
+      { apply silent_step. }
+      { reflexivity. }
+      iModIntro. iExists γ. iFrame "Hstate H0 H1 Hinit".
+    Qed.
+  End SilentAssignment.
+
   Local Lemma waiting_pending gid captured :
     pending_gp_at GP.waiting.(coupled_machine) gid captured <->
     gid = gp_identity 0 0 /\ captured = ∅.

@@ -90,6 +90,20 @@ Module LkmmCoupled.
     rf_wf C.(candidate_events) C.(candidate_rf) /\
     co_wf C.(candidate_events) C.(candidate_co).
 
+  (** Silent steps change only the acting thread; this equality retains
+      event indices, generated relations, RCU bookkeeping, and builder state. *)
+  Lemma coupled_silent_step_update_thread P s agent s' :
+    coupled_step P s (CoupledMachineAction (Execute (CoreSilent agent))) s' ->
+    exists thread', s' = CoupledState
+      (with_core s.(coupled_machine)
+        (update_thread s.(coupled_machine).(machine_core) agent thread'))
+      s.(coupled_builder).
+  Proof.
+    intros Hstep. inversion Hstep as [m m' b a Hmachine |]; subst.
+    inversion Hmachine as [s core' a thread Hlookup Hordinary Hpending Hcore | | | |]; subst.
+    inversion Hcore; subst; eexists; reflexivity.
+  Qed.
+
   Lemma coupled_run_trans P s1 actions1 s2 actions2 s3 :
     coupled_run P s1 actions1 s2 -> coupled_run P s2 actions2 s3 ->
     coupled_run P s1 (actions1 ++ actions2) s3.
