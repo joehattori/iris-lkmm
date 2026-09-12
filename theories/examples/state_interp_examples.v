@@ -84,6 +84,44 @@ Module StateInterpExamples.
     Qed.
   End RmwEmission.
 
+  Module NestedReaders.
+    Definition program := CoreProgram ∅ {[0 := SSeq SRcuReadLock SRcuReadLock]}.
+
+    Example nested_locks_have_separate_tokens `{!stateG Σ} :
+      ⊢ |==> ∃ γ s, state_interp (Σ := Σ) γ s ∗
+        thread_token γ 0 (initial_thread SSkip) ∗
+        reader_token γ.(rcu_name) 0 ∗ reader_token γ.(rcu_name) 1 ∗
+        event_fact γ 0 (EAgent 0 0 (LBarrier BarrierRcuLock)) ∗
+        event_fact γ 1 (EAgent 0 1 (LBarrier BarrierRcuLock)) ∗
+        ⌜open_readers s.(coupled_machine) 0 = [1; 0]⌝.
+    Proof.
+      iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & _)".
+      iDestruct (big_sepM_lookup _ _ 0 with "Hthreads") as "Hthread"; first reflexivity.
+      iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
+        as "[Hstate Hthread]".
+      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+        eapply StepSequence; reflexivity. }
+      { reflexivity. }
+      iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
+        as "(Hstate & Hthread & #Hlock0 & Hreader0)".
+      { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
+      { change (core_allocation_wf (core_initial_state program)). apply core_initial_allocation_wf. }
+      iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
+        as "[Hstate Hthread]".
+      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+        eapply StepSkipSequence; reflexivity. }
+      { reflexivity. }
+      iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
+        as "(Hstate & Hthread & #Hlock1 & Hreader1)".
+      { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
+      { change (core_allocation_wf (add_single_event (core_initial_state program) 0
+          (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
+        apply add_single_event_allocation_wf, core_initial_allocation_wf. }
+      iModIntro. iExists γ, _. iFrame "Hstate Hthread Hreader0 Hreader1 Hlock0 Hlock1".
+      by iPureIntro.
+    Qed.
+  End NestedReaders.
+
   Local Lemma waiting_pending gid captured :
     pending_gp_at GP.waiting.(coupled_machine) gid captured <->
     gid = gp_identity 0 0 /\ captured = ∅.

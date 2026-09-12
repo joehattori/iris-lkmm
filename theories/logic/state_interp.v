@@ -88,6 +88,35 @@ Module LkmmStateInterp.
     unfold open_reader_map. by rewrite Hsnapshot.
   Qed.
 
+  Lemma rcu_state_matches_read_lock s agent thread gps :
+    core_allocation_wf s.(machine_core) -> s.(pending_gp) !! agent = None ->
+    rcu_state_matches s gps ->
+    rcu_state_matches (with_core s (emit_rcu s agent thread BarrierRcuLock)) gps.
+  Proof.
+    intros Hwf Hready Hmatches.
+    assert (forall gid captured,
+      pending_gp_at (with_core s (emit_rcu s agent thread BarrierRcuLock)) gid captured <->
+      pending_gp_at s gid captured) as Hpending.
+    { intros gid captured. unfold pending_gp_at. cbn.
+      split; intros (owner & locks & Hlookup & Hgid & Hcaptured);
+        assert (agent <> owner) as Hother by (intros ->; congruence);
+        exists owner, locks.
+      all: split; first done; split; last done.
+      - unfold next_agent_index in Hgid. cbn in Hgid.
+        by rewrite lookup_insert_ne in Hgid.
+      - unfold next_agent_index. cbn. by rewrite lookup_insert_ne. }
+    assert (forall eid owner index,
+      lookup_event (emit_rcu s agent thread BarrierRcuLock).(core_events) eid =
+        Some (EAgent owner index (LBarrier BarrierSyncRcu)) <->
+      lookup_event s.(machine_core).(core_events) eid =
+        Some (EAgent owner index (LBarrier BarrierSyncRcu))) as Hgp.
+    { intros eid owner index. cbn. unfold lookup_event. rewrite lookup_insert_Some.
+      pose proof (core_next_id_fresh _ Hwf) as Hfresh. unfold lookup_event in Hfresh.
+      naive_solver. }
+    unfold rcu_state_matches. setoid_rewrite Hpending.
+    unfold completed_gp_at. cbn. setoid_rewrite Hgp. done.
+  Qed.
+
   Lemma initial_rcu_state_matches P : rcu_state_matches (initial_state P) ∅.
   Proof.
     unfold rcu_state_matches, pending_gp_at, completed_gp_at.
@@ -100,7 +129,7 @@ Module LkmmStateInterp.
   Class stateG Σ := StateG {
     #[local] state_threads_G :: ghost_mapG Σ agent_id thread_state;
     #[local] state_events_G :: ghost_mapG Σ event_id event;
-    #[local] state_rcu_G :: rcuG Σ
+    #[global] state_rcu_G :: rcuG Σ
   }.
 
   Global Instance subG_stateΣ Σ : subG stateΣ Σ -> stateG Σ.
@@ -240,6 +269,40 @@ Module LkmmStateInterp.
       rewrite Hthreads'. iFrame "Hthreads Hevents".
       iExists gps. iSplit; first by iPureIntro; apply Hmatches'.
       by rewrite /open_reader_map /snapshot /= Hmatching.
+    Qed.
+
+    Lemma state_interp_read_lock P γ s agent s' thread :
+      coupled_step P s (CoupledMachineAction (ReadLock agent)) s' ->
+      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      state_interp γ s ∗ thread_token γ agent thread ==∗
+      state_interp γ s' ∗
+        thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
+        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+            (LBarrier BarrierRcuLock)) ∗
+        reader_token γ.(rcu_name) s.(coupled_machine).(machine_core).(core_next_id).
+    Proof.
+      intros Hstep Hwf.
+      pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
+      inversion Hstep as [m m' b action Hmachine |]; subst.
+      inversion Hmachine as [|m0 agent0 actual [Hlookup Hstmt] Hready| | |]; subst.
+      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
+      cbn in Howned.
+      assert (thread = actual) as -> by congruence.
+      iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
+      iMod (ghost_map_update (emitted_thread actual actual.(thread_registers))
+        with "Hthreads Hthread") as "[Hthreads Hthread]".
+      iMod (ghost_map_insert_persist m.(machine_core).(core_next_id)
+        (EAgent agent (next_agent_index m.(machine_core) agent) (LBarrier BarrierRcuLock))
+        with "Hevents") as "[Hevents #Hlock]"; first by apply core_next_id_fresh.
+      iMod (rcu_reader_enter _ _ _ _ m.(machine_core).(core_next_id) with "Hrcu")
+        as "[Hrcu Hreader]"; first by apply open_reader_map_next_fresh.
+      iModIntro. rewrite /state_interp /thread_token /event_fact /=.
+      iFrame "Hthread Hlock Hreader". iSplit; first by iPureIntro; apply Hprefix'.
+      iFrame "Hthreads Hevents". iExists gps. iSplit.
+      { iPureIntro. by apply rcu_state_matches_read_lock. }
+      by rewrite open_reader_map_read_lock.
     Qed.
 
     Lemma state_interp_event γ s eid ev :

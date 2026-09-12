@@ -1941,6 +1941,34 @@ Module RcuMatching.
     exists (CriticalSection lock unlock). done.
   Qed.
 
+  Lemma unmatched_lock_in_agent_stack E lock :
+    event_structure_wf E ->
+    (In lock (compute_rcu_matching E).(unmatched_locks) <->
+      exists agent, In lock (computed_agent_stack E agent)).
+  Proof.
+    intros HE.
+    assert (forall agents, In lock (combine_agent_matchings E agents).(unmatched_locks) <->
+      exists agent, In agent agents /\ In lock (compute_agent_matching E agent).(unmatched_locks))
+      as Hcombine.
+    { induction agents as [|agent agents IH]; cbn; first naive_solver.
+      rewrite in_app_iff, IH. naive_solver. }
+    unfold compute_rcu_matching. rewrite Hcombine. split.
+    - intros (agent & _ & Hin). apply in_map_iff in Hin as (token & <- & Hin).
+      apply stacked_tokens_spec in Hin as (owner & stack & Hstack & Hin).
+      destruct (compute_agent_match_state_wf E agent HE) as [Hstacks _].
+      destruct (Hstacks owner stack Hstack token Hin) as (Htrace & Howner & _).
+      pose proof (rcu_agent_token_trace_lookup E agent token Htrace) as [Hagent _].
+      assert (owner = agent) as -> by congruence.
+      exists agent. apply in_map_iff. exists token. split; first done.
+      unfold token_stack. by rewrite Hstack.
+    - intros (agent & Hin). apply in_map_iff in Hin as (token & <- & Hin).
+      destruct (match_stacks_wf_token_stack _ _ _ _ _
+        (proj1 (compute_agent_match_state_wf E agent HE)) Hin) as [Htrace _].
+      exists agent. split; first by eapply rcu_agent_in_rcu_agents.
+      apply in_map_iff. exists token. split; first done.
+      by apply token_stack_in_stacked_tokens in Hin.
+  Qed.
+
   Lemma rcu_matching_complete_agent_stack E agent :
     event_structure_wf E -> rcu_matching_complete E -> computed_agent_stack E agent = [].
   Proof.

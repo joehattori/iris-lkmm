@@ -2,6 +2,8 @@ From Stdlib Require Import List.
 From stdpp Require Import fin_map_dom gmap tactics.
 From iris.base_logic Require Import invariants.
 From iris.proofmode Require Import proofmode.
+From iris_lkmm.lkmm Require Import rcu_matching.
+From iris_lkmm.lang Require Import core_rcu.
 From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
 From iris_lkmm.logic Require Import rcu_ghost.
 
@@ -10,6 +12,7 @@ From iris_lkmm.logic Require Import rcu_ghost.
     explicit resources; a machine certificate alone does not manufacture them. *)
 Module LkmmMachineGhost.
   Import LkmmMachine LkmmCoupled RcuGhost.
+  Import RcuMatching LkmmCoreRcu.
 
   Definition open_reader_map (s : LkmmMachine.state) : gmap rscs_id unit :=
     list_to_map (map (fun lock => (lock, tt)) (snapshot s)).
@@ -19,6 +22,64 @@ Module LkmmMachineGhost.
   Proof.
     unfold open_reader_map. rewrite dom_list_to_map_L.
     induction (snapshot s) as [|lock locks IH]; simpl; first done. by f_equal.
+  Qed.
+
+  Lemma open_reader_map_lookup s lock :
+    event_structure_wf s.(machine_core).(core_events) ->
+    (open_reader_map s !! lock = Some tt <-> exists agent, In lock (open_readers s agent)).
+  Proof.
+    intros HE. rewrite <- (unmatched_lock_in_agent_stack _ _ HE).
+    change (open_reader_map s !! lock = Some tt <-> In lock (snapshot s)).
+    rewrite -list_elem_of_In -(elem_of_list_to_set (C := gset rscs_id))
+      -dom_open_reader_map elem_of_dom.
+    destruct (open_reader_map s !! lock) as [[]|]; naive_solver.
+  Qed.
+
+  Lemma open_reader_map_next_fresh s :
+    core_allocation_wf s.(machine_core) ->
+    open_reader_map s !! s.(machine_core).(core_next_id) = None.
+  Proof.
+    intros Hwf. apply eq_None_not_Some. intros [[] Hopen].
+    apply (open_reader_map_lookup _ _ (proj1 Hwf)) in Hopen as (agent & Hin).
+    destruct (computed_agent_stack_lookup _ _ _ (proj1 Hwf) Hin) as (index & Hlookup).
+    by rewrite (core_next_id_fresh _ Hwf) in Hlookup.
+  Qed.
+
+  Lemma open_reader_map_read_lock s agent thread :
+    core_allocation_wf s.(machine_core) ->
+    open_reader_map (with_core s (emit_rcu s agent thread BarrierRcuLock)) =
+      <[s.(machine_core).(core_next_id) := tt]> (open_reader_map s).
+  Proof.
+    intros Hwf.
+    pose proof (next_event_tail s.(machine_core) agent (LBarrier BarrierRcuLock) Hwf) as Htail.
+    pose proof (add_single_event_allocation_wf s.(machine_core) agent thread
+      (LBarrier BarrierRcuLock) thread.(thread_registers) ∅ ∅ ∅ Hwf) as Hwf'.
+    pose proof (open_reader_map_next_fresh _ Hwf) as Hfresh.
+    apply map_eq. intros lock. apply option_eq. intros [].
+    rewrite lookup_insert_Some
+      (open_reader_map_lookup (with_core s (emit_rcu s agent thread BarrierRcuLock)) lock (proj1 Hwf'))
+      (open_reader_map_lookup s lock (proj1 Hwf)).
+    assert (forall reader, open_readers (with_core s (emit_rcu s agent thread BarrierRcuLock)) reader =
+      if decide (agent = reader) then s.(machine_core).(core_next_id) :: open_readers s reader
+      else open_readers s reader) as Hstacks.
+    { intros reader. unfold open_readers, emit_rcu. cbn.
+      destruct (decide (agent = reader)) as [<-|Hother].
+      - exact (computed_agent_stack_insert_lock _ _ _
+          (RcuToken _ agent _ RcuTokenLock) Htail eq_refl eq_refl).
+      - exact (computed_agent_stack_insert_other _ _
+          (EAgent agent (next_agent_index s.(machine_core) agent) (LBarrier BarrierRcuLock))
+          (RcuToken _ agent _ RcuTokenLock) reader (proj1 Htail) eq_refl Hother). }
+    assert (forall reader, ~ In s.(machine_core).(core_next_id) (open_readers s reader)) as Hnotopen.
+    { intros reader Hin.
+      assert (open_reader_map s !! s.(machine_core).(core_next_id) = Some tt) as Hlookup.
+      { apply (open_reader_map_lookup _ _ (proj1 Hwf)). by exists reader. }
+      by rewrite Hfresh in Hlookup. }
+    split.
+    - intros (reader & Hin). rewrite Hstacks in Hin.
+      destruct (decide (agent = reader)); cbn in Hin; naive_solver.
+    - intros [[<- _]|(_ & reader & Hin)].
+      + exists agent. rewrite Hstacks. case_decide; cbn; naive_solver.
+      + exists reader. rewrite Hstacks. case_decide; cbn; naive_solver.
   Qed.
 
   Lemma completed_certificate_enables_iris_finish P actions s cert :
