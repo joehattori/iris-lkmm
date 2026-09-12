@@ -27,8 +27,10 @@ specializes Core assertions to these witnesses.
 Stage 3 starts with the [state interpretation](../theories/logic/state_interp.v):
 authoritative thread and emitted-event maps, the builder's generated-prefix
 invariant, and RCU resources matching current readers, pending GPs, and completed
-certificates. The final graph remains in the execution domain. Initial allocation,
-step preservation, and guarded WP remain to be proved.
+certificates. Its allocation theorem supplies initial thread tokens and persistent
+initialization-event facts for any program, without a final-graph premise.
+The final graph remains in the execution domain; step preservation and guarded
+WP remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
@@ -39,8 +41,8 @@ cover the read-before-write trace, GP state omitted by Core projection, and rena
 
 ## Remaining stages
 
-3. **State interpretation and WP:** allocate the initial Iris resources,
-   maintain them across steps, and define the guarded WP.
+3. **State interpretation and WP:** maintain the allocated Iris resources
+   across steps and define the guarded WP.
 4. **Structural rules:** consequence, framing, sequencing, assignment,
    branching, and fixed-agent parallel composition.
 5. **Memory rules:** begin with initialization, read-only loads, and stores,

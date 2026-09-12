@@ -11,6 +11,24 @@ Module StateInterpExamples.
   Import LkmmMachine LkmmCoupled RcuGhost LkmmStateInterp.
   Module GP := GraphCorrespondenceExamples.GpState.
 
+  Definition allocation_program :=
+    CoreProgram {[3 := 7%Z]} {[0 := SRcuReadLock; 1 := SSynchronizeRcu]}.
+
+  (** Initial thread ownership is separate, while initialization facts can
+      be shared. RCU statements in the program have not yet opened readers/GPs. *)
+  Example initial_resources_for_two_agents `{!stateG Σ} :
+    ⊢ |==> ∃ γ, state_interp (Σ := Σ) γ (initial_coupled allocation_program) ∗
+      thread_token γ 0 (initial_thread SRcuReadLock) ∗
+      thread_token γ 1 (initial_thread SSynchronizeRcu) ∗
+      event_fact γ 0 (EInitWrite 3 7%Z) ∗ event_fact γ 0 (EInitWrite 3 7%Z).
+  Proof.
+    iMod (state_interp_alloc allocation_program) as (γ) "(Hstate & Hthreads & #Hfacts)".
+    iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[H0 Hthreads]"; first reflexivity.
+    iDestruct (big_sepM_delete _ _ 1 with "Hthreads") as "[H1 _]"; first reflexivity.
+    iDestruct (big_sepM_lookup _ _ 0 with "Hfacts") as "#Hinit"; first reflexivity.
+    iModIntro. iExists γ. iFrame "Hstate H0 H1 Hinit".
+  Qed.
+
   Local Lemma waiting_pending gid captured :
     pending_gp_at GP.waiting.(coupled_machine) gid captured <->
     gid = gp_identity 0 0 /\ captured = ∅.

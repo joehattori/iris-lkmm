@@ -2,11 +2,14 @@ From Stdlib Require Import List.
 From stdpp Require Import gmap countable.
 From iris.base_logic.lib Require Import ghost_map.
 From iris.proofmode Require Import proofmode.
+From iris_lkmm.lkmm Require Import rcu_matching.
+From iris_lkmm.lang Require Import core_rcu.
 From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled rcu_builder.
 From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost.
 
 Module LkmmStateInterp.
   Import LkmmMachine LkmmCoupled RcuBuilder RcuGhost LkmmMachineGhost.
+  Import RcuMatching LkmmCoreRcu.
 
   (** A waiting agent emits no events until GP finish. Its local event index
       identifies the GP before the global event ID is allocated. *)
@@ -44,6 +47,22 @@ Module LkmmStateInterp.
       | GpPending _ start => start <= length s.(gp_certificates)
       | GpDone _ start finish => start < finish /\ finish <= length s.(gp_certificates)
       end).
+
+  Lemma initial_open_reader_map P : open_reader_map (initial_state P) = ∅.
+  Proof.
+    assert (snapshot (initial_state P) = nil) as Hsnapshot.
+    { unfold snapshot. apply computed_agent_stacks_empty.
+      - exact (proj1 (core_initial_allocation_wf P)).
+      - intros agent. unfold computed_agent_stack.
+        by rewrite initial_agent_matching. }
+    unfold open_reader_map. by rewrite Hsnapshot.
+  Qed.
+
+  Lemma initial_rcu_state_matches P : rcu_state_matches (initial_state P) ∅.
+  Proof.
+    unfold rcu_state_matches, pending_gp_at, completed_gp_at.
+    simpl. setoid_rewrite lookup_empty. naive_solver.
+  Qed.
 
   Definition stateΣ : gFunctors :=
     #[ghost_mapΣ agent_id thread_state; ghost_mapΣ event_id event; rcuΣ].
@@ -87,6 +106,32 @@ Module LkmmStateInterp.
       ∃ gps, ⌜rcu_state_matches s.(coupled_machine) gps⌝ ∗
         rcu_auth γ.(rcu_name) (open_reader_map s.(coupled_machine)) gps
           (length s.(coupled_machine).(gp_certificates)).
+
+    (** Allocation uses only the initial program state, with no final-graph
+        or completion premise. Thread tokens can be distributed to agents. *)
+    Lemma state_interp_alloc P :
+      ⊢ |==> ∃ γ, state_interp γ (initial_coupled P) ∗
+        ([∗ map] agent ↦ body ∈ P.(program_agents),
+          thread_token γ agent (initial_thread body)) ∗
+        ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev).
+    Proof.
+      iMod (ghost_map_alloc (initial_thread <$> P.(program_agents)))
+        as (γthreads) "[Hthreads Htokens]".
+      iMod (ghost_map_alloc_empty (K := event_id) (V := event)) as (γevents) "Hevents".
+      iMod (ghost_map_insert_persist_big (core_initial_events P) with "Hevents")
+        as "[Hevents #Hfacts]"; first apply map_disjoint_empty_r.
+      iEval (rewrite right_id_L) in "Hevents".
+      iMod rcu_ghost_alloc as (γrcu) "Hrcu".
+      iModIntro. iExists (StateNames γthreads γevents γrcu).
+      iSplitL "Hthreads Hevents Hrcu".
+      - rewrite /state_interp /=. iSplit.
+        { iPureIntro. apply (coupled_run_generated_prefix P nil (initial_coupled P)).
+          constructor. }
+        iFrame "Hthreads Hevents". iExists ∅. iSplit.
+        { iPureIntro. apply initial_rcu_state_matches. }
+        by rewrite initial_open_reader_map.
+      - rewrite /thread_token /event_fact /= big_sepM_fmap. iFrame "Htokens Hfacts".
+    Qed.
 
     Lemma state_interp_thread γ s agent thread :
       state_interp γ s -∗ thread_token γ agent thread -∗
