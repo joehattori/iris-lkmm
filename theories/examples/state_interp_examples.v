@@ -48,6 +48,42 @@ Module StateInterpExamples.
     Qed.
   End SilentAssignment.
 
+  Module RmwEmission.
+    Definition body := SXchg 0 RmwRelaxed (EConst 0) (EConst 1).
+    Definition program := CoreProgram {[0 := 0%Z]} {[0 := body]}.
+    Definition result_regs observed : registers := {[0 := RegValue observed {[1]}]}.
+    Definition after observed := CoupledState
+      (with_core (initial_state program)
+        (add_rmw_events (core_initial_state program) 0 (initial_thread body)
+          AccessOnce 0 observed 1%Z (result_regs observed) ∅ ∅ ∅))
+      (initial_coupled program).(coupled_builder).
+
+    Example exchange_allocates_both_event_facts `{!stateG Σ} observed :
+      ⊢ |==> ∃ γ, state_interp (Σ := Σ) γ (after observed) ∗
+        thread_token γ 0 (emitted_thread (initial_thread body) (result_regs observed)) ∗
+        event_fact γ 0 (EInitWrite 0 0%Z) ∗
+        event_fact γ 1 (EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 observed)) ∗
+        event_fact γ 2 (EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z)).
+    Proof.
+      assert (coupled_step program (initial_coupled program)
+        (CoupledMachineAction (Execute (CoreObserve 0 observed))) (after observed)) as Hstep.
+      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+        eapply StepXchg with (dst := 0) (mode := RmwRelaxed) (address := EConst 0)
+          (expression := EConst 1) (result := RegValue 1%Z ∅); try reflexivity.
+        by eexists. }
+      iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & #Hfacts)".
+      iDestruct (big_sepM_lookup _ _ 0 with "Hthreads") as "Hthread"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 0 with "Hfacts") as "#Hinit"; first reflexivity.
+      iMod (state_interp_execute _ _ _ _ _ _ _ Hstep with "[$Hstate $Hthread]")
+        as "(Hstate & Hthread & #Hnew)".
+      { apply core_initial_allocation_wf. }
+      { reflexivity. }
+      iDestruct (big_sepM_lookup _ _ 1 with "Hnew") as "#Hread"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 2 with "Hnew") as "#Hwrite"; first reflexivity.
+      iModIntro. iExists γ. iFrame "Hstate Hthread Hinit Hread Hwrite".
+    Qed.
+  End RmwEmission.
+
   Local Lemma waiting_pending gid captured :
     pending_gp_at GP.waiting.(coupled_machine) gid captured <->
     gid = gp_identity 0 0 /\ captured = ∅.

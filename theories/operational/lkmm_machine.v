@@ -221,6 +221,43 @@ Module LkmmMachine.
       (compute_agent_match_state s.(machine_core).(core_events) agent).(match_unmatched_unlocks)
         = [].
 
+  Lemma execute_preserves_rcu_matching P s a s' :
+    step P s (Execute a) s' -> core_allocation_wf s.(machine_core) ->
+    compute_rcu_matching s'.(machine_core).(core_events) =
+      compute_rcu_matching s.(machine_core).(core_events).
+  Proof.
+    intros Hstep Hwf.
+    inversion Hstep as [m core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
+    destruct Hcore; cbn in Hthread; simplify_eq; try done;
+      try solve [rewrite H0 in Hordinary; done].
+    all: cbn; try (rewrite !compute_rcu_matching_insert_non_rcu; try done).
+    all: try solve [apply core_next_id_fresh; done].
+    all: try solve [apply lookup_insert_None; split; last lia;
+      apply eq_None_not_Some; intros [ev Hlookup];
+      destruct Hwf as (_ & Hids & _); specialize (Hids _ _ Hlookup); lia].
+    destruct kind; done.
+  Qed.
+
+  Lemma execute_preserves_gp_events P s a s' eid agent index :
+    step P s (Execute a) s' -> core_allocation_wf s.(machine_core) ->
+    lookup_event s'.(machine_core).(core_events) eid =
+      Some (EAgent agent index (LBarrier BarrierSyncRcu)) <->
+    lookup_event s.(machine_core).(core_events) eid =
+      Some (EAgent agent index (LBarrier BarrierSyncRcu)).
+  Proof.
+    intros Hstep (_ & Hids & _).
+    inversion Hstep as [m core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
+    destruct Hcore; cbn in Hthread; simplify_eq; try done;
+      try solve [rewrite H0 in Hordinary; done].
+    all: cbn; unfold lookup_event;
+      repeat match goal with
+      | |- context [<[?key := ?ev]> ?events !! ?queried] =>
+          rewrite (lookup_insert_Some events key queried)
+      end;
+      unfold allocated_ids_below, lookup_event in Hids; try (naive_solver lia).
+    destruct kind; cbn; naive_solver lia.
+  Qed.
+
   Local Lemma emit_rcu_no_underflow s agent thread kind :
     core_allocation_wf s.(machine_core) -> no_unmatched_unlocks s ->
     (kind = BarrierRcuUnlock -> open_readers s agent <> []) ->

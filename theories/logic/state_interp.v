@@ -48,6 +48,36 @@ Module LkmmStateInterp.
       | GpDone _ start finish => start < finish /\ finish <= length s.(gp_certificates)
       end).
 
+  Lemma rcu_state_matches_execute P s a s' gps :
+    LkmmMachine.step P s (Execute a) s' -> core_allocation_wf s.(machine_core) ->
+    rcu_state_matches s gps -> rcu_state_matches s' gps.
+  Proof.
+    intros Hstep Hwf Hmatches.
+    inversion Hstep as [m core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
+    change (s.(pending_gp) !! core_action_agent a = None) in Hready.
+    assert (forall gid captured,
+      pending_gp_at (with_core s core') gid captured <-> pending_gp_at s gid captured)
+      as Hpending.
+    { intros gid captured. unfold pending_gp_at. cbn.
+      split; intros (agent & locks & Hlookup & Hgid & Hcaptured);
+        assert (core_action_agent a <> agent) as Hother by (intros <-; congruence);
+        pose proof (core_step_other_index _ _ _ _ _ Hcore Hother) as Hindex;
+        exists agent, locks.
+      all: split; first done; split; last done.
+      - by rewrite Hindex in Hgid.
+      - by rewrite Hindex. }
+    assert (forall gid captured,
+      completed_gp_at (with_core s core') gid captured <-> completed_gp_at s gid captured)
+      as Hcompleted.
+    { intros gid captured. unfold completed_gp_at. cbn.
+      split; intros (cert & agent & index & Hcert & Hlookup & Hgid & Hcaptured);
+        exists cert, agent, index.
+      all: split; first done; split; last done.
+      all: by apply (execute_preserves_gp_events _ _ _ _ _ _ _ Hstep Hwf). }
+    unfold rcu_state_matches. setoid_rewrite Hpending. setoid_rewrite Hcompleted.
+    done.
+  Qed.
+
   Lemma initial_open_reader_map P : open_reader_map (initial_state P) = ∅.
   Proof.
     assert (snapshot (initial_state P) = nil) as Hsnapshot.
@@ -169,6 +199,47 @@ Module LkmmStateInterp.
       intros Hstep. inversion Hstep; subst.
       iIntros "(_ & Hthreads & Hevents & Hrcu)".
       rewrite /state_interp /=. iFrame. by iPureIntro.
+    Qed.
+
+    (** Ordinary execution updates its thread and allocates facts for exactly
+        the new events (two for a successful RMW). Allocation well-formedness
+        comes from the execution prefix; no final-graph premise is needed. *)
+    Lemma state_interp_execute P γ s a s' thread thread' :
+      coupled_step P s (CoupledMachineAction (Execute a)) s' ->
+      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      s'.(coupled_machine).(machine_core).(core_threads) !! action_agent a = Some thread' ->
+      state_interp γ s ∗ thread_token γ (action_agent a) thread ==∗
+      state_interp γ s' ∗ thread_token γ (action_agent a) thread' ∗
+        ([∗ map] eid ↦ ev ∈ s'.(coupled_machine).(machine_core).(core_events) ∖
+            s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev).
+    Proof.
+      intros Hstep Hwf Hlookup.
+      pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
+      inversion Hstep as [m m' b action Hmachine |]; subst.
+      pose proof (execute_preserves_rcu_matching _ _ _ _ Hmachine Hwf) as Hmatching.
+      inversion Hmachine as [m0 core' action thread0 Hthread Hordinary Hready Hcore | | | |]; subst.
+      assert (core'.(core_threads) = <[action_agent a := thread']> m.(machine_core).(core_threads))
+        as Hthreads'.
+      { assert (exists next, core'.(core_threads) =
+          <[action_agent a := next]> m.(machine_core).(core_threads)) as [next Heq].
+        { destruct Hcore; eexists; reflexivity. }
+        cbn in Hlookup. rewrite Heq lookup_insert_eq in Hlookup. by simplify_eq. }
+      assert (m.(machine_core).(core_events) ⊆ core'.(core_events)) as Hevents.
+      { apply map_subseteq_spec. by eapply core_step_events_included. }
+      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
+      pose proof (rcu_state_matches_execute _ _ _ _ gps Hmachine Hwf Hmatches) as Hmatches'.
+      iMod (ghost_map_update thread' with "Hthreads Hthread") as "[Hthreads Hthread]".
+      iMod (ghost_map_insert_persist_big (core'.(core_events) ∖ m.(machine_core).(core_events))
+        with "Hevents") as "[Hevents #Hfacts]".
+      { apply map_disjoint_difference_l1. done. }
+      iEval (rewrite map_union_comm; last by apply map_disjoint_difference_l1) in "Hevents".
+      iEval (rewrite map_difference_union //) in "Hevents".
+      iModIntro. rewrite /state_interp /thread_token /event_fact /=.
+      iFrame "Hthread Hfacts". iSplit; first by iPureIntro; apply Hprefix'.
+      rewrite Hthreads'. iFrame "Hthreads Hevents".
+      iExists gps. iSplit; first by iPureIntro; apply Hmatches'.
+      by rewrite /open_reader_map /snapshot /= Hmatching.
     Qed.
 
     Lemma state_interp_event γ s eid ev :

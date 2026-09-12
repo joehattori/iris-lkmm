@@ -164,7 +164,7 @@ Module LkmmCoupled.
       + intros edge Hedge. exact (HCTRL' edge (HCTRL edge Hedge)).
   Qed.
 
-  Local Lemma step_preserves_generated_prefix P s a s' :
+  Lemma step_preserves_generated_prefix P s a s' :
     coupled_step P s a s' -> core_allocation_wf s.(coupled_machine).(machine_core) ->
     generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw) ->
     generated_prefix s'.(coupled_machine) s'.(coupled_builder).(bs_raw).

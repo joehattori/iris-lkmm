@@ -29,10 +29,11 @@ authoritative thread and emitted-event maps, the builder's generated-prefix
 invariant, and RCU resources matching current readers, pending GPs, and completed
 certificates. Its allocation theorem supplies initial thread tokens and persistent
 initialization-event facts for any program, without a final-graph premise.
-The final graph remains in the execution domain. Silent coupled steps preserve
-the interpretation and update the acting thread's token. Builder steps preserve
-it without changing ghost resources. Preservation for event-generating and RCU
-machine steps, and guarded WP, remain to be implemented.
+The final graph remains in the execution domain. Ordinary machine steps preserve
+the interpretation, update the acting thread's token, and supply persistent facts
+for newly emitted events. They use allocation well-formedness from the execution
+prefix. Builder steps preserve the interpretation without changing ghost resources.
+Preservation for RCU machine steps and guarded WP remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from

@@ -1743,6 +1743,19 @@ Module RcuMatching.
     by rewrite (rcu_agent_token_trace_insert_non_rcu E eid ev agent Hfresh Hnone).
   Qed.
 
+  Lemma compute_rcu_matching_insert_non_rcu E eid ev :
+    lookup_event E eid = None ->
+    rcu_token_of_entry (eid, ev) = None ->
+    compute_rcu_matching (<[eid := ev]> E) = compute_rcu_matching E.
+  Proof.
+    intros Hfresh Hnone. unfold compute_rcu_matching, rcu_agents.
+    rewrite (rcu_token_trace_insert_non_rcu E eid ev Hfresh Hnone).
+    induction (nodup Nat.eq_dec (token_agent <$> rcu_token_trace E)) as [|agent agents IH];
+      cbn; first done.
+    unfold compute_agent_matching.
+    by rewrite (compute_agent_state_insert_non_rcu E eid ev agent Hfresh Hnone), IH.
+  Qed.
+
   Lemma compute_agent_state_insert_tail E eid ev token :
     rcu_agent_tail E eid ev ->
     rcu_token_of_entry (eid, ev) = Some token ->
