@@ -41,10 +41,14 @@ result; scheduling and composition of the per-agent judgments belong to the
 surrounding execution proof. This separation keeps primitive reasoning local
 while leaving the shared execution graph fixed.
 
+Consequence allows clients to weaken postconditions without revisiting the
+operational proof. Preconditions are ordinary Iris assertions, so strengthening
+them uses Iris entailment.
+
 ## Remaining work
 
-- **Structural rules:** derive consequence, framing, sequencing, assignment,
-  branching, and fixed-agent parallel composition.
+- **Structural rules:** derive framing, sequencing, assignment, branching,
+  and fixed-agent parallel composition.
 - **Memory rules:** design the ownership assertions and specifications for
   initialization, read-only loads, and stores, then extend to the selected
   access modes, fences, dependencies, and RMWs. Prove the initialized-load WP

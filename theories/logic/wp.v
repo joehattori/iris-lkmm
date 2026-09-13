@@ -85,6 +85,38 @@ Module LkmmWp.
       wp P G γ E agent v Φ ⊣⊢ wp_body P G γ (wp P G γ) E agent v Φ.
     Proof. apply (fixpoint_unfold (wp_body P G γ)). Qed.
 
+    (** The postcondition transformation may own resources and update them
+        at [E]. It is carried through the guarded steps and used at completion;
+        the program, candidate, agent, and mask remain fixed. *)
+    Lemma wp_consequence P G γ E agent v Φ Ψ :
+      wp P G γ E agent v Φ -∗
+      (∀ v', Φ v' ={E}=∗ Ψ v') -∗ wp P G γ E agent v Ψ.
+    Proof.
+      iIntros "Hwp Hpost". iLöb as "IH" forall (v).
+      rewrite !wp_unfold /wp_body.
+      destruct v as [[thread index actions] pending].
+      destruct thread as [statement continuation regs].
+      destruct statement, continuation, pending; simpl in *;
+        try (iMod "Hwp" as "HΦ"; iApply ("Hpost" with "HΦ")).
+      all: iIntros (prefix s a suffix final) "%Hcurrent Hstate";
+        iMod ("Hwp" $! prefix s a suffix final with "[] Hstate") as "Hstep"; first done.
+      all: iModIntro; iIntros (next) "%Hnext";
+        iMod ("Hstep" $! next with "[]") as "Hnext"; first done.
+      all: iModIntro; iNext;
+        iMod "Hnext" as (v') "(%Hview & Hstate & Hthread & Hwp)";
+        iModIntro; iExists v'; iFrame "Hstate Hthread";
+        iSplit; first done.
+      all: iApply ("IH" with "Hwp Hpost").
+    Qed.
+
+    Lemma wp_mono P G γ E agent v Φ Ψ :
+      (forall v', Φ v' ⊢ Ψ v') ->
+      wp P G γ E agent v Φ ⊢ wp P G γ E agent v Ψ.
+    Proof.
+      intros Hpost. iIntros "Hwp". iApply (wp_consequence with "Hwp").
+      iIntros (v') "HΦ". iModIntro. by iApply Hpost.
+    Qed.
+
     (** Lift an update at mask [E] for every successor compatible with [G].
         The handler may own additional resources for the operation; this
         rule supplies the state/thread resources and handles the later and masks. *)

@@ -133,5 +133,21 @@ Module WpBodyExamples.
       iExists _, _. iSplit; first done. cbn in Hindex.
       iEval (rewrite Hindex) in "Hread Hwrite". iFrame "HR Hread Hwrite".
     Qed.
+    (** Reuse the exchange proof, weaken its exact-view postcondition, and
+        consume an owned update only when the exchange has completed. *)
+    Example exchange_consequence `{!invGS Σ, !stateG Σ} P G γ E (R S : iProp Σ) :
+      ▷ R -∗ (R ={E}=∗ S) -∗
+      wp P G γ E 0 before (fun v =>
+        ⌜thread_complete v.(coupled_view_core).(view_thread) /\
+          v.(coupled_view_core).(view_event_index) = 2⌝ ∗ S ∗
+        ∃ write, event_fact γ write write_event).
+    Proof.
+      iIntros "HR Hupdate". iApply (wp_consequence with "[HR] [Hupdate]").
+      { iApply (exchange_records_both_events with "HR"). }
+      iIntros (v) "Hpost".
+      iDestruct "Hpost" as (read observed) "(-> & HR & _ & #Hwrite & _)".
+      iMod ("Hupdate" with "HR") as "HS".
+      iModIntro. iSplit; first done. iFrame "HS". iExists _. iExact "Hwrite".
+    Qed.
   End RmwEmission.
 End WpBodyExamples.
