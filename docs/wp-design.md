@@ -53,7 +53,11 @@ an operation's resource-update proof, covering every compatible successor.
 `wp_lift_silent_step` specializes it to deterministic silent steps using
 the existing preservation lemma. An assignment regression checks the resulting
 register value and action history while retaining an arbitrary owned assertion.
-Other operation-specific rules remain to be implemented.
+The [reader WP rules](../theories/logic/wp_rcu.v) identify emitted events by
+their agent-local positions in `G`. Read-lock supplies a reader token;
+read-unlock consumes the token for its matching lock in `G`, proved to be
+the current stack head. A nested-reader WP regression retains the outer token
+through the inner unlock. GP and other operation-specific rules remain.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
@@ -71,7 +75,7 @@ cover the read-before-write trace, GP state omitted by Core projection, and rena
 5. **Memory rules:** begin with initialization, read-only loads, and stores,
    then extend to the selected access modes, fences, dependencies, and RMWs.
    Prove the initialized-load WP example while retaining permitted future sources.
-6. **RCU rules:** connect the reader/GP protocol to WP and establish the client
+6. **RCU rules:** complete the GP rules and establish the client
    ownership protocol needed for reclamation.
 7. **Adequacy and prefix safety:** justify the initial resources and prove the
    claims for coupled executions. Current positions have complete Core witnesses;

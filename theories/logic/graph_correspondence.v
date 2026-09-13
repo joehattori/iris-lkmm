@@ -118,6 +118,16 @@ Module LkmmGraphCorrespondence.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv. done.
   Qed.
 
+  Lemma project_coupled_thread_index p agent v :
+    project_coupled_thread p agent = Some v ->
+    next_agent_index p.(coupled_position_state).(coupled_machine).(machine_core) agent =
+      v.(coupled_view_core).(view_event_index).
+  Proof.
+    unfold project_coupled_thread, project_thread.
+    intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
+    apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv. done.
+  Qed.
+
   Lemma coupled_position_to_core_actions p :
     position_actions (coupled_position_to_core p) = coupled_core_actions (coupled_position_actions p).
   Proof. symmetry. apply coupled_core_actions_app. Qed.
