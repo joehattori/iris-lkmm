@@ -129,6 +129,29 @@ Module LkmmMachineGhost.
       rewrite Hstack in Hin. cbn in Hin. naive_solver.
   Qed.
 
+  Lemma all_closed_open_reader_map_disjoint s locks :
+    event_structure_wf s.(machine_core).(core_events) ->
+    all_closed s.(machine_core).(core_events) locks ->
+    (list_to_set locks : gset rscs_id) ## dom (open_reader_map s).
+  Proof.
+    intros Hwf Hclosed. apply elem_of_disjoint. intros lock Hcaptured Hopen.
+    rewrite elem_of_list_to_set list_elem_of_In in Hcaptured.
+    apply elem_of_dom in Hopen as [[] Hlookup].
+    apply (open_reader_map_lookup _ _ Hwf) in Hlookup as (agent & Hin).
+    destruct (Hclosed lock Hcaptured) as (unlock & Hmatched).
+    by eapply computed_agent_stack_unmatched.
+  Qed.
+
+  Lemma open_reader_map_finish_gp s agent thread locks :
+    core_allocation_wf s.(machine_core) ->
+    open_reader_map (finish_gp s agent thread locks) = open_reader_map s.
+  Proof.
+    intros Hwf. unfold open_reader_map, all_open_readers. cbn.
+    rewrite compute_rcu_matching_insert_non_rcu; last done.
+    - done.
+    - by apply core_next_id_fresh.
+  Qed.
+
   Lemma completed_certificate_enables_iris_finish P actions s cert :
     LkmmMachine.run P (initial_state P) actions s -> In cert s.(gp_certificates) ->
     (list_to_set cert.(gc_captured_readers) : gset rscs_id) ## dom (open_reader_map s).

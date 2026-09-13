@@ -36,7 +36,18 @@ prefix. Builder steps preserve the interpretation without changing ghost resourc
 Read-lock steps allocate a fresh reader token; read-unlock steps consume the
 innermost token while preserving outer readers and captured GP snapshots.
 GP-begin steps register the captured reader set and supply a pending token.
-Preservation for GP-finish steps, and guarded WP, remain to be implemented.
+GP-finish steps consume that token, advance the completion epoch, and supply
+persistent completion and synchronization-event facts. Their additional
+`certificate_events_allocated` premise follows from machine runs. Preservation
+now covers every step kind.
+
+The [WP body](../theories/logic/wp.v) takes its recursive continuation as a
+parameter. Its local view includes the Core view and pending-GP snapshot, so
+GP begin and finish remain distinct. It handles the scheduled agent's steps
+along every accepted execution witness, keeping `G` fixed; recursion is under
+`▷` and mask-changing updates. The execution supplies `state_interp` and the
+thread token, while reader and GP tokens come from the proof's resources.
+The fixed point, unfolding lemma, and step-lifting rules remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from

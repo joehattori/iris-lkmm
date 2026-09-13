@@ -170,6 +170,81 @@ Module LkmmStateInterp.
         * by apply (Hepochs gid status).
   Qed.
 
+  Local Lemma pending_gp_at_finish_gp s agent thread locks gid captured :
+    pending_gp_at (finish_gp s agent thread locks) gid captured <->
+    gp_encoding agent (next_agent_index s.(machine_core) agent) <> gid /\
+      pending_gp_at s gid captured.
+  Proof.
+    assert (forall owner, agent <> owner ->
+      next_agent_index (emit_rcu s agent thread BarrierSyncRcu) owner =
+      next_agent_index s.(machine_core) owner) as Hindex.
+    { intros owner Hother. unfold next_agent_index, emit_rcu. cbn.
+      by rewrite lookup_insert_ne. }
+    unfold pending_gp_at, finish_gp. cbn -[emit_rcu next_agent_index gp_encoding]. split.
+    - intros (owner & saved & Hlookup & Hgid & Hcaptured).
+      apply lookup_delete_Some in Hlookup as [Hother Hlookup].
+      rewrite Hindex in Hgid; last done. split.
+      + intros Heq. rewrite Hgid in Heq. apply gp_encoding_inj in Heq. naive_solver.
+      + by exists owner, saved.
+    - intros (Hneq & owner & saved & Hlookup & Hgid & Hcaptured).
+      assert (agent <> owner) as Hother by (intros ->; congruence).
+      exists owner, saved. split.
+      + apply lookup_delete_Some. done.
+      + rewrite Hindex; done.
+  Qed.
+
+  Local Lemma completed_gp_at_finish_gp s agent thread locks gid captured :
+    core_allocation_wf s.(machine_core) -> certificate_events_allocated s ->
+    (completed_gp_at (finish_gp s agent thread locks) gid captured <->
+      (gid = gp_encoding agent (next_agent_index s.(machine_core) agent) /\
+        captured = list_to_set locks) \/ completed_gp_at s gid captured).
+  Proof.
+    intros Hwf Hcerts.
+    assert (forall cert, In cert s.(gp_certificates) ->
+      lookup_event (emit_rcu s agent thread BarrierSyncRcu).(core_events) cert.(gc_event) =
+      lookup_event s.(machine_core).(core_events) cert.(gc_event)) as Hlookup_old.
+    { intros cert Hin. destruct (Hcerts cert Hin) as (owner & index & Hlookup).
+      cbn. unfold lookup_event. rewrite lookup_insert_ne; first done.
+      intros Heq. rewrite -Heq (core_next_id_fresh _ Hwf) in Hlookup. discriminate. }
+    unfold completed_gp_at, finish_gp. cbn -[emit_rcu next_agent_index gp_encoding]. split.
+    - intros (cert & owner & index & [<- | Hin] & Hlookup & Hgid & Hcaptured).
+      + change (<[s.(machine_core).(core_next_id) :=
+          EAgent agent (next_agent_index s.(machine_core) agent) (LBarrier BarrierSyncRcu)]>
+          s.(machine_core).(core_events) !! s.(machine_core).(core_next_id) =
+          Some (EAgent owner index (LBarrier BarrierSyncRcu))) in Hlookup.
+        rewrite lookup_insert_eq in Hlookup. injection Hlookup as <- <-. by left.
+      + right. exists cert, owner, index. rewrite Hlookup_old in Hlookup; done.
+    - intros [[-> ->] | (cert & owner & index & Hin & Hlookup & Hgid & Hcaptured)].
+      + exists (GpCertificate s.(machine_core).(core_next_id) locks), agent,
+          (next_agent_index s.(machine_core) agent).
+        split; first by left. split; first apply lookup_insert_eq. done.
+      + exists cert, owner, index. split; first by right.
+        rewrite Hlookup_old; done.
+  Qed.
+
+  Lemma rcu_state_matches_finish_gp s agent thread locks gps start :
+    core_allocation_wf s.(machine_core) -> certificate_events_allocated s ->
+    rcu_state_matches s gps ->
+    gps !! gp_encoding agent (next_agent_index s.(machine_core) agent) =
+      Some (GpPending (list_to_set locks) start) ->
+    rcu_state_matches (finish_gp s agent thread locks)
+      (<[gp_encoding agent (next_agent_index s.(machine_core) agent) :=
+        GpDone (list_to_set locks) start (S (length s.(gp_certificates)))]> gps).
+  Proof.
+    intros Hwf Hcerts (Hpending & Hcompleted & Hepochs) Hregistered.
+    pose proof (Hepochs _ _ Hregistered) as Hstart. split.
+    - intros gid captured. rewrite pending_gp_at_finish_gp Hpending.
+      setoid_rewrite lookup_insert_Some.
+      clear Hpending Hcompleted Hepochs Hwf Hcerts Hstart. naive_solver.
+    - split.
+      + intros gid captured. rewrite (completed_gp_at_finish_gp _ _ _ _ _ _ Hwf Hcerts) Hcompleted.
+        setoid_rewrite lookup_insert_Some.
+        clear Hpending Hcompleted Hepochs Hwf Hcerts Hstart. naive_solver.
+      + intros gid status Hlookup. apply lookup_insert_Some in Hlookup as [[_ <-] | [_ Hlookup]].
+        * cbn in Hstart |- *. lia.
+        * specialize (Hepochs _ _ Hlookup). destruct status; cbn in Hepochs |- *; lia.
+  Qed.
+
   Lemma initial_rcu_state_matches P : rcu_state_matches (initial_state P) ∅.
   Proof.
     unfold rcu_state_matches, pending_gp_at, completed_gp_at.
@@ -415,6 +490,52 @@ Module LkmmStateInterp.
       iSplit; first by iPureIntro.
       iFrame "Hthreads Hevents". iExists _. iFrame "Hrcu".
       iPureIntro. by apply rcu_state_matches_begin_gp.
+    Qed.
+
+    (** The pending token fixes the captured readers and start epoch. Both
+        allocation premises follow from the machine execution prefix. *)
+    Lemma state_interp_finish_gp P γ s agent s' thread captured start :
+      coupled_step P s (CoupledMachineAction (FinishGp agent)) s' ->
+      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      certificate_events_allocated s.(coupled_machine) ->
+      state_interp γ s ∗ thread_token γ agent thread ∗
+        gp_pending γ.(rcu_name)
+          (gp_encoding agent (next_agent_index s.(coupled_machine).(machine_core) agent))
+          captured start ==∗
+      state_interp γ s' ∗
+        thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
+        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+            (LBarrier BarrierSyncRcu)) ∗
+        gp_done γ.(rcu_name)
+          (gp_encoding agent (next_agent_index s.(coupled_machine).(machine_core) agent))
+          captured start (S (length s.(coupled_machine).(gp_certificates))).
+    Proof.
+      intros Hstep Hwf Hcerts.
+      pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
+      inversion Hstep as [m m' b action Hmachine |]; subst.
+      inversion Hmachine as [| | | |m0 agent0 actual locks [Hlookup Hstmt] Hwaiting Hclosed]; subst.
+      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread & Hpending)".
+      iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
+      cbn in Howned. assert (thread = actual) as -> by congruence.
+      iDestruct "Hrcu" as (gps) "(%Hmatches & Hopen & Hgps & Hepoch)".
+      iDestruct (ghost_map_lookup with "Hgps Hpending") as %Hregistered.
+      destruct (proj2 (proj1 Hmatches _ captured) (ex_intro _ start Hregistered))
+        as (owner & saved & Hsaved & Hgid & Hcaptured).
+      apply gp_encoding_inj in Hgid as [<- _].
+      cbn in Hsaved. assert (saved = locks) as -> by congruence. subst captured.
+      iMod (ghost_map_update (emitted_thread actual actual.(thread_registers))
+        with "Hthreads Hthread") as "[Hthreads Hthread]".
+      iMod (ghost_map_insert_persist m.(machine_core).(core_next_id)
+        (EAgent agent (next_agent_index m.(machine_core) agent) (LBarrier BarrierSyncRcu))
+        with "Hevents") as "[Hevents #Hsync]"; first by apply core_next_id_fresh.
+      iMod (rcu_gp_finish with "[$Hopen $Hgps $Hepoch $Hpending]") as "[Hrcu #Hdone]".
+      { apply all_closed_open_reader_map_disjoint; [exact (proj1 Hwf) | done]. }
+      iModIntro. rewrite /state_interp /thread_token /event_fact /=.
+      iFrame "Hthread Hsync Hdone". iSplit; first by iPureIntro; apply Hprefix'.
+      iFrame "Hthreads Hevents". iExists _. iSplit.
+      { iPureIntro. by apply rcu_state_matches_finish_gp. }
+      by rewrite open_reader_map_finish_gp.
     Qed.
 
     Lemma state_interp_event γ s eid ev :

@@ -307,6 +307,44 @@ Module LkmmMachine.
     forall cert, In cert s.(gp_certificates) ->
       all_closed s.(machine_core).(core_events) cert.(gc_captured_readers).
 
+  Definition certificate_events_allocated (s : state) : Prop :=
+    forall cert, In cert s.(gp_certificates) -> exists agent index,
+      lookup_event s.(machine_core).(core_events) cert.(gc_event) =
+        Some (EAgent agent index (LBarrier BarrierSyncRcu)).
+
+  Lemma step_preserves_certificate_events P s a s' :
+    step P s a s' -> core_allocation_wf s.(machine_core) ->
+    certificate_events_allocated s -> certificate_events_allocated s'.
+  Proof.
+    intros Hstep Hwf Hcerts.
+    pose proof (core_run_events_included _ _ _ _
+      (step_core_projection _ _ _ _ Hstep) Hwf) as Hevents.
+    destruct Hstep; intros cert Hin; cbn in *;
+      try solve [destruct (Hcerts cert Hin) as (owner & index & Hlookup);
+        exists owner, index; by apply Hevents].
+    destruct Hin as [<- | Hin].
+    - exists agent, (next_agent_index s.(machine_core) agent).
+      apply lookup_insert_eq.
+    - destruct (Hcerts cert Hin) as (owner & index & Hlookup).
+      exists owner, index. by apply Hevents.
+  Qed.
+
+  Theorem run_certificate_events_allocated P actions s :
+    run P (initial_state P) actions s -> certificate_events_allocated s.
+  Proof.
+    intros Hrun.
+    assert (forall s1 actions0 s2, run P s1 actions0 s2 ->
+      core_allocation_wf s1.(machine_core) -> certificate_events_allocated s1 ->
+      certificate_events_allocated s2) as Hpreserve.
+    { intros s1 actions0 s2 Hsteps. induction Hsteps; intros Hwf Hcerts; first done.
+      apply IHHsteps.
+      - eapply core_run_preserves_allocation; [by apply step_core_projection | done].
+      - by eapply step_preserves_certificate_events. }
+    eapply Hpreserve; first done.
+    - apply core_initial_allocation_wf.
+    - intros cert Hfalse. inversion Hfalse.
+  Qed.
+
   Local Lemma all_closed_mono E E' locks :
     rel_included (rcu_rscs E) (rcu_rscs E') -> all_closed E locks -> all_closed E' locks.
   Proof.

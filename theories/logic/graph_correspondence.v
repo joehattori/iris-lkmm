@@ -92,6 +92,22 @@ Module LkmmGraphCorrespondence.
       (coupled_core_actions p.(coupled_suffix_actions))
       p.(coupled_position_final).(coupled_machine).(machine_core).
 
+  (** GP begin leaves the Core view unchanged, but changes the local
+      protocol phase. In particular, [Some []] is still a waiting GP. *)
+  Record coupled_thread_view := CoupledThreadView {
+    coupled_view_core : thread_view;
+    coupled_view_pending_gp : option (list event_id)
+  }.
+
+  Definition project_coupled_thread (p : coupled_execution_position) (agent : agent_id) :
+      option coupled_thread_view :=
+    (fun v => CoupledThreadView v
+      (p.(coupled_position_state).(coupled_machine).(pending_gp) !! agent)) <$>
+      project_thread (coupled_position_to_core p) agent.
+
+  Definition coupled_thread_at P G p agent v : Prop :=
+    coupled_position P G p /\ project_coupled_thread p agent = Some v.
+
   Lemma coupled_position_to_core_actions p :
     position_actions (coupled_position_to_core p) = coupled_core_actions (coupled_position_actions p).
   Proof. symmetry. apply coupled_core_actions_app. Qed.

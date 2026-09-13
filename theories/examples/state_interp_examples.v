@@ -89,16 +89,17 @@ Module StateInterpExamples.
       {[0 := SSeq SRcuReadLock (SSeq SRcuReadLock (SSeq SRcuReadUnlock SRcuReadUnlock));
         1 := SSynchronizeRcu]}.
 
-    Example gp_snapshot_survives_inner_unlock `{!stateG Σ} :
+    Example gp_finishes_after_nested_readers `{!stateG Σ} :
       ⊢ |==> ∃ γ s, state_interp (Σ := Σ) γ s ∗
-        thread_token γ 0 (ThreadState SSkip [KSeq SRcuReadUnlock] ∅) ∗
-        thread_token γ 1 (initial_thread SSynchronizeRcu) ∗
-        gp_pending γ.(rcu_name) (gp_encoding 1 0) {[1; 0]} 0 ∗
-        reader_token γ.(rcu_name) 0 ∗
+        thread_token γ 0 (initial_thread SSkip) ∗
+        thread_token γ 1 (initial_thread SSkip) ∗
+        gp_done γ.(rcu_name) (gp_encoding 1 0) {[1; 0]} 0 1 ∗
         event_fact γ 0 (EAgent 0 0 (LBarrier BarrierRcuLock)) ∗
         event_fact γ 1 (EAgent 0 1 (LBarrier BarrierRcuLock)) ∗
         event_fact γ 2 (EAgent 0 2 (LBarrier BarrierRcuUnlock)) ∗
-        ⌜open_readers s.(coupled_machine) 0 = [0]⌝.
+        event_fact γ 3 (EAgent 0 3 (LBarrier BarrierRcuUnlock)) ∗
+        event_fact γ 4 (EAgent 1 0 (LBarrier BarrierSyncRcu)) ∗
+        ⌜all_open_readers s.(coupled_machine) = [] /\ s.(coupled_machine).(pending_gp) = ∅⌝.
     Proof.
       iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & _)".
       iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[Hthread Hthreads]"; first reflexivity.
@@ -111,7 +112,7 @@ Module StateInterpExamples.
       iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
         as "(Hstate & Hthread & #Hlock0 & Hreader0)".
       { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
-      { change (core_allocation_wf (core_initial_state program)). apply core_initial_allocation_wf. }
+      { apply core_initial_allocation_wf. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
       { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
@@ -125,18 +126,11 @@ Module StateInterpExamples.
       iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
         as "(Hstate & Hthread & #Hlock1 & Hreader1)".
       { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
-      { change (core_allocation_wf (add_single_event (core_initial_state program) 0
-          (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
-        apply add_single_event_allocation_wf, core_initial_allocation_wf. }
+      { apply add_single_event_allocation_wf, core_initial_allocation_wf. }
       iMod (state_interp_begin_gp program γ _ 1 _ _ with "[$Hstate $Hgpthread]")
         as "(Hstate & Hgpthread & Hpending)".
       { apply CoupledStepMachine. eapply StepBeginGp; [split; reflexivity | reflexivity]. }
-      { change (core_allocation_wf (add_single_event
-          (add_single_event (core_initial_state program) 0
-            (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅) 0
-          (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
-        apply add_single_event_allocation_wf, add_single_event_allocation_wf,
-          core_initial_allocation_wf. }
+      { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
       { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
@@ -150,15 +144,28 @@ Module StateInterpExamples.
       iMod (state_interp_read_unlock program γ _ 0 _ _ 1 [0] with "[$Hstate $Hthread $Hreader1]")
         as "(Hstate & Hthread & #Hunlock1)".
       { apply CoupledStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
-      { change (core_allocation_wf (add_single_event
-          (add_single_event (core_initial_state program) 0
-            (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅) 0
-          (initial_thread SRcuReadLock) (LBarrier BarrierRcuLock) ∅ ∅ ∅ ∅)).
-        apply add_single_event_allocation_wf, add_single_event_allocation_wf,
-          core_initial_allocation_wf. }
+      { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
       { reflexivity. }
+      iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
+        as "[Hstate Hthread]".
+      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+        eapply StepSkipSequence; reflexivity. }
+      { reflexivity. }
+      iMod (state_interp_read_unlock program γ _ 0 _ _ 0 [] with "[$Hstate $Hthread $Hreader0]")
+        as "(Hstate & Hthread & #Hunlock0)".
+      { apply CoupledStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
+      { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
+      { reflexivity. }
+      iMod (state_interp_finish_gp program γ _ 1 _ _ _ _ with "[$Hstate $Hgpthread $Hpending]")
+        as "(Hstate & Hgpthread & #Hsync & #Hdone)".
+      { apply CoupledStepMachine. eapply StepFinishGp; [split; reflexivity | reflexivity |].
+        intros lock [<- | [<- | []]].
+        - exists 2, 0. by right; left.
+        - exists 3, 0. by left. }
+      { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
+      { intros cert Hfalse. inversion Hfalse. }
       iModIntro. iExists γ, _.
-      iFrame "Hstate Hthread Hgpthread Hpending Hreader0 Hlock0 Hlock1 Hunlock1".
+      iFrame "Hstate Hthread Hgpthread Hdone Hlock0 Hlock1 Hunlock1 Hunlock0 Hsync".
       by iPureIntro.
     Qed.
   End NestedReaders.
