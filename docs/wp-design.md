@@ -59,11 +59,20 @@ resources internally, and passes facts for exactly the newly emitted events to
 the continuation for every compatible successor. A nondeterministic exchange
 regression checks both event facts, the local view, register provenance, and
 retained resources. Event facts alone grant no memory ownership.
-The [reader WP rules](../theories/logic/wp_rcu.v) identify emitted events by
+The [RCU WP rules](../theories/logic/wp_rcu.v) identify emitted events by
 their agent-local positions in `G`. Read-lock supplies a reader token;
 read-unlock consumes the token for its matching lock in `G`, proved to be
 the current stack head. A nested-reader WP regression retains the outer token
-through the inner unlock. GP and other operation-specific rules remain.
+through the inner unlock. `wp_begin_gp` passes the captured reader list and start
+epoch to its continuation with a pending token, preserving the Core view and
+setting the pending snapshot. `wp_finish_gp` consumes that token, clears the
+snapshot, and supplies persistent completion and synchronization-event facts.
+Both rules derive allocation premises from the execution prefix; GP finish also
+derives certificate allocation from its machine projection. A combined WP
+regression carries the snapshot through both phases, checks the completed view,
+and retains an arbitrary owned assertion and duplicable completion facts.
+The primitive lifting layer covers every machine-step kind. Builder steps use
+their existing state-interpretation preservation outside the per-agent WP.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
@@ -74,15 +83,13 @@ cover the read-before-write trace, GP state omitted by Core projection, and rena
 
 ## Remaining stages
 
-3. **State interpretation and WP:** connect the resource-preservation lemmas
-   to the guarded WP through step-lifting rules.
 4. **Structural rules:** consequence, framing, sequencing, assignment,
    branching, and fixed-agent parallel composition.
 5. **Memory rules:** begin with initialization, read-only loads, and stores,
    then extend to the selected access modes, fences, dependencies, and RMWs.
    Prove the initialized-load WP example while retaining permitted future sources.
-6. **RCU rules:** complete the GP rules and establish the client
-   ownership protocol needed for reclamation.
+6. **RCU ownership protocol:** build on the primitive RCU WP rules to establish
+   the client ownership protocol needed for reclamation.
 7. **Adequacy and prefix safety:** justify the initial resources and prove the
    claims for coupled executions. Current positions have complete Core witnesses;
    their domain lemmas do not establish safety for arbitrary raw prefixes.

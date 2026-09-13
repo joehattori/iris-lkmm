@@ -18,6 +18,17 @@ Module LkmmWpRcu.
       (S v.(coupled_view_core).(view_event_index))
       (v.(coupled_view_core).(view_actions) ++ [CoreEmit agent])) None.
 
+  Definition gp_wait_view v locks := CoupledThreadView v.(coupled_view_core) (Some locks).
+
+  Local Lemma project_coupled_thread_pending p agent v :
+    project_coupled_thread p agent = Some v ->
+    p.(coupled_position_state).(coupled_machine).(pending_gp) !! agent =
+      v.(coupled_view_pending_gp).
+  Proof.
+    unfold project_coupled_thread. intros Hview.
+    apply fmap_Some in Hview as (cv & Hcore & Heq). by subst v.
+  Qed.
+
   Local Lemma read_lock_step P s a next agent thread :
     s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
     thread.(thread_statement) = SRcuReadLock -> executing_agent a = agent ->
@@ -45,9 +56,11 @@ Module LkmmWpRcu.
     s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
     thread.(thread_statement) = SRcuReadUnlock -> executing_agent a = agent ->
     coupled_step P s (CoupledMachineAction a) next ->
-    a = ReadUnlock agent /\ next = CoupledState
-      (with_core s.(coupled_machine) (emit_rcu s.(coupled_machine) agent thread BarrierRcuUnlock))
-      s.(coupled_builder) /\ exists lock rest, open_readers s.(coupled_machine) agent = lock :: rest.
+    a = ReadUnlock agent /\
+      next = CoupledState
+        (with_core s.(coupled_machine) (emit_rcu s.(coupled_machine) agent thread BarrierRcuUnlock))
+      s.(coupled_builder) /\
+      exists lock rest, open_readers s.(coupled_machine) agent = lock :: rest.
   Proof.
     intros Hlookup Hstmt Hagent Hstep.
     revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
@@ -64,8 +77,81 @@ Module LkmmWpRcu.
     split_and!; try done. by exists lock, rest.
   Qed.
 
+  Local Lemma begin_gp_step P s a next agent thread :
+    s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
+    thread.(thread_statement) = SSynchronizeRcu ->
+    s.(coupled_machine).(pending_gp) !! agent = None -> executing_agent a = agent ->
+    coupled_step P s (CoupledMachineAction a) next ->
+    a = BeginGp agent /\
+    next = CoupledState (begin_gp s.(coupled_machine) agent) s.(coupled_builder).
+  Proof.
+    intros Hlookup Hstmt Hpending Hagent Hstep.
+    revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+    destruct Hmachine as
+      [m core' action actual Hthread Hordinary Hready Hcore |
+       m owner actual [Hthread Hstatement] Hready |
+       m owner actual lock rest [Hthread Hstatement] Hready Hstack |
+       m owner actual [Hthread Hstatement] Hready |
+       m owner actual locks [Hthread Hstatement] Hwaiting Hclosed];
+      simpl in Hagent; subst; cbn in Hlookup, Hpending;
+      try rewrite Hagent in Hthread;
+      rewrite Hlookup in Hthread; injection Hthread as <-;
+      try solve [rewrite Hstmt in Hordinary; done | congruence].
+    done.
+  Qed.
+
+  Local Lemma finish_gp_step P s a next agent thread locks :
+    s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
+    s.(coupled_machine).(pending_gp) !! agent = Some locks -> executing_agent a = agent ->
+    coupled_step P s (CoupledMachineAction a) next ->
+    a = FinishGp agent /\ next = CoupledState
+      (finish_gp s.(coupled_machine) agent thread locks) s.(coupled_builder).
+  Proof.
+    intros Hlookup Hpending Hagent Hstep.
+    revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+    destruct (pending_agent_only_finishes _ _ _ _ _ _ Hmachine Hagent Hpending) as [-> _].
+    inversion Hmachine as [| | | |m0 owner actual saved [Hthread Hstmt] Hwaiting Hclosed]; subst.
+    cbn in Hlookup, Hpending. rewrite Hlookup in Hthread. injection Hthread as <-.
+    rewrite Hpending in Hwaiting. injection Hwaiting as <-. done.
+  Qed.
+
+  Local Lemma begin_gp_project_next prefix s suffix final agent v :
+    project_coupled_thread
+      (CoupledExecutionPosition prefix s (CoupledMachineAction (BeginGp agent) :: suffix) final)
+      agent = Some v ->
+    project_coupled_thread
+      (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (BeginGp agent)])
+        (CoupledState (begin_gp s.(coupled_machine) agent) s.(coupled_builder)) suffix final)
+      agent = Some (gp_wait_view v (all_open_readers s.(coupled_machine))).
+  Proof.
+    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
+    apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
+    cbn. rewrite Hlookup lookup_insert_eq /= flat_map_app /= app_nil_r. reflexivity.
+  Qed.
+
+  Local Lemma finish_gp_project_next prefix s suffix final agent v locks :
+    project_coupled_thread
+      (CoupledExecutionPosition prefix s (CoupledMachineAction (FinishGp agent) :: suffix) final)
+      agent = Some v ->
+    project_coupled_thread
+      (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (FinishGp agent)])
+        (CoupledState
+          (finish_gp s.(coupled_machine) agent v.(coupled_view_core).(view_thread) locks)
+          s.(coupled_builder)) suffix final) agent = Some (rcu_next_view agent v).
+  Proof.
+    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
+    apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
+    cbn. rewrite lookup_insert_eq lookup_delete_eq /=.
+    unfold next_agent_index at 1. cbn. rewrite lookup_insert_eq /=.
+    rewrite flat_map_app /= /agent_actions filter_app /=.
+    rewrite filter_cons_True; last done. reflexivity.
+  Qed.
+
   Local Lemma rcu_project_next prefix s suffix final agent v kind a :
-    project_coupled_thread (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final)
+    project_coupled_thread
+      (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final)
       agent = Some v ->
     v.(coupled_view_pending_gp) = None -> core_actions_of a = [CoreEmit agent] ->
     project_coupled_thread
@@ -84,12 +170,12 @@ Module LkmmWpRcu.
     rewrite filter_cons_True; last done. reflexivity.
   Qed.
 
-  Local Lemma rcu_event_id P G prefix s suffix final agent v kind a eid :
-    project_coupled_thread (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final)
-      agent = Some v ->
+  Local Lemma rcu_event_id P G prefix s suffix final agent v kind a eid pending certs :
+    project_coupled_thread
+      (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) agent = Some v ->
     coupled_position P G (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a])
-      (CoupledState (with_core s.(coupled_machine)
-        (emit_rcu s.(coupled_machine) agent v.(coupled_view_core).(view_thread) kind))
+      (CoupledState (State
+        (emit_rcu s.(coupled_machine) agent v.(coupled_view_core).(view_thread) kind) pending certs)
         s.(coupled_builder)) suffix final) ->
     lookup_event G.(candidate_events) eid =
       Some (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier kind)) ->
@@ -172,7 +258,7 @@ Module LkmmWpRcu.
       pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
       destruct (read_lock_step _ _ _ _ _ _ Hlookup Hstmt Hagent Hstep) as [-> ->].
       pose proof (rcu_project_next _ _ _ _ _ _ BarrierRcuLock _ Hview Hpending eq_refl) as Hview'.
-      pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
+      pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
       pose proof (core_run_allocation_wf _ _ _
         (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
       iMod (state_interp_read_lock _ _ _ _ _ _ Hstep Halloc with "Hstate")
@@ -203,7 +289,7 @@ Module LkmmWpRcu.
       destruct (read_unlock_step _ _ _ _ _ _ Hlookup Hstmt Hagent Hstep)
         as (-> & -> & actual & rest & Hstack).
       pose proof (rcu_project_next _ _ _ _ _ _ BarrierRcuUnlock _ Hview Hpending eq_refl) as Hview'.
-      pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
+      pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
       pose proof (core_run_allocation_wf _ _ _
         (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
       assert (actual = lock) as ->.
@@ -215,6 +301,77 @@ Module LkmmWpRcu.
       cbn in Hid, Hindex. rewrite Hid Hindex.
       iModIntro. iExists (rcu_next_view agent v). iFrame "Hstate Hthread".
       iSplit; first done. iApply ("Hwp" with "Hunlock").
+    Qed.
+
+    (** Beginning a GP emits no event. Its snapshot and start epoch depend
+        on the execution, so the continuation accepts every captured set. *)
+    Lemma wp_begin_gp P G γ E agent v Φ :
+      v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
+      v.(coupled_view_pending_gp) = None ->
+      (▷ ∀ locks start,
+        gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+          (list_to_set locks) start -∗
+        wp P G γ E agent (gp_wait_view v locks) Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hstmt Hpending. iIntros "Hwp". iApply wp_lift_step.
+      { intros [[Hskip _] _]. congruence. }
+      iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
+      destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (project_coupled_thread_pending _ _ _ Hview) as Hwaiting.
+      rewrite Hpending in Hwaiting.
+      destruct (begin_gp_step _ _ _ _ _ _ Hlookup Hstmt Hwaiting Hagent Hstep) as [-> ->].
+      pose proof (begin_gp_project_next _ _ _ _ _ _ Hview) as Hview'.
+      pose proof (core_run_allocation_wf _ _ _
+        (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
+      iMod (state_interp_begin_gp _ _ _ _ _ _ Hstep Halloc with "Hstate")
+        as "(Hstate & Hthread & Hpending)".
+      cbn in Hindex. rewrite Hindex.
+      iModIntro. iExists (gp_wait_view v (all_open_readers s.(coupled_machine))).
+      iFrame "Hstate Hthread". iSplit; first done. iApply ("Hwp" with "Hpending").
+    Qed.
+
+    (** Finishing consumes the pending token for this GP and returns persistent
+        completion and synchronization-event facts. Certificate allocation is
+        obtained from the machine prefix, independently of the final graph. *)
+    Lemma wp_finish_gp P G γ E agent v locks start sync Φ :
+      v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
+      v.(coupled_view_pending_gp) = Some locks ->
+      lookup_event G.(candidate_events) sync =
+        Some (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) ->
+      gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+        (list_to_set locks) start -∗
+      (▷ ∀ finish,
+        event_fact γ sync
+          (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) -∗
+        gp_done γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+          (list_to_set locks) start finish -∗
+        wp P G γ E agent (rcu_next_view agent v) Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hstmt Hpending Hevent. iIntros "Hpending Hwp". iApply wp_lift_step.
+      { intros [[Hskip _] _]. congruence. }
+      iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
+      destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (project_coupled_thread_pending _ _ _ Hview) as Hwaiting.
+      rewrite Hpending in Hwaiting.
+      destruct (finish_gp_step _ _ _ _ _ _ _ Hlookup Hwaiting Hagent Hstep) as [-> ->].
+      pose proof (finish_gp_project_next _ _ _ _ _ _ locks Hview) as Hview'.
+      pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
+      pose proof (coupled_run_machine_projection _ _ _ _ (proj1 Hpos)) as Hrun.
+      pose proof (run_allocation_wf _ _ _ Hrun) as Halloc.
+      pose proof (run_certificate_events_allocated _ _ _ Hrun) as Hcerts.
+      iDestruct "Hstate" as "[Hstate Hthread]".
+      cbn in Hindex. iEval (rewrite <- Hindex) in "Hpending".
+      iMod (state_interp_finish_gp _ _ _ _ _ _ _ _ Hstep Halloc Hcerts
+        with "[$Hstate $Hthread $Hpending]") as "(Hstate & Hthread & #Hsync & #Hdone)".
+      cbn in Hid. rewrite Hid Hindex.
+      iModIntro. iExists (rcu_next_view agent v). iFrame "Hstate Hthread".
+      iSplit; first done. iApply ("Hwp" with "Hsync Hdone").
     Qed.
   End rules.
 End LkmmWpRcu.

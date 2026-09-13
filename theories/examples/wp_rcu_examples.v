@@ -3,12 +3,12 @@ From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
 From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
-From iris_lkmm.logic Require Import graph_correspondence state_interp wp wp_rcu.
+From iris_lkmm.logic Require Import graph_correspondence rcu_ghost state_interp wp wp_rcu.
 Import ListNotations.
 
 Module WpRcuExamples.
   Import LkmmMachine LkmmCoupled RcuMatching LkmmGraphCorrespondence.
-  Import LkmmStateInterp LkmmWp LkmmWpRcu.
+  Import RcuGhost LkmmStateInterp LkmmWp LkmmWpRcu.
 
   (** Administrative continuation steps use the existing silent-step rule. *)
   Local Lemma wp_resume `{!invGS Σ, !stateG Σ} P G γ E agent next ks regs index actions Φ :
@@ -101,5 +101,33 @@ Module WpRcuExamples.
     iNext. iIntros "#Hunlock3".
     rewrite wp_unfold /wp_body /rcu_next_view /=.
     iModIntro. iFrame "HR Hlock0 Hlock1 Hunlock2 Hunlock3". done.
+  Qed.
+
+  Definition sync_start index actions regs := CoupledThreadView
+    (ThreadView (ThreadState SSynchronizeRcu [] regs) index actions) None.
+
+  (** The captured snapshot is supplied by begin and preserved by finish.
+      The same proof handles empty and nonempty snapshots, arbitrary prior
+      histories, and completion epochs advanced by other agents. *)
+  Example synchronize_records_completion `{!invGS Σ, !stateG Σ}
+      P G γ E agent index actions regs sync (R : iProp Σ) :
+    lookup_event G.(candidate_events) sync =
+      Some (EAgent agent index (LBarrier BarrierSyncRcu)) ->
+    R -∗ wp P G γ E agent (sync_start index actions regs) (fun v =>
+      ⌜v = CoupledThreadView (ThreadView (ThreadState SSkip [] regs)
+        (S index) (actions ++ [CoreEmit agent])) None⌝ ∗ R ∗
+      event_fact γ sync (EAgent agent index (LBarrier BarrierSyncRcu)) ∗
+      ∃ locks start finish,
+        gp_done γ.(rcu_name) (gp_encoding agent index) (list_to_set locks) start finish ∗
+        gp_done γ.(rcu_name) (gp_encoding agent index) (list_to_set locks) start finish).
+  Proof.
+    intros Hevent. iIntros "HR". iApply wp_begin_gp; try reflexivity.
+    iNext. iIntros (locks start) "Hpending".
+    iApply (wp_finish_gp P G γ E agent (gp_wait_view (sync_start index actions regs) locks)
+      locks start sync with "Hpending"); try done.
+    iNext. iIntros (finish) "#Hsync #Hdone".
+    rewrite wp_unfold /wp_body /rcu_next_view /gp_wait_view /sync_start /=.
+    iModIntro. iSplit; first done. iFrame "HR Hsync".
+    iExists locks, start, finish. iFrame "Hdone".
   Qed.
 End WpRcuExamples.
