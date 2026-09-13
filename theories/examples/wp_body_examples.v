@@ -22,11 +22,10 @@ Module WpBodyExamples.
     CoupledThreadView sync_view None <> CoupledThreadView sync_view (Some []).
   Proof. split; first reflexivity. split; first reflexivity. discriminate. Qed.
 
-  (** A finished thread still owes its resource postcondition, independently
-      of the supplied recursive function. *)
-  Example terminal_body_requires_postcondition `{!invGS Σ, !stateG Σ}
-      P G γ recurse E agent regs index actions (Φ : coupled_thread_view -> iProp Σ) :
+  (** Unfolding the WP of a finished thread exposes its resource postcondition. *)
+  Example terminal_wp_requires_postcondition `{!invGS Σ, !stateG Σ}
+      P G γ E agent regs index actions (Φ : coupled_thread_view -> iProp Σ) :
     let v := CoupledThreadView (ThreadView (ThreadState SSkip [] regs) index actions) None in
-    wp_body P G γ recurse E agent v Φ ⊣⊢ |={E}=> Φ v.
-  Proof. reflexivity. Qed.
+    wp P G γ E agent v Φ ⊣⊢ |={E}=> Φ v.
+  Proof. intros v. by rewrite wp_unfold /wp_body. Qed.
 End WpBodyExamples.

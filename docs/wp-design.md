@@ -47,7 +47,8 @@ GP begin and finish remain distinct. It handles the scheduled agent's steps
 along every accepted execution witness, keeping `G` fixed; recursion is under
 `▷` and mask-changing updates. The execution supplies `state_interp` and the
 thread token, while reader and GP tokens come from the proof's resources.
-The fixed point, unfolding lemma, and step-lifting rules remain to be implemented.
+Contractiveness is proved; `wp` is its guarded fixed point, with `wp_unfold`
+exposing one layer. Step-lifting rules remain to be implemented.
 
 [Domain regressions](../theories/examples/graph_domain_examples.v) include
 rejection of the initialized-load value `42` and an LKMM-consistent read from
@@ -58,8 +59,8 @@ cover the read-before-write trace, GP state omitted by Core projection, and rena
 
 ## Remaining stages
 
-3. **State interpretation and WP:** maintain the allocated Iris resources
-   across steps and define the guarded WP.
+3. **State interpretation and WP:** connect the resource-preservation lemmas
+   to the guarded WP through step-lifting rules.
 4. **Structural rules:** consequence, framing, sequencing, assignment,
    branching, and fixed-agent parallel composition.
 5. **Memory rules:** begin with initialization, read-only loads, and stores,

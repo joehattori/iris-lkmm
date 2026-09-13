@@ -44,5 +44,20 @@ Module LkmmWp.
                 thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
                 recurse E agent v' Φ
       end%I.
+
+    Local Instance wp_body_contractive P G γ : Contractive (wp_body P G γ).
+    Proof.
+      rewrite /wp_body /= => n recurse recurse' Hrecurse E agent v Φ.
+      repeat (f_contractive || f_equiv); apply Hrecurse.
+    Qed.
+
+    Definition wp P G γ :
+        coPset -d> agent_id -d> coupled_thread_view -d>
+          (coupled_thread_view -d> iPropO Σ) -d> iPropO Σ :=
+      fixpoint (wp_body P G γ).
+
+    Lemma wp_unfold P G γ E agent v Φ :
+      wp P G γ E agent v Φ ⊣⊢ wp_body P G γ (wp P G γ) E agent v Φ.
+    Proof. apply (fixpoint_unfold (wp_body P G γ)). Qed.
   End wp.
 End LkmmWp.
