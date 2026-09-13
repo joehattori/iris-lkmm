@@ -59,5 +59,60 @@ Module LkmmWp.
     Lemma wp_unfold P G γ E agent v Φ :
       wp P G γ E agent v Φ ⊣⊢ wp_body P G γ (wp P G γ) E agent v Φ.
     Proof. apply (fixpoint_unfold (wp_body P G γ)). Qed.
+
+    (** Lift an update at mask [E] for every successor compatible with [G].
+        The handler may own additional resources for the operation; this
+        rule supplies the state/thread resources and handles the later and masks. *)
+    Lemma wp_lift_step P G γ E agent v Φ :
+      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ->
+      (▷ ∀ prefix s a suffix final next,
+        let p := CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final in
+        let p' := CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final in
+        ⌜coupled_thread_at P G p agent v /\ executing_agent a = agent /\
+          coupled_step P s (CoupledMachineAction a) next /\ coupled_position P G p'⌝ -∗
+        state_interp γ s ∗ thread_token γ agent v.(coupled_view_core).(view_thread)
+          ={E}=∗ ∃ v',
+            ⌜project_coupled_thread p' agent = Some v'⌝ ∗
+            state_interp γ next ∗
+            thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
+            wp P G γ E agent v' Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hactive. rewrite wp_unfold /wp_body.
+      destruct v as [[thread index actions] pending].
+      destruct thread as [statement continuation regs].
+      destruct statement, continuation, pending; simpl in *;
+        try (exfalso; apply Hactive; done).
+      all: iIntros "Hstep" (prefix s a suffix final) "%Hcurrent Hstate";
+        iApply fupd_mask_intro; first set_solver.
+      all: iIntros "Hclose" (next) "%Hnext"; iModIntro; iNext;
+        iMod "Hclose" as "_";
+        iApply ("Hstep" $! prefix s a suffix final next with "[] Hstate");
+        iPureIntro; naive_solver.
+    Qed.
+
+    Lemma wp_lift_silent_step P G γ E agent v v' Φ :
+      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ->
+      (forall prefix s a suffix final next,
+        coupled_thread_at P G
+          (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) agent v ->
+        executing_agent a = agent -> coupled_step P s (CoupledMachineAction a) next ->
+        a = Execute (CoreSilent agent) /\
+        project_coupled_thread
+          (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
+          agent = Some v') ->
+      ▷ wp P G γ E agent v' Φ -∗ wp P G γ E agent v Φ.
+    Proof.
+      intros Hactive Hsilent. iIntros "Hwp". iApply wp_lift_step; first done.
+      iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
+      destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
+      destruct (Hsilent _ _ _ _ _ _ Hcurrent Hagent Hstep) as [-> Hview].
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      iMod (state_interp_silent_step _ _ _ _ _ _ _ Hstep Hlookup with "Hstate")
+        as "[Hstate Hthread]".
+      iModIntro. iExists v'. iFrame. done.
+    Qed.
   End wp.
 End LkmmWp.
