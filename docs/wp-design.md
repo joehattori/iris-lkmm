@@ -53,6 +53,12 @@ an operation's resource-update proof, covering every compatible successor.
 `wp_lift_silent_step` specializes it to deterministic silent steps using
 the existing preservation lemma. An assignment regression checks the resulting
 register value and action history while retaining an arbitrary owned assertion.
+`wp_lift_execute` connects ordinary execution preservation to the guarded WP.
+It derives allocation well-formedness from the prefix, maintains state and thread
+resources internally, and passes facts for exactly the newly emitted events to
+the continuation for every compatible successor. A nondeterministic exchange
+regression checks both event facts, the local view, register provenance, and
+retained resources. Event facts alone grant no memory ownership.
 The [reader WP rules](../theories/logic/wp_rcu.v) identify emitted events by
 their agent-local positions in `G`. Read-lock supplies a reader token;
 read-unlock consumes the token for its matching lock in `G`, proved to be

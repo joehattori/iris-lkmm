@@ -1,4 +1,4 @@
-From Stdlib Require Import List.
+From Stdlib Require Import List Lia.
 From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
@@ -78,4 +78,60 @@ Module WpBodyExamples.
       iModIntro. iFrame. done.
     Qed.
   End SilentAssignment.
+
+  Module RmwEmission.
+    Definition body := SXchg 0 RmwRelaxed (EConst 0) (EConst 1).
+    Definition before := CoupledThreadView (ThreadView (initial_thread body) 0 []) None.
+    Definition after read observed := CoupledThreadView
+      (ThreadView (ThreadState SSkip [] {[0 := RegValue observed {[read]}]})
+        2 [CoreObserve 0 observed]) None.
+    Definition read_event observed := EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 observed).
+    Definition write_event := EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z).
+
+    (** One nondeterministic observation produces two event facts, a register
+        origin, and one action-history entry. Both facts remain duplicable. *)
+    Example exchange_records_both_events `{!invGS Σ, !stateG Σ} P G γ E (R : iProp Σ) :
+      ▷ R -∗ wp P G γ E 0 before (fun v => ∃ read observed,
+        ⌜v = after read observed⌝ ∗ R ∗
+        event_fact γ read (read_event observed) ∗
+        event_fact γ (S read) write_event ∗ event_fact γ (S read) write_event).
+    Proof.
+      iIntros "HR". iApply wp_lift_execute.
+      { intros [[Hstmt _] _]. discriminate. }
+      { done. }
+      iNext. iIntros (prefix s a suffix final next v') "%Hfacts #Hnew".
+      destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (core_run_allocation_wf _ _ _
+        (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
+      inversion Hstep as [m m' b action Hmachine |]; subst.
+      inversion Hmachine as [m0 core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
+      rewrite Hagent in Hthread. cbn in Hlookup. rewrite Hlookup in Hthread.
+      injection Hthread as <-. inversion Hcore; subst; simplify_eq/=.
+      unfold body in *. simplify_eq/=.
+      injection H1 as <- <-.
+      assert (v' = after m.(machine_core).(core_next_id) observed) as ->.
+      { unfold project_coupled_thread, project_thread, coupled_position_to_core in *.
+        cbn in Hview. rewrite Hlookup Hready in Hview. cbn in Hview.
+        injection Hview as Hindex' Hactions.
+        cbn in Hview'. rewrite lookup_insert_eq Hready in Hview'. cbn in Hview'.
+        rewrite flat_map_app filter_app /= in Hview'.
+        unfold next_agent_index at 1 in Hview'. cbn in Hview'.
+        rewrite lookup_insert_eq /= Hindex' Hactions in Hview'.
+        by injection Hview'. }
+      iDestruct (big_sepM_lookup _ _ m.(machine_core).(core_next_id) with "Hnew") as "#Hread".
+      { apply lookup_difference_Some. split.
+        - cbn. rewrite lookup_insert_ne; last lia. rewrite lookup_insert_eq. reflexivity.
+        - by apply core_next_id_fresh. }
+      iDestruct (big_sepM_lookup _ _ (S m.(machine_core).(core_next_id)) with "Hnew") as "#Hwrite".
+      { apply lookup_difference_Some. split.
+        - cbn. rewrite lookup_insert_eq. reflexivity.
+        - apply eq_None_not_Some. intros [ev Hev].
+          pose proof (proj1 (proj2 Halloc) _ _ Hev). lia. }
+      rewrite wp_unfold /wp_body /after /=. iModIntro. iModIntro.
+      iExists _, _. iSplit; first done. cbn in Hindex.
+      iEval (rewrite Hindex) in "Hread Hwrite". iFrame "HR Hread Hwrite".
+    Qed.
+  End RmwEmission.
 End WpBodyExamples.

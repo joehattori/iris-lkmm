@@ -8,6 +8,31 @@ Import ListNotations.
 Module LkmmWp.
   Import LkmmMachine LkmmGraphCorrespondence LkmmStateInterp.
 
+  Local Lemma ordinary_coupled_successor P prefix s a suffix final next agent thread :
+    s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
+    ordinary_statement thread.(thread_statement) -> executing_agent a = agent ->
+    coupled_step P s (CoupledMachineAction a) next ->
+    exists action v', a = Execute action /\
+      project_coupled_thread
+        (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
+        agent = Some v'.
+  Proof.
+    intros Hlookup Hordinary Hagent Hstep.
+    revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+    destruct Hmachine as
+      [m core' action actual Hthread Hordinary' Hready Hcore |
+       m owner actual [Hthread Hstmt] Hready |
+       m owner actual lock rest [Hthread Hstmt] Hready Hstack |
+       m owner actual [Hthread Hstmt] Hready |
+       m owner actual locks [Hthread Hstmt] Hpending Hclosed];
+      simpl in Hagent; subst; cbn in Hlookup;
+      try rewrite Hagent in Hthread;
+      rewrite Hlookup in Hthread; injection Hthread as <-;
+      try solve [rewrite Hstmt in Hordinary; done].
+    exists action. unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    destruct Hcore; simpl; rewrite lookup_insert_eq; eexists; done.
+  Qed.
+
   Section wp.
     Context `{!invGS Σ, !stateG Σ}.
 
@@ -90,6 +115,46 @@ Module LkmmWp.
         iMod "Hclose" as "_";
         iApply ("Hstep" $! prefix s a suffix final next with "[] Hstate");
         iPureIntro; naive_solver.
+    Qed.
+
+    (** Ordinary steps allocate persistent facts for exactly their new events.
+        The wrapper supplies allocation well-formedness from the prefix and
+        maintains the state/thread resources internally. The continuation
+        covers every compatible action and successor, including observed values
+        and both events of an RMW; event facts grant no memory ownership. *)
+    Lemma wp_lift_execute P G γ E agent v Φ :
+      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ->
+      ordinary_statement v.(coupled_view_core).(view_thread).(thread_statement) ->
+      (▷ ∀ prefix s a suffix final next v',
+        let p := CoupledExecutionPosition prefix s (CoupledMachineAction (Execute a) :: suffix)
+          final in
+        let p' := CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute a)]) next
+          suffix final in
+        ⌜coupled_thread_at P G p agent v /\ action_agent a = agent /\
+          coupled_step P s (CoupledMachineAction (Execute a)) next /\
+          coupled_position P G p' /\ project_coupled_thread p' agent = Some v'⌝ -∗
+        ([∗ map] eid ↦ ev ∈ next.(coupled_machine).(machine_core).(core_events) ∖
+            s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev)
+          ={E}=∗ wp P G γ E agent v' Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hactive Hordinary. iIntros "Hwp". iApply wp_lift_step; first done.
+      iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
+      destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
+      pose proof (project_coupled_thread_lookup _ _ _ (proj2 Hcurrent)) as Hlookup.
+      destruct (ordinary_coupled_successor P prefix s a suffix final next agent _
+        Hlookup Hordinary Hagent Hstep) as (action & v' & -> & Hview).
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup'.
+      pose proof (core_run_allocation_wf _ _ _
+        (proj1 (coupled_position_projection _ _ _ (proj1 Hcurrent)))) as Halloc.
+      cbn in Hagent. rewrite <- Hagent in Hlookup'.
+      iMod (state_interp_execute _ _ _ _ _ _ _ Hstep Halloc Hlookup'
+        with "[Hstate]") as "(Hstate & Hthread & Hnew)".
+      { rewrite Hagent. iExact "Hstate". }
+      iMod ("Hwp" $! prefix s action suffix final next v' with "[] Hnew") as "Hwp".
+      { iPureIntro. split_and!; done. }
+      iModIntro. iExists v'. rewrite Hagent. iFrame. done.
     Qed.
 
     Lemma wp_lift_silent_step P G γ E agent v v' Φ :
