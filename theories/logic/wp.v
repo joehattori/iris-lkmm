@@ -117,6 +117,29 @@ Module LkmmWp.
       iIntros (v') "HΦ". iModIntro. by iApply Hpost.
     Qed.
 
+    (** Carry an arbitrary separately owned assertion to the postcondition. *)
+    Lemma wp_frame_l P G γ E agent v Φ R :
+      R ∗ wp P G γ E agent v Φ ⊢ wp P G γ E agent v (fun v' => R ∗ Φ v').
+    Proof.
+      iIntros "[HR Hwp]". iApply (wp_consequence with "Hwp").
+      iIntros (v') "HΦ". iModIntro. iFrame.
+    Qed.
+
+    Lemma wp_frame_r P G γ E agent v Φ R :
+      wp P G γ E agent v Φ ∗ R ⊢ wp P G γ E agent v (fun v' => Φ v' ∗ R).
+    Proof.
+      iIntros "[Hwp HR]". iApply (wp_consequence with "Hwp").
+      iIntros (v') "HΦ". iModIntro. iFrame.
+    Qed.
+
+    Global Instance frame_wp p P G γ E agent v R Φ Ψ :
+      (FrameInstantiateExistDisabled -> forall v', Frame p R (Φ v') (Ψ v')) ->
+      Frame p R (wp P G γ E agent v Φ) (wp P G γ E agent v Ψ) | 2.
+    Proof.
+      rewrite /Frame => Hframe. rewrite wp_frame_l.
+      apply wp_mono, Hframe. constructor.
+    Qed.
+
     (** Lift an update at mask [E] for every successor compatible with [G].
         The handler may own additional resources for the operation; this
         rule supplies the state/thread resources and handles the later and masks. *)

@@ -149,5 +149,18 @@ Module WpBodyExamples.
       iMod ("Hupdate" with "HR") as "HS".
       iModIntro. iSplit; first done. iFrame "HS". iExists _. iExact "Hwrite".
     Qed.
+
+    (** Frame a separate owned assertion around the existing exchange proof,
+        outside its existential postcondition, using proof-mode framing. *)
+    Example exchange_frames_resource `{!invGS Σ, !stateG Σ} P G γ E (R F : iProp Σ) :
+      ▷ R -∗ F -∗ wp P G γ E 0 before (fun v =>
+        (∃ read observed, ⌜v = after read observed⌝ ∗ R ∗
+          event_fact γ read (read_event observed) ∗
+          event_fact γ (S read) write_event ∗
+          event_fact γ (S read) write_event) ∗ F).
+    Proof.
+      iIntros "HR HF". iFrame "HF".
+      iApply (exchange_records_both_events with "HR").
+    Qed.
   End RmwEmission.
 End WpBodyExamples.
