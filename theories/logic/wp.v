@@ -310,5 +310,34 @@ Module LkmmWp.
       inversion Hcore; subst; simplify_eq/=.
       split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
     Qed.
+
+    (** Assignment evaluates in the old registers and retains the result's
+        dependency origins. It takes one silent step and preserves the frames. *)
+    Lemma wp_assign P G γ E agent dst expression result ks regs index actions Φ :
+      eval_expr regs expression = Some result ->
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState SSkip ks (<[dst := result]> regs))
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState (SAssign dst expression) ks regs)
+          index actions) None) Φ.
+    Proof.
+      intros Heval. apply wp_lift_silent_step.
+      { intros [[Hskip _] _]. discriminate. }
+      intros prefix s a suffix final next [_ Hview] Hagent Hstep.
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+      destruct Hmachine as
+        [m core' action thread Hthread Hordinary Hready Hcore |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
+        simpl in Hagent; subst; cbn in Hlookup;
+        try rewrite Hagent in Hthread;
+        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
+      inversion Hcore; subst; simplify_eq/=.
+      split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
+    Qed.
   End wp.
 End LkmmWp.

@@ -46,11 +46,13 @@ operational proof, and framing carries separately owned resources through that
 proof. Preconditions are ordinary Iris assertions, so strengthening them uses
 Iris entailment. Sequencing follows the thread's explicit continuation, keeping
 the remaining statements and surrounding control context in the local judgment.
+Register assignments carry expression values and their dependency provenance
+through this continuation, so later operations retain the origins needed for
+dependency reasoning.
 
 ## Remaining work
 
-- **Structural rules:** derive assignment, branching, and fixed-agent parallel
-  composition.
+- **Structural rules:** derive branching and fixed-agent parallel composition.
 - **Memory rules:** design the ownership assertions and specifications for
   initialization, read-only loads, and stores, then extend to the selected
   access modes, fences, dependencies, and RMWs. Prove the initialized-load WP

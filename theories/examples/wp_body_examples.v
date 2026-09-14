@@ -30,52 +30,34 @@ Module WpBodyExamples.
   Proof. intros v. by rewrite wp_unfold /wp_body. Qed.
 
   Module SilentAssignment.
-    Definition before := CoupledThreadView
-      (ThreadView (initial_thread (SAssign 0 (EConst 42%Z))) 0 []) None.
-    Definition after := CoupledThreadView
-      (ThreadView (ThreadState SSkip [] {[0 := RegValue 42%Z ∅]}) 0 [CoreSilent 0]) None.
+    Definition body := SSeq
+      (SAssign 0 (EBin OpAdd (EReg 0) (EReg 1))) (SAssign 1 (EReg 0)).
+    Definition sum (left right : reg_value) := RegValue
+      (left.(reg_integer) + right.(reg_integer))%Z
+      (left.(reg_origins) ∪ right.(reg_origins)).
+    Definition before left right index actions := CoupledThreadView
+      (ThreadView (ThreadState body [] {[0 := left; 1 := right]}) index actions) None.
+    Definition after left right index actions := CoupledThreadView
+      (ThreadView (ThreadState SSkip [] {[0 := sum left right; 1 := sum left right]})
+        index (actions ++ replicate 4 (CoreSilent 0))) None.
 
-    Lemma successor P G prefix s a suffix final next :
-      coupled_thread_at P G
-        (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) 0 before ->
-      executing_agent a = 0 -> coupled_step P s (CoupledMachineAction a) next ->
-      a = Execute (CoreSilent 0) /\
-      project_coupled_thread
-        (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
-        0 = Some after.
+    (** Overwrite a source register, then copy its new value and combined origins.
+        Neither assignment emits an event; separately owned resources survive. *)
+    Example assignment_keeps_resources `{!invGS Σ, !stateG Σ}
+        P G γ E left right index actions (R : iProp Σ) :
+      ▷ R -∗ wp P G γ E 0 (before left right index actions)
+        (fun v => ⌜v = after left right index actions⌝ ∗ R).
     Proof.
-      intros [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      inversion Hstep as [m m' b action Hmachine |]; subst.
-      destruct Hmachine as
-        [m core' action thread Hthread Hordinary Hready Hcore |
-         m owner thread [Hthread Hstmt] Hready |
-         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
-         m owner thread [Hthread Hstmt] Hready |
-         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
-        simpl in Hagent; subst; cbn in Hlookup;
-        try rewrite Hagent in Hthread;
-        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
-      inversion Hcore; subst; simplify_eq/=.
-      split; first reflexivity.
-      unfold project_coupled_thread, project_thread, coupled_position_to_core in *.
-      cbn in Hview. rewrite Hlookup Hready in Hview. cbn in Hview.
-      injection Hview as Hindex Hactions.
-      cbn. rewrite lookup_insert_eq Hready.
-      rewrite flat_map_app filter_app /=.
-      unfold next_agent_index in Hindex |- *. cbn.
-      by rewrite Hindex Hactions.
-    Qed.
-
-    (** The step updates the register and history while retaining owned resources. *)
-    Example assignment_keeps_resources `{!invGS Σ, !stateG Σ} P G γ E (R : iProp Σ) :
-      ▷ R -∗ wp P G γ E 0 before (fun v => ⌜v = after⌝ ∗ R).
-    Proof.
-      iIntros "HR". iApply (wp_lift_silent_step _ _ _ _ _ _ after).
-      { intros [[Hstmt _] _]. discriminate. }
-      { apply successor. }
+      iIntros "HR". iApply wp_seq. iNext.
+      iApply (wp_assign _ _ _ _ _ _ _ (sum left right)).
+      { by rewrite /= lookup_insert_eq lookup_insert_ne // lookup_insert_eq. }
+      iNext. iApply wp_skip_seq. iNext.
+      iApply (wp_assign _ _ _ _ _ _ _ (sum left right)).
+      { by rewrite /= lookup_insert_eq. }
       iNext. rewrite wp_unfold /wp_body /after /=.
-      iModIntro. iFrame. done.
+      iModIntro. iFrame. iPureIntro.
+      rewrite !insert_insert_eq insert_insert_ne; last done.
+      by rewrite insert_insert_eq -!app_assoc.
     Qed.
   End SilentAssignment.
 
