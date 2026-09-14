@@ -339,5 +339,98 @@ Module LkmmWp.
       inversion Hcore; subst; simplify_eq/=.
       split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
     Qed.
+
+    (** Both branch outcomes retain the condition's origins until branch exit.
+        Zero selects the else branch; every nonzero integer selects then. *)
+    Lemma wp_if P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
+      eval_expr regs condition = Some result ->
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView
+          (ThreadState (if decide (result.(reg_integer) = 0%Z) then else_branch else then_branch)
+            (KControl result.(reg_origins) :: ks) regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+          index actions) None) Φ.
+    Proof.
+      intros Heval. apply wp_lift_silent_step.
+      { intros [[Hskip _] _]. discriminate. }
+      intros prefix s a suffix final next [_ Hview] Hagent Hstep.
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+      destruct Hmachine as
+        [m core' action thread Hthread Hordinary Hready Hcore |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
+        simpl in Hagent; subst; cbn in Hlookup;
+        try rewrite Hagent in Hthread;
+        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
+      inversion Hcore; subst; simplify_eq/=.
+      - rewrite decide_False; last done.
+        split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
+      - rewrite decide_True; last done.
+        split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
+    Qed.
+
+    Lemma wp_if_true P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
+      eval_expr regs condition = Some result -> result.(reg_integer) <> 0%Z ->
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView
+          (ThreadState then_branch (KControl result.(reg_origins) :: ks) regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+          index actions) None) Φ.
+    Proof.
+      intros Heval Hnonzero.
+      pose proof (wp_if P G γ E agent condition then_branch else_branch result ks regs index actions Φ
+        Heval) as Hif.
+      by rewrite decide_False in Hif.
+    Qed.
+
+    Lemma wp_if_false P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
+      eval_expr regs condition = Some result -> result.(reg_integer) = 0%Z ->
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView
+          (ThreadState else_branch (KControl result.(reg_origins) :: ks) regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+          index actions) None) Φ.
+    Proof.
+      intros Heval Hzero.
+      pose proof (wp_if P G γ E agent condition then_branch else_branch result ks regs index actions Φ
+        Heval) as Hif.
+      by rewrite decide_True in Hif.
+    Qed.
+
+    (** Leave the completed branch's control scope, retaining outer frames. *)
+    Lemma wp_skip_control P G γ E agent condition_origins ks regs index actions Φ :
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState SSkip ks regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState SSkip (KControl condition_origins :: ks) regs)
+          index actions) None) Φ.
+    Proof.
+      apply wp_lift_silent_step.
+      { intros [[_ Hempty] _]. discriminate. }
+      intros prefix s a suffix final next [_ Hview] Hagent Hstep.
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+      destruct Hmachine as
+        [m core' action thread Hthread Hordinary Hready Hcore |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
+        simpl in Hagent; subst; cbn in Hlookup;
+        try rewrite Hagent in Hthread;
+        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
+      inversion Hcore; subst; simplify_eq/=.
+      split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
+    Qed.
   End wp.
 End LkmmWp.

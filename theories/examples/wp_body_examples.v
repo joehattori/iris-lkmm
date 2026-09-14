@@ -61,6 +61,43 @@ Module WpBodyExamples.
     Qed.
   End SilentAssignment.
 
+  Module Branching.
+    Definition copy_result := SAssign 2 (EReg 1).
+    Definition body := SSeq
+      (SIf (EReg 0) (SAssign 1 (EConst 11)) (SAssign 1 (EConst 22))) copy_result.
+    Definition branch_value (condition : reg_value) := RegValue
+      (if decide (condition.(reg_integer) = 0%Z) then 22%Z else 11%Z) ∅.
+    Definition before condition outer index actions := CoupledThreadView
+      (ThreadView (ThreadState body [KControl outer] {[0 := condition]}) index actions) None.
+    Definition after condition index actions := CoupledThreadView
+      (ThreadView (ThreadState SSkip []
+        {[2 := branch_value condition; 1 := branch_value condition; 0 := condition]})
+        index (actions ++ replicate 7 (CoreSilent 0))) None.
+
+    (** Both outcomes run inside an existing control scope. The branch's origins
+        apply inside it; only the outer scope remains for the following copy.
+        Assigning a constant does not turn control origins into data origins. *)
+    Example branching_scopes_control `{!invGS Σ, !stateG Σ}
+        P G γ E condition outer index actions (R : iProp Σ) :
+      ▷ R -∗ wp P G γ E 0 (before condition outer index actions)
+        (fun v => ⌜v = after condition index actions⌝ ∗ R).
+    Proof.
+      iIntros "HR". iApply wp_seq. iNext.
+      iApply (wp_if _ _ _ _ _ _ _ _ condition).
+      { by rewrite /= lookup_insert_eq. }
+      iNext. destruct (decide (condition.(reg_integer) = 0%Z)) as [Hzero | Hnonzero].
+      all: iApply (wp_assign _ _ _ _ _ _ _ _
+        [KControl condition.(reg_origins); KSeq copy_result; KControl outer]);
+        first reflexivity.
+      all: iNext; iApply wp_skip_control; iNext; iApply wp_skip_seq; iNext.
+      all: iApply (wp_assign _ _ _ _ _ _ _ _ [KControl outer]);
+        first by rewrite /= lookup_insert_eq.
+      all: iNext; iApply wp_skip_control; iNext.
+      all: rewrite wp_unfold /wp_body /after /branch_value /=;
+        iModIntro; iFrame; iPureIntro; rewrite -!app_assoc; case_decide; done.
+    Qed.
+  End Branching.
+
   Module RmwEmission.
     Definition body := SXchg 0 RmwRelaxed (EConst 0) (EConst 1).
     Definition before := CoupledThreadView (ThreadView (initial_thread body) 0 []) None.
