@@ -33,6 +33,27 @@ Module LkmmWp.
     destruct Hcore; simpl; rewrite lookup_insert_eq; eexists; done.
   Qed.
 
+  Local Lemma silent_project_next prefix s suffix final agent v thread' :
+    project_coupled_thread
+      (CoupledExecutionPosition prefix s
+        (CoupledMachineAction (Execute (CoreSilent agent)) :: suffix) final) agent = Some v ->
+    v.(coupled_view_pending_gp) = None ->
+    project_coupled_thread
+      (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute (CoreSilent agent))])
+        (CoupledState (with_core s.(coupled_machine)
+          (update_thread s.(coupled_machine).(machine_core) agent thread')) s.(coupled_builder))
+        suffix final) agent = Some (CoupledThreadView
+          (ThreadView thread' v.(coupled_view_core).(view_event_index)
+            (v.(coupled_view_core).(view_actions) ++ [CoreSilent agent])) None).
+  Proof.
+    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    intros Hview Hpending. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
+    apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
+    cbn in Hpending |- *. rewrite lookup_insert_eq Hpending /=.
+    rewrite flat_map_app /= /agent_actions filter_app /=.
+    rewrite filter_cons_True; last done. reflexivity.
+  Qed.
+
   Section wp.
     Context `{!invGS Σ, !stateG Σ}.
 
@@ -233,6 +254,61 @@ Module LkmmWp.
       iMod (state_interp_silent_step _ _ _ _ _ _ _ Hstep Hlookup with "Hstate")
         as "[Hstate Hthread]".
       iModIntro. iExists v'. iFrame. done.
+    Qed.
+
+    (** Sequencing keeps the second statement in the operational continuation.
+        Entering the first statement is one silent step. *)
+    Lemma wp_seq P G γ E agent first second ks regs index actions Φ :
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState first (KSeq second :: ks) regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState (SSeq first second) ks regs)
+          index actions) None) Φ.
+    Proof.
+      apply wp_lift_silent_step.
+      { intros [[Hskip _] _]. discriminate. }
+      intros prefix s a suffix final next [_ Hview] Hagent Hstep.
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+      destruct Hmachine as
+        [m core' action thread Hthread Hordinary Hready Hcore |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
+        simpl in Hagent; subst; cbn in Hlookup;
+        try rewrite Hagent in Hthread;
+        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
+      inversion Hcore; subst; simplify_eq/=.
+      split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
+    Qed.
+
+    (** Resume the saved statement, retaining registers and the outer frames. *)
+    Lemma wp_skip_seq P G γ E agent next ks regs index actions Φ :
+      ▷ wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState next ks regs)
+          index (actions ++ [CoreSilent agent])) None) Φ -∗
+      wp P G γ E agent
+        (CoupledThreadView (ThreadView (ThreadState SSkip (KSeq next :: ks) regs)
+          index actions) None) Φ.
+    Proof.
+      apply wp_lift_silent_step.
+      { intros [[_ Hempty] _]. discriminate. }
+      intros prefix s a suffix final s' [_ Hview] Hagent Hstep.
+      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
+      destruct Hmachine as
+        [m core' action thread Hthread Hordinary Hready Hcore |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread lock rest [Hthread Hstmt] Hready Hstack |
+         m owner thread [Hthread Hstmt] Hready |
+         m owner thread locks [Hthread Hstmt] Hpending Hclosed];
+        simpl in Hagent; subst; cbn in Hlookup;
+        try rewrite Hagent in Hthread;
+        rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
+      inversion Hcore; subst; simplify_eq/=.
+      split; first reflexivity. by apply (silent_project_next _ _ _ _ _ _ _ Hview).
     Qed.
   End wp.
 End LkmmWp.

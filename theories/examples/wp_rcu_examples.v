@@ -10,39 +10,6 @@ Module WpRcuExamples.
   Import LkmmMachine LkmmCoupled RcuMatching LkmmGraphCorrespondence.
   Import RcuGhost LkmmStateInterp LkmmWp LkmmWpRcu.
 
-  (** Administrative continuation steps use the existing silent-step rule. *)
-  Local Lemma wp_resume `{!invGS Σ, !stateG Σ} P G γ E agent next ks regs index actions Φ :
-    ▷ wp P G γ E agent
-      (CoupledThreadView (ThreadView (ThreadState next ks regs) index
-        (actions ++ [CoreSilent agent])) None) Φ -∗
-    wp P G γ E agent
-      (CoupledThreadView (ThreadView (ThreadState SSkip (KSeq next :: ks) regs)
-        index actions) None) Φ.
-  Proof.
-    apply wp_lift_silent_step.
-    { intros [[_ Hempty] _]. discriminate. }
-    intros prefix s a suffix final s' [_ Hview] Hagent Hstep.
-    pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-    revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
-    destruct Hmachine as
-      [m core' action thread Hthread Hordinary Hready Hcore |
-       m owner thread [Hthread Hstmt] Hready |
-       m owner thread lock rest [Hthread Hstmt] Hready Hstack |
-       m owner thread [Hthread Hstmt] Hready |
-       m owner thread locks [Hthread Hstmt] Hpending Hclosed];
-      simpl in Hagent; subst; cbn in Hlookup;
-      try rewrite Hagent in Hthread;
-      rewrite Hlookup in Hthread; injection Hthread as <-; try discriminate.
-    inversion Hcore; subst; simplify_eq/=.
-    split; first reflexivity.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core in *.
-    cbn in Hview. rewrite Hlookup Hready in Hview. cbn in Hview.
-    injection Hview as Hindex Hactions.
-    cbn. rewrite lookup_insert_eq Hready flat_map_app filter_app /=.
-    rewrite filter_cons_True; last done.
-    unfold next_agent_index in Hindex |- *. cbn. by rewrite Hindex Hactions.
-  Qed.
-
   Definition nested_graph := CoreCandidate {[
     0 := EAgent 0 0 (LBarrier BarrierRcuLock);
     1 := EAgent 0 1 (LBarrier BarrierRcuLock);
@@ -56,8 +23,13 @@ Module WpRcuExamples.
       [KSeq SRcuReadLock; KSeq SRcuReadUnlock; KSeq SRcuReadUnlock] ∅) 0
       [CoreSilent 0; CoreSilent 0; CoreSilent 0]) None.
 
-  Definition nested_program := CoreProgram ∅ {[0 :=
-    SSeq (SSeq (SSeq SRcuReadLock SRcuReadLock) SRcuReadUnlock) SRcuReadUnlock]}.
+  Definition nested_body :=
+    SSeq (SSeq (SSeq SRcuReadLock SRcuReadLock) SRcuReadUnlock) SRcuReadUnlock.
+
+  Definition nested_program := CoreProgram ∅ {[0 := nested_body]}.
+
+  Definition nested_initial_view := CoupledThreadView
+    (ThreadView (initial_thread nested_body) 0 []) None.
 
   Definition nested_prefix := replicate 3 (CoupledMachineAction (Execute (CoreSilent 0))).
 
@@ -78,24 +50,27 @@ Module WpRcuExamples.
   Qed.
 
   Example nested_readers `{!invGS Σ, !stateG Σ} γ E (R : iProp Σ) :
-    R -∗ wp nested_program nested_graph γ E 0 nested_start (fun v =>
+    R -∗ wp nested_program nested_graph γ E 0 nested_initial_view (fun v =>
       ⌜thread_complete v.(coupled_view_core).(view_thread) /\
-        v.(coupled_view_core).(view_event_index) = 4⌝ ∗ R ∗
+        v.(coupled_view_core).(view_event_index) = 4 /\
+        length v.(coupled_view_core).(view_actions) = 10⌝ ∗ R ∗
       event_fact γ 0 (EAgent 0 0 (LBarrier BarrierRcuLock)) ∗
       event_fact γ 1 (EAgent 0 1 (LBarrier BarrierRcuLock)) ∗
       event_fact γ 2 (EAgent 0 2 (LBarrier BarrierRcuUnlock)) ∗
       event_fact γ 3 (EAgent 0 3 (LBarrier BarrierRcuUnlock))).
   Proof.
-    iIntros "HR". iApply (wp_read_lock _ _ _ _ _ _ 0); try reflexivity.
+    iIntros "HR".
+    do 3 (iApply wp_seq; iNext).
+    iApply (wp_read_lock _ _ _ _ _ _ 0); try reflexivity.
     iNext. iIntros "#Hlock0 Houter".
-    iApply wp_resume. iNext.
+    iApply wp_skip_seq. iNext.
     iApply (wp_read_lock _ _ _ _ _ _ 1); try reflexivity.
     iNext. iIntros "#Hlock1 Hinner".
-    iApply wp_resume. iNext.
+    iApply wp_skip_seq. iNext.
     iApply (wp_read_unlock _ _ _ _ _ _ 1 2 with "Hinner"); try reflexivity.
     { exists 0. vm_compute. by right; left. }
     iNext. iIntros "#Hunlock2".
-    iApply wp_resume. iNext.
+    iApply wp_skip_seq. iNext.
     iApply (wp_read_unlock _ _ _ _ _ _ 0 3 with "Houter"); try reflexivity.
     { exists 0. vm_compute. by left. }
     iNext. iIntros "#Hunlock3".
