@@ -99,31 +99,31 @@ Module LkmmGraphCorrespondence.
     coupled_view_pending_gp : option (list event_id)
   }.
 
-  Definition project_coupled_thread (p : coupled_execution_position) (agent : agent_id) :
+  Definition lookup_coupled_thread_view (p : coupled_execution_position) (agent : agent_id) :
       option coupled_thread_view :=
     (fun v => CoupledThreadView v
       (p.(coupled_position_state).(coupled_machine).(pending_gp) !! agent)) <$>
-      project_thread (coupled_position_to_core p) agent.
+      lookup_thread_view (coupled_position_to_core p) agent.
 
   Definition coupled_thread_at P G p agent v : Prop :=
-    coupled_position P G p /\ project_coupled_thread p agent = Some v.
+    coupled_position P G p /\ lookup_coupled_thread_view p agent = Some v.
 
-  Lemma project_coupled_thread_lookup p agent v :
-    project_coupled_thread p agent = Some v ->
+  Lemma lookup_coupled_thread_view_lookup p agent v :
+    lookup_coupled_thread_view p agent = Some v ->
     p.(coupled_position_state).(coupled_machine).(machine_core).(core_threads) !! agent =
       Some v.(coupled_view_core).(view_thread).
   Proof.
-    unfold project_coupled_thread, project_thread.
+    unfold lookup_coupled_thread_view, lookup_thread_view.
     intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv. done.
   Qed.
 
-  Lemma project_coupled_thread_index p agent v :
-    project_coupled_thread p agent = Some v ->
+  Lemma lookup_coupled_thread_view_index p agent v :
+    lookup_coupled_thread_view p agent = Some v ->
     next_agent_index p.(coupled_position_state).(coupled_machine).(machine_core) agent =
       v.(coupled_view_core).(view_event_index).
   Proof.
-    unfold project_coupled_thread, project_thread.
+    unfold lookup_coupled_thread_view, lookup_thread_view.
     intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv. done.
   Qed.

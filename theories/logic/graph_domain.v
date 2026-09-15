@@ -58,13 +58,13 @@ Module LkmmGraphDomain.
     view_actions : list core_action
   }.
 
-  Definition project_thread (p : execution_position) (t : agent_id) : option thread_view :=
+  Definition lookup_thread_view (p : execution_position) (t : agent_id) : option thread_view :=
     (fun th => ThreadView th (next_agent_index p.(position_state) t)
       (agent_actions t p.(position_prefix))) <$>
       p.(position_state).(core_threads) !! t.
 
   Definition thread_at P G p t v : Prop :=
-    candidate_position P G p /\ project_thread p t = Some v.
+    candidate_position P G p /\ lookup_thread_view p t = Some v.
 
   Lemma program_graph_execution P G :
     program_graph P G <->
@@ -174,7 +174,7 @@ Module LkmmGraphDomain.
     v.(view_event_index) = next_agent_index p.(position_state) t /\
     v.(view_actions) = agent_actions t p.(position_prefix).
   Proof.
-    intros [_ Hview]. unfold project_thread in Hview.
+    intros [_ Hview]. unfold lookup_thread_view in Hview.
     apply fmap_Some in Hview as (th & Hlookup & Heq). subst v. done.
   Qed.
 

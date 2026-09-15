@@ -58,11 +58,11 @@ Module LkmmWpParallel.
       case_decide; done.
   Qed.
 
-  Lemma project_coupled_thread_other_step P prefix s a suffix final next other :
+  Lemma lookup_coupled_thread_view_other_step P prefix s a suffix final next other :
     coupled_step P s (CoupledMachineAction a) next -> executing_agent a <> other ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final) other =
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) other.
   Proof.
     intros Hstep Hother. inversion Hstep as [m m' b action Hmachine |]; subst.
@@ -70,20 +70,20 @@ Module LkmmWpParallel.
     pose proof (step_pending_other _ _ _ _ _ Hmachine Hother) as Hpending.
     pose proof (machine_action_other_history a other Hother) as Hactions.
     unfold agent_actions in Hactions.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core. cbn.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core. cbn.
     rewrite Hthread Hindex Hpending flat_map_app /= app_nil_r /agent_actions filter_app.
     by rewrite Hactions app_nil_r.
   Qed.
 
-  Lemma project_coupled_thread_builder_step P prefix s suffix final next agent :
+  Lemma lookup_coupled_thread_view_builder_step P prefix s suffix final next agent :
     coupled_step P s CoupledBuilderAction next ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledBuilderAction]) next suffix final) agent =
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledBuilderAction :: suffix) final) agent.
   Proof.
     intros Hstep. inversion Hstep; subst.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core. cbn.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core. cbn.
     by rewrite flat_map_app /= app_nil_r.
   Qed.
 
@@ -103,13 +103,13 @@ Module LkmmWpParallel.
     by exists body.
   Qed.
 
-  Local Lemma project_coupled_thread_complete p agent v :
-    coupled_complete p.(coupled_position_state) -> project_coupled_thread p agent = Some v ->
+  Local Lemma lookup_coupled_thread_view_complete p agent v :
+    coupled_complete p.(coupled_position_state) -> lookup_coupled_thread_view p agent = Some v ->
     thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None.
   Proof.
     intros [[Hthreads [Hpending _]] _] Hview. split.
-    - apply (Hthreads agent). by eapply project_coupled_thread_lookup.
-    - unfold project_coupled_thread in Hview.
+    - apply (Hthreads agent). by eapply lookup_coupled_thread_view_lookup.
+    - unfold lookup_coupled_thread_view in Hview.
       apply fmap_Some in Hview as (core & _ & Heq). subst v.
       cbn. by rewrite Hpending lookup_empty.
   Qed.
@@ -124,7 +124,7 @@ Module LkmmWpParallel.
         authoritative state interpretation is supplied once by the execution. *)
     Definition wp_parallel P G γ E p (Φ : agent_id -> coupled_thread_view -> iProp Σ) : iProp Σ :=
       [∗ map] agent ↦ body ∈ P.(program_agents),
-        ∃ v, ⌜project_coupled_thread p agent = Some v⌝ ∗
+        ∃ v, ⌜lookup_coupled_thread_view p agent = Some v⌝ ∗
           thread_token γ agent v.(coupled_view_core).(view_thread) ∗
           wp P G γ E agent v (Φ agent).
 
@@ -138,7 +138,7 @@ Module LkmmWpParallel.
       iEval (rewrite -big_sepM_sep) in "Hagents".
       iApply (big_sepM_mono with "Hagents"). iIntros (agent body Hbody) "[Htoken Hwp]".
       iExists (initial_thread_view body). iFrame. iPureIntro.
-      unfold project_coupled_thread, project_thread, coupled_position_to_core. cbn.
+      unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core. cbn.
       by rewrite lookup_fmap Hbody.
     Qed.
 
@@ -148,13 +148,13 @@ Module LkmmWpParallel.
       coupled_step P s (CoupledMachineAction a) next ->
       coupled_position P G
         (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final) ->
-      project_coupled_thread
+      lookup_coupled_thread_view
         (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final)
         (executing_agent a) = Some v ->
       state_interp γ s ∗ thread_token γ (executing_agent a) v.(coupled_view_core).(view_thread) ∗
         wp P G γ E (executing_agent a) v Φ -∗
       |={E}[∅]▷=> ∃ v',
-        ⌜project_coupled_thread
+        ⌜lookup_coupled_thread_view
           (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
           (executing_agent a) = Some v'⌝ ∗
         state_interp γ next ∗ thread_token γ (executing_agent a) v'.(coupled_view_core).(view_thread) ∗
@@ -162,7 +162,7 @@ Module LkmmWpParallel.
     Proof.
       intros Hpos Hstep Hpos' Hview.
       assert (~ thread_complete v.(coupled_view_core).(view_thread)) as Hactive.
-      { pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      { pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
         inversion Hstep as [m m' b action Hmachine |]; subst.
         destruct (machine_step_actor _ _ _ _ Hmachine) as (thread & Hthread & Hactive).
         rewrite Hthread in Hlookup. by injection Hlookup as <-. }
@@ -202,7 +202,7 @@ Module LkmmWpParallel.
         { iIntros "!>" (other other_body) "%Hbody' %Hother Hother".
           iDestruct "Hother" as (other_view) "(%Hview_other & Hthread & Hwp)".
           iExists other_view. iFrame. iPureIntro.
-          rewrite (project_coupled_thread_other_step _ _ _ _ _ _ _ _ Hstep); done. }
+          rewrite (lookup_coupled_thread_view_other_step _ _ _ _ _ _ _ _ Hstep); done. }
         iExists v'. iFrame. done.
       - iDestruct (state_interp_builder_step _ _ _ _ Hstep with "Hstate") as "Hstate".
         iApply fupd_mask_intro; first set_solver.
@@ -210,7 +210,7 @@ Module LkmmWpParallel.
         iApply (big_sepM_mono with "Hpool"). iIntros (agent body Hbody) "Hagent".
         iDestruct "Hagent" as (v) "(%Hview & Hthread & Hwp)".
         iExists v. iFrame. iPureIntro.
-        by rewrite (project_coupled_thread_builder_step _ _ _ _ _ _ _ Hstep).
+        by rewrite (lookup_coupled_thread_view_builder_step _ _ _ _ _ _ _ Hstep).
     Qed.
 
     (** Follow the supplied complete execution suffix, without choosing or
@@ -245,12 +245,12 @@ Module LkmmWpParallel.
       coupled_complete p.(coupled_position_state) ->
       wp_parallel P G γ E p Φ ={E}=∗
       [∗ map] agent ↦ body ∈ P.(program_agents),
-        ∃ v, ⌜project_coupled_thread p agent = Some v⌝ ∗ Φ agent v.
+        ∃ v, ⌜lookup_coupled_thread_view p agent = Some v⌝ ∗ Φ agent v.
     Proof.
       intros Hcomplete. iIntros "Hpool". iApply big_sepM_fupd.
       iApply (big_sepM_mono with "Hpool"). iIntros (agent body Hbody) "Hagent".
       iDestruct "Hagent" as (v) "(%Hview & Htoken & Hwp)".
-      destruct (project_coupled_thread_complete _ _ _ Hcomplete Hview)
+      destruct (lookup_coupled_thread_view_complete _ _ _ Hcomplete Hview)
         as [[Hstmt Hks] Hpending].
       iEval (rewrite wp_unfold /wp_body Hstmt Hks Hpending) in "Hwp".
       iMod "Hwp" as "Hpost". iModIntro. iExists v. iFrame. done.
@@ -262,7 +262,7 @@ Module LkmmWpParallel.
         wp_parallel P G γ E (CoupledExecutionPosition prefix s actions final) Φ -∗
       |={E}[∅]▷=>^(length actions) |={E}=> state_interp γ final ∗
         ([∗ map] agent ↦ body ∈ P.(program_agents),
-          ∃ v, ⌜project_coupled_thread
+          ∃ v, ⌜lookup_coupled_thread_view
             (CoupledExecutionPosition (prefix ++ actions) final [] final) agent = Some v⌝ ∗
             Φ agent v).
     Proof.

@@ -290,7 +290,7 @@ Module GraphDomainExamples.
     let final := update_thread s 0 (ThreadState SSkip [] ∅) in
     let p := ExecutionPosition [CoreSilent 0] s [CoreSilent 0] final in
     candidate_position P (CoreCandidate ∅ ∅ ∅ ∅ ∅ ∅ ∅) p /\
-    project_thread p 0 = Some (ThreadView (ThreadState SSkip [KSeq SSkip] ∅) 0 [CoreSilent 0]).
+    lookup_thread_view p 0 = Some (ThreadView (ThreadState SSkip [KSeq SSkip] ∅) 0 [CoreSilent 0]).
   Proof.
     intros P s final p. split; last reflexivity. split.
     - econstructor; last constructor.

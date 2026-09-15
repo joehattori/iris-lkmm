@@ -14,10 +14,10 @@ Module WpBodyExamples.
 
   (** Even an empty captured set changes which half of synchronization runs. *)
   Example begin_distinguishes_local_gp_phases suffix final :
-    project_coupled_thread (CoupledExecutionPosition [] GP.before
+    lookup_coupled_thread_view (CoupledExecutionPosition [] GP.before
       (CoupledMachineAction (BeginGp 0) :: suffix) final) 0 =
       Some (CoupledThreadView sync_view None) /\
-    project_coupled_thread (CoupledExecutionPosition [CoupledMachineAction (BeginGp 0)]
+    lookup_coupled_thread_view (CoupledExecutionPosition [CoupledMachineAction (BeginGp 0)]
       GP.waiting suffix final) 0 = Some (CoupledThreadView sync_view (Some [])) /\
     CoupledThreadView sync_view None <> CoupledThreadView sync_view (Some []).
   Proof. split; first reflexivity. split; first reflexivity. discriminate. Qed.
@@ -120,8 +120,8 @@ Module WpBodyExamples.
       { done. }
       iNext. iIntros (prefix s a suffix final next v') "%Hfacts #Hnew".
       destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
       pose proof (core_run_allocation_wf _ _ _
         (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
       inversion Hstep as [m m' b action Hmachine |]; subst.
@@ -131,7 +131,7 @@ Module WpBodyExamples.
       unfold body in *. simplify_eq/=.
       injection H1 as <- <-.
       assert (v' = after m.(machine_core).(core_next_id) observed) as ->.
-      { unfold project_coupled_thread, project_thread, coupled_position_to_core in *.
+      { unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core in *.
         cbn in Hview. rewrite Hlookup Hready in Hview. cbn in Hview.
         injection Hview as Hindex' Hactions.
         cbn in Hview'. rewrite lookup_insert_eq Hready in Hview'. cbn in Hview'.

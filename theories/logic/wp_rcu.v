@@ -20,12 +20,12 @@ Module LkmmWpRcu.
 
   Definition gp_wait_view v locks := CoupledThreadView v.(coupled_view_core) (Some locks).
 
-  Local Lemma project_coupled_thread_pending p agent v :
-    project_coupled_thread p agent = Some v ->
+  Local Lemma lookup_coupled_thread_view_pending p agent v :
+    lookup_coupled_thread_view p agent = Some v ->
     p.(coupled_position_state).(coupled_machine).(pending_gp) !! agent =
       v.(coupled_view_pending_gp).
   Proof.
-    unfold project_coupled_thread. intros Hview.
+    unfold lookup_coupled_thread_view. intros Hview.
     apply fmap_Some in Hview as (cv & Hcore & Heq). by subst v.
   Qed.
 
@@ -116,31 +116,31 @@ Module LkmmWpRcu.
   Qed.
 
   Local Lemma begin_gp_project_next prefix s suffix final agent v :
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledMachineAction (BeginGp agent) :: suffix) final)
       agent = Some v ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (BeginGp agent)])
         (CoupledState (begin_gp s.(coupled_machine) agent) s.(coupled_builder)) suffix final)
       agent = Some (gp_wait_view v (all_open_readers s.(coupled_machine))).
   Proof.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
     intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     cbn. rewrite Hlookup lookup_insert_eq /= flat_map_app /= app_nil_r. reflexivity.
   Qed.
 
   Local Lemma finish_gp_project_next prefix s suffix final agent v locks :
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledMachineAction (FinishGp agent) :: suffix) final)
       agent = Some v ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (FinishGp agent)])
         (CoupledState
           (finish_gp s.(coupled_machine) agent v.(coupled_view_core).(view_thread) locks)
           s.(coupled_builder)) suffix final) agent = Some (rcu_next_view agent v).
   Proof.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
     intros Hview. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     cbn. rewrite lookup_insert_eq lookup_delete_eq /=.
@@ -150,18 +150,18 @@ Module LkmmWpRcu.
   Qed.
 
   Local Lemma rcu_project_next prefix s suffix final agent v kind a :
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final)
       agent = Some v ->
     v.(coupled_view_pending_gp) = None -> core_actions_of a = [CoreEmit agent] ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a])
         (CoupledState (with_core s.(coupled_machine)
           (emit_rcu s.(coupled_machine) agent v.(coupled_view_core).(view_thread) kind))
           s.(coupled_builder)) suffix final) agent = Some (rcu_next_view agent v).
   Proof.
     intros Hview Hpending Haction.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core in *.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core in *.
     apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     cbn in Hpending |- *. rewrite lookup_insert_eq.
@@ -171,7 +171,7 @@ Module LkmmWpRcu.
   Qed.
 
   Local Lemma rcu_event_id P G prefix s suffix final agent v kind a eid pending certs :
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) agent = Some v ->
     coupled_position P G (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a])
       (CoupledState (State
@@ -186,7 +186,7 @@ Module LkmmWpRcu.
     pose proof (candidate_position_events _ _ _ Hcorepos) as Hincluded.
     destruct (coupled_position_consistent_program_graph _ _ _ Hpos) as [Hgraph _].
     destruct (program_graph_wf _ _ Hgraph) as (Hwf & _).
-    unfold project_coupled_thread, project_thread in Hview.
+    unfold lookup_coupled_thread_view, lookup_thread_view in Hview.
     apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     eapply Hwf; last exact Hevent. apply Hincluded. apply lookup_insert_eq.
@@ -254,8 +254,8 @@ Module LkmmWpRcu.
       { intros [[Hskip _] _]. congruence. }
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
       destruct (read_lock_step _ _ _ _ _ _ Hlookup Hstmt Hagent Hstep) as [-> ->].
       pose proof (rcu_project_next _ _ _ _ _ _ BarrierRcuLock _ Hview Hpending eq_refl) as Hview'.
       pose proof (rcu_event_id _ _ _ _ _ _ _ _ _ _ _ _ _ Hview Hnext Hevent) as Hid.
@@ -284,8 +284,8 @@ Module LkmmWpRcu.
       { intros [[Hskip _] _]. congruence. }
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
       destruct (read_unlock_step _ _ _ _ _ _ Hlookup Hstmt Hagent Hstep)
         as (-> & -> & actual & rest & Hstack).
       pose proof (rcu_project_next _ _ _ _ _ _ BarrierRcuUnlock _ Hview Hpending eq_refl) as Hview'.
@@ -318,9 +318,9 @@ Module LkmmWpRcu.
       { intros [[Hskip _] _]. congruence. }
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
-      pose proof (project_coupled_thread_pending _ _ _ Hview) as Hwaiting.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_coupled_thread_view_pending _ _ _ Hview) as Hwaiting.
       rewrite Hpending in Hwaiting.
       destruct (begin_gp_step _ _ _ _ _ _ Hlookup Hstmt Hwaiting Hagent Hstep) as [-> ->].
       pose proof (begin_gp_project_next _ _ _ _ _ _ Hview) as Hview'.
@@ -355,9 +355,9 @@ Module LkmmWpRcu.
       { intros [[Hskip _] _]. congruence. }
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as ([Hpos Hview] & Hagent & Hstep & Hnext).
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
-      pose proof (project_coupled_thread_index _ _ _ Hview) as Hindex.
-      pose proof (project_coupled_thread_pending _ _ _ Hview) as Hwaiting.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_coupled_thread_view_pending _ _ _ Hview) as Hwaiting.
       rewrite Hpending in Hwaiting.
       destruct (finish_gp_step _ _ _ _ _ _ _ Hlookup Hwaiting Hagent Hstep) as [-> ->].
       pose proof (finish_gp_project_next _ _ _ _ _ _ locks Hview) as Hview'.

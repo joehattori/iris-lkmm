@@ -40,7 +40,7 @@ Module WpRcuExamples.
 
   Example nested_start_reachable suffix final :
     coupled_run nested_program (initial_coupled nested_program) nested_prefix nested_prepared /\
-    project_coupled_thread (CoupledExecutionPosition nested_prefix nested_prepared suffix final)
+    lookup_coupled_thread_view (CoupledExecutionPosition nested_prefix nested_prepared suffix final)
       0 = Some nested_start.
   Proof.
     split; last reflexivity.

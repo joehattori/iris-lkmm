@@ -107,8 +107,8 @@ Module WpParallelExamples.
       iDestruct "H0" as (v0) "(%Hview0 & %Hv0 & HR0)".
       iDestruct "H1" as (v1) "(%Hview1 & %Hv1 & HR1)".
       subst v0 v1. iModIntro. iFrame. iPureIntro. split.
-      - exact (project_coupled_thread_lookup _ _ _ Hview0).
-      - exact (project_coupled_thread_lookup _ _ _ Hview1).
+      - exact (lookup_coupled_thread_view_lookup _ _ _ Hview0).
+      - exact (lookup_coupled_thread_view_lookup _ _ _ Hview1).
     Qed.
   End proof.
 End WpParallelExamples.

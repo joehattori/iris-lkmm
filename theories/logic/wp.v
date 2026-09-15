@@ -13,7 +13,7 @@ Module LkmmWp.
     ordinary_statement thread.(thread_statement) -> executing_agent a = agent ->
     coupled_step P s (CoupledMachineAction a) next ->
     exists action v', a = Execute action /\
-      project_coupled_thread
+      lookup_coupled_thread_view
         (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
         agent = Some v'.
   Proof.
@@ -29,16 +29,16 @@ Module LkmmWp.
       try rewrite Hagent in Hthread;
       rewrite Hlookup in Hthread; injection Hthread as <-;
       try solve [rewrite Hstmt in Hordinary; done].
-    exists action. unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    exists action. unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
     destruct Hcore; simpl; rewrite lookup_insert_eq; eexists; done.
   Qed.
 
   Local Lemma silent_project_next prefix s suffix final agent v thread' :
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition prefix s
         (CoupledMachineAction (Execute (CoreSilent agent)) :: suffix) final) agent = Some v ->
     v.(coupled_view_pending_gp) = None ->
-    project_coupled_thread
+    lookup_coupled_thread_view
       (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute (CoreSilent agent))])
         (CoupledState (with_core s.(coupled_machine)
           (update_thread s.(coupled_machine).(machine_core) agent thread')) s.(coupled_builder))
@@ -46,7 +46,7 @@ Module LkmmWp.
           (ThreadView thread' v.(coupled_view_core).(view_event_index)
             (v.(coupled_view_core).(view_actions) ++ [CoreSilent agent])) None).
   Proof.
-    unfold project_coupled_thread, project_thread, coupled_position_to_core.
+    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
     intros Hview Hpending. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     cbn in Hpending |- *. rewrite lookup_insert_eq Hpending /=.
@@ -85,7 +85,7 @@ Module LkmmWp.
                 next suffix final in
               ⌜coupled_step P s (CoupledMachineAction a) next /\ coupled_position P G p'⌝ -∗
               |={∅}=> ▷ |={∅,E}=> ∃ v',
-                ⌜project_coupled_thread p' agent = Some v'⌝ ∗
+                ⌜lookup_coupled_thread_view p' agent = Some v'⌝ ∗
                 state_interp γ next ∗
                 thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
                 recurse E agent v' Φ
@@ -174,7 +174,7 @@ Module LkmmWp.
           coupled_step P s (CoupledMachineAction a) next /\ coupled_position P G p'⌝ -∗
         state_interp γ s ∗ thread_token γ agent v.(coupled_view_core).(view_thread)
           ={E}=∗ ∃ v',
-            ⌜project_coupled_thread p' agent = Some v'⌝ ∗
+            ⌜lookup_coupled_thread_view p' agent = Some v'⌝ ∗
             state_interp γ next ∗
             thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
             wp P G γ E agent v' Φ) -∗
@@ -209,7 +209,7 @@ Module LkmmWp.
           suffix final in
         ⌜coupled_thread_at P G p agent v /\ action_agent a = agent /\
           coupled_step P s (CoupledMachineAction (Execute a)) next /\
-          coupled_position P G p' /\ project_coupled_thread p' agent = Some v'⌝ -∗
+          coupled_position P G p' /\ lookup_coupled_thread_view p' agent = Some v'⌝ -∗
         ([∗ map] eid ↦ ev ∈ next.(coupled_machine).(machine_core).(core_events) ∖
             s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev)
           ={E}=∗ wp P G γ E agent v' Φ) -∗
@@ -218,10 +218,10 @@ Module LkmmWp.
       intros Hactive Hordinary. iIntros "Hwp". iApply wp_lift_step; first done.
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
-      pose proof (project_coupled_thread_lookup _ _ _ (proj2 Hcurrent)) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ (proj2 Hcurrent)) as Hlookup.
       destruct (ordinary_coupled_successor P prefix s a suffix final next agent _
         Hlookup Hordinary Hagent Hstep) as (action & v' & -> & Hview).
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup'.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup'.
       pose proof (core_run_allocation_wf _ _ _
         (proj1 (coupled_position_projection _ _ _ (proj1 Hcurrent)))) as Halloc.
       cbn in Hagent. rewrite <- Hagent in Hlookup'.
@@ -241,7 +241,7 @@ Module LkmmWp.
           (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) agent v ->
         executing_agent a = agent -> coupled_step P s (CoupledMachineAction a) next ->
         a = Execute (CoreSilent agent) /\
-        project_coupled_thread
+        lookup_coupled_thread_view
           (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
           agent = Some v') ->
       ▷ wp P G γ E agent v' Φ -∗ wp P G γ E agent v Φ.
@@ -250,7 +250,7 @@ Module LkmmWp.
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
       destruct (Hsilent _ _ _ _ _ _ Hcurrent Hagent Hstep) as [-> Hview].
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       iMod (state_interp_silent_step _ _ _ _ _ _ _ Hstep Hlookup with "Hstate")
         as "[Hstate Hthread]".
       iModIntro. iExists v'. iFrame. done.
@@ -269,7 +269,7 @@ Module LkmmWp.
       apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -296,7 +296,7 @@ Module LkmmWp.
       apply wp_lift_silent_step.
       { intros [[_ Hempty] _]. discriminate. }
       intros prefix s a suffix final s' [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -325,7 +325,7 @@ Module LkmmWp.
       intros Heval. apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -356,7 +356,7 @@ Module LkmmWp.
       intros Heval. apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -418,7 +418,7 @@ Module LkmmWp.
       apply wp_lift_silent_step.
       { intros [[_ Hempty] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (project_coupled_thread_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
