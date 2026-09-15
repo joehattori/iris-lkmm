@@ -981,6 +981,9 @@ Module LkmmMemoryRelations.
       is_read read_event ->
       exists write, rf edges write read.
 
+  (** Every read has exactly one source write at the same location and value.
+      The source may be an initial write or a write emitted later by Core;
+      this graph predicate places no constraint on emission order. *)
   Definition rf_wf (E : event_structure) (edges : edge_set) : Prop :=
     (forall write read, rf edges write read -> rf_edge_wf E write read) /\
     rf_functional edges /\
@@ -1106,6 +1109,9 @@ Module LkmmMemoryRelations.
       is_write write_event -> is_rmw_marked write_event ->
       exists read, rmw edges read write.
 
+  (** Pair marked endpoints without validating the operation's computed
+      value; Core retains the operation and operands for that purpose.
+      Atomicity is a separate consistency constraint. *)
   Definition rmw_wf (E : event_structure) (edges : edge_set) : Prop :=
     (forall read write, rmw edges read write -> rmw_edge_wf E read write) /\
     rmw_functional edges /\
@@ -1313,6 +1319,10 @@ Module LkmmMemoryRelations.
       initial <> write ->
       co edges initial write.
 
+  (** A complete strict total order for each location, including all
+      transitive edges. Every used location has exactly one initial write,
+      which precedes its other writes. These are candidate well-formedness
+      obligations, separate from LKMM consistency. *)
   Definition co_wf (E : event_structure) (edges : edge_set) : Prop :=
     (forall write1 write2, co edges write1 write2 -> co_edge_wf E write1 write2) /\
       co_irreflexive edges /\

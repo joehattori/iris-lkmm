@@ -79,6 +79,9 @@ Module LkmmGraphCorrespondence.
   Definition coupled_position_actions (p : coupled_execution_position) : list coupled_action :=
     p.(coupled_prefix_actions) ++ p.(coupled_suffix_actions).
 
+  (** A cut of an accepted coupled execution. Completion, [rf]/[co]
+      obligations, and candidate agreement concern the final state;
+      the current builder may still lag behind machine emission. *)
   Definition coupled_position P G (p : coupled_execution_position) : Prop :=
     coupled_run P (initial_coupled P) p.(coupled_prefix_actions) p.(coupled_position_state) /\
     coupled_run P p.(coupled_position_state) p.(coupled_suffix_actions) p.(coupled_position_final) /\
@@ -93,12 +96,15 @@ Module LkmmGraphCorrespondence.
       p.(coupled_position_final).(coupled_machine).(machine_core).
 
   (** GP begin leaves the Core view unchanged, but changes the local
-      protocol phase. In particular, [Some []] is still a waiting GP. *)
+      protocol phase from [None] to [Some locks]. Even [Some []] is a waiting
+      GP; finish emits the synchronization event and clears the snapshot. *)
   Record coupled_thread_view := CoupledThreadView {
     coupled_view_core : thread_view;
     coupled_view_pending_gp : option (list event_id)
   }.
 
+  (** Add the agent's pending-GP snapshot to its Core view. The outer
+      [None] means the thread is absent, not that it has no pending GP. *)
   Definition lookup_coupled_thread_view (p : coupled_execution_position) (agent : agent_id) :
       option coupled_thread_view :=
     (fun v => CoupledThreadView v

@@ -465,7 +465,7 @@ Module LkmmCoreReplay.
       by eapply gathered_edges_all.
   Qed.
 
-  (** Whole-program replay now returns one common renaming for the complete
+  (** Whole-program replay returns one common renaming for the complete
       final Core state, in addition to the individual replay certificates. *)
   Theorem complete_core_run_replay_order P actions source agents :
     complete_core_run P actions source -> program_agent_enumeration P agents ->

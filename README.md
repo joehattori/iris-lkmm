@@ -40,11 +40,11 @@ under explicit `rf`/`co` well-formedness obligations. Conversely, every consiste
 program graph has a completed coupled execution up to event-ID renaming, by
 [coupled completeness](docs/semantics.md#coupled-operational-completeness).
 
-The relational RCU recursion is proved equivalent to an independent finite
-chain. Completed machine grace periods also support a framed Iris completion
-update. The [WP design](docs/wp-design.md) records the implemented proof domain
-and remaining stages. See [semantics](docs/semantics.md) for the architecture
-and proofs, and [scope](docs/scope.md) for the supported fragment.
+The Iris layer supports resource tracking and composition of local WP proofs
+along accepted executions. External adequacy, safety for arbitrary prefixes,
+memory ownership, and client reclamation remain open. See the
+[WP design](docs/wp-design.md), [semantic architecture](docs/semantics.md), and
+[scope](docs/scope.md).
 
 The broad package constraint supports Rocq 9.0.x and 9.1.x. The lock file is
 the reproducible, tested development configuration and should be updated

@@ -104,6 +104,9 @@ Module LkmmCoreToMachine.
       unfold project_actions in *. by rewrite flat_map_app, Hproject, Hproject_rest.
   Qed.
 
+  (** The supplied Core schedule and event IDs are preserved. Final matching
+      is required separately: Core threads may finish with an open reader
+      even when every executed step satisfies the local guards. *)
   Theorem complete_core_run_machine_lift P actions final :
     complete_core_run P actions final ->
     core_run_rcu_guards P (core_initial_state P) actions final ->

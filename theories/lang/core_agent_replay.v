@@ -654,8 +654,10 @@ Module LkmmCoreAgentReplay.
     - rewrite replay_edges_empty. by rewrite union_empty_r_L.
   Qed.
 
-  (** Replay just [t]'s actions, including the original observed values, in
-      any allocation-well-formed context where [t] is still initial. *)
+  (** Replay just [t]'s actions, including the original observed values and
+      silent steps, in any allocation-well-formed context where [t] is still
+      initial. Other agents' events may already be present. The final source
+      map determines the proof's ID renaming, not an operational read guard. *)
   Theorem core_run_replay_agent P actions final t base :
     core_run P (core_initial_state P) actions final ->
     core_allocation_wf base ->
@@ -672,6 +674,8 @@ Module LkmmCoreAgentReplay.
     - by apply replay_initial.
   Qed.
 
+  (** Completion is established only for [t]; other agents in the replay
+      context need not have finished. *)
   Theorem complete_core_run_replay_agent P actions final t base :
     complete_core_run P actions final ->
     core_allocation_wf base ->

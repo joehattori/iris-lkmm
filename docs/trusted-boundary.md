@@ -1,43 +1,30 @@
 # Trusted boundary
 
-For the current LKMM-Core prototype, the trusted boundary includes:
+The project trusts the manual transcription of the selected Linux v6.18
+CAT/Bell definitions and the mapping from Linux operations to LKMM-Core.
+[The source mapping](cat-mapping.md) records that correspondence. Differential
+testing and independent review remain outstanding; there is no verified CAT
+interpreter or source-to-Core refinement.
 
-- the manual reading and transcription of the cited Linux v6.18 CAT/Bell
-  definitions;
-- the claim that LKMM-Core represents the intended client operations;
-- the mapping from LKMM-Core constructors to the selected Linux v6.18
-  operations, pending differential testing and a later source-to-core
-  refinement;
-- propositional excluded middle in the finite candidate completeness proof,
-  used only to partition the five successor relations into already-seen and new
-  pairs.  The builder soundness theorem is constructive and closed under
-  Rocq's global context.
+The finite candidate completeness construction uses propositional excluded
+middle to partition successor relations into old and new pairs. Coupled
+completeness and reverse graph coverage inherit that dependency. Builder and
+coupled soundness, Core replay, renaming, and machine lifting add no axioms.
+The relational model is independent of Iris.
 
-The mechanized results, proof constructions, and regression coverage are
-documented in [semantics.md](semantics.md). Core replay, the derivation of its
-[RCU premises](semantics.md#rcu-replay-premises), machine lifting, and coupled
-soundness add no axioms.
+Coupled soundness requires explicit completion-time reads-from and coherence
+well-formedness obligations. These are premises about candidate choices;
+generated RMW and dependency well-formedness follow from execution. The
+obligations are not new axioms or operational transition guards.
 
-Coupled soundness and the `program_graph` connection require explicit `rf`/`co`
-well-formedness obligations. These relations remain finite candidate choices;
-RMW and direct-dependency well-formedness follow from Core execution. The
-obligations are premises for callers, not new axioms or transition guards.
+The [Iris logic](wp-design.md) derives its resource updates and WP rules from
+the existing semantics without additional axioms. Initial resources are
+allocated from the program, and operational facts justify updates only when
+the required ghost ownership is available. Knowing that an event occurs in a
+candidate does not grant memory ownership.
 
-The graph-relative [WP domain and coupled correspondence](wp-design.md) add no
-axioms or operational transition guards. Reverse graph coverage inherits the
-completeness dependency below. WP adequacy and prefix safety remain open.
-
-[Coupled completeness](semantics.md#coupled-operational-completeness)
-constructs the compatible machine run and inherits only the candidate
-scheduler's existing excluded-middle dependency. Candidate encoding and
-renaming add no axioms.
-
-The [Iris completion bridge](semantics.md#iris-reader-and-grace-period-protocol)
-assumes ghost ownership supplied by its caller; it does not yet establish a
-state interpretation maintained across execution steps.
-
-The finite adjacent-unmatched Bell iteration remains a manual Rocq
-transcription; its regression agrees with the stack matcher, but this is not
-a verified CAT interpreter.  Rocq does **not** establish equivalence with CAT
-syntax, select a unique `rf` or `co` relation, establish correspondence with
-Linux C, show `herd7` agreement, or prove full Iris WP adequacy.
+The current WP domain has complete execution witnesses and final reads-from
+and coherence obligations. Its parallel-execution result remains guarded
+inside Iris. External adequacy, safety for arbitrary raw prefixes, and client
+reclamation guarantees remain unproved. No Linux C correspondence, termination,
+or grace-period liveness claim is made.

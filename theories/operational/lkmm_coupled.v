@@ -265,6 +265,8 @@ Module LkmmCoupled.
         by rewrite Hevents.
   Qed.
 
+  (** The builder's consistency constraints hold even on execution prefixes.
+      The extracted candidate need not yet be complete or well formed. *)
   Theorem coupled_candidate_lkmm_consistent P actions s :
     coupled_run P (initial_coupled P) actions s ->
     lkmm_consistent (coupled_candidate s).
@@ -275,6 +277,9 @@ Module LkmmCoupled.
     by eapply completed_builder_run_consistent.
   Qed.
 
+  (** Completion supplies agreement with generated events and relations.
+      Only well-formedness of the independent [rf]/[co] choices remains a
+      caller obligation; generated RMW and dependency facts follow from Core. *)
   Theorem coupled_run_soundness P actions s :
     coupled_run P (initial_coupled P) actions s -> coupled_complete s ->
     coupled_program_graph_obligations s ->
@@ -356,7 +361,10 @@ Module LkmmCoupled.
 
   (** Every consistent program graph has a completed coupled execution.
       Replay supplies the machine run; the builder then commits the same
-      events and relations, with [rf]/[co] transported by the replay's ID map. *)
+      events and relations, with [rf]/[co] transported by the replay's ID map.
+      The constructed schedule is existential, with no progress guarantee
+      for other schedules. The proof inherits the candidate scheduler's
+      excluded-middle dependency. *)
   Theorem coupled_run_completeness P G :
     program_graph P G -> lkmm_consistent G ->
     exists actions s f,

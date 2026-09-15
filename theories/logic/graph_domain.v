@@ -38,6 +38,9 @@ Module LkmmGraphDomain.
   Definition position_actions (p : execution_position) : list core_action :=
     p.(position_prefix) ++ p.(position_suffix).
 
+  (** Both sides of this execution cut run, and the final Core state is
+      complete and matches [G]'s generated fields. Candidate well-formedness
+      and LKMM consistency are separate premises. *)
   Definition candidate_position P G (p : execution_position) : Prop :=
     core_run P (core_initial_state P) p.(position_prefix) p.(position_state) /\
     core_run P p.(position_state) p.(position_suffix) p.(position_final) /\
@@ -58,6 +61,8 @@ Module LkmmGraphDomain.
     view_actions : list core_action
   }.
 
+  (** Look up [t]'s current thread, adding its next local event index and
+      Core action history from the prefix. Return [None] if [t] is absent. *)
   Definition lookup_thread_view (p : execution_position) (t : agent_id) : option thread_view :=
     (fun th => ThreadView th (next_agent_index p.(position_state) t)
       (agent_actions t p.(position_prefix))) <$>

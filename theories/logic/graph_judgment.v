@@ -2,9 +2,10 @@ From iris.base_logic.lib Require Import iprop.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.logic Require Import graph_domain.
 
-(** Universal closure for the future graph-relative Iris WP.  These
-    connectives specify the quantifier boundary, not the recursive WP,
-    its state interpretation, primitive rules, or adequacy. *)
+(** Universal closure for graph-relative Iris assertions. These connectives
+    specify the quantifier boundary used by the logic. The recursive WP,
+    state interpretation, and primitive rules live in separate modules;
+    external adequacy remains open. *)
 Module LkmmGraphJudgment.
   Export LkmmGraphDomain.
 

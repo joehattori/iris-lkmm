@@ -2,9 +2,10 @@ From iris_lkmm.lkmm Require Import execution memory_relations.
 
 (** Relation graph shared by the relational model and operational builder.
 
-    This record is independent of RCU, but it is not yet the final LKMM
-    candidate-execution type.  Base memory relations and direct dependency
-    provenance are finite candidate data; [prop], [hb], and [pb] are derived. *)
+    This record contains graph data independently of program execution.
+    The language layer connects candidates to Core runs via [program_graph].
+    Base memory relations and direct dependency provenance are finite
+    candidate data; [prop], [hb], and [pb] are derived. *)
 Module LkmmExecutionGraph.
   Export LkmmExecution.
 

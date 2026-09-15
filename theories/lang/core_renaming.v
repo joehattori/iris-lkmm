@@ -7,6 +7,10 @@ Import ListNotations.
 Module LkmmCoreRenaming.
   Export LkmmCoreAgentReplay RcuRenaming.
 
+  (** One event-ID correspondence applies throughout the state, including
+      register and control-frame origins and both endpoints of generated
+      edges. Event values and local positions are preserved, initial-write
+      IDs are fixed, and allocation counters agree. *)
   Record core_state_renaming (f : event_id -> event_id) (source target : core_state) : Prop := {
     core_renaming_events : event_renaming f source.(core_events) target.(core_events);
     core_renaming_threads : target.(core_threads) = rename_thread f <$> source.(core_threads);
