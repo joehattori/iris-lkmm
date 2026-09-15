@@ -36,10 +36,14 @@ reclamation protocols must be built on that foundation.
 The [guarded WP](../theories/logic/wp.v) is a per-agent judgment over this shared
 domain. Its lifting interface connects operational steps to resource
 preservation, including the [primitive RCU rules](../theories/logic/wp_rcu.v).
-All machine-step kinds are covered. Builder steps have their own preservation
-result; scheduling and composition of the per-agent judgments belong to the
-surrounding execution proof. This separation keeps primitive reasoning local
-while leaving the shared execution graph fixed.
+All machine-step kinds are covered. The
+[parallel composition](../theories/logic/wp_parallel.v) combines the fixed
+agents' WPs and thread tokens around one shared state interpretation. It follows
+the supplied execution schedule, preserving other agents' local views and
+handling builder steps separately. At completion it collects all postconditions
+by separating conjunction. The resulting Iris assertion retains a guarded
+update for each coupled action; extracting an external guarantee belongs to
+adequacy.
 
 Consequence allows clients to weaken postconditions without revisiting the
 operational proof, and framing carries separately owned resources through that
@@ -53,14 +57,13 @@ see the dependency context for their location in the program.
 
 ## Remaining work
 
-- **Parallel composition:** combine the judgments of the program's fixed agents.
 - **Memory rules:** design the ownership assertions and specifications for
   initialization, read-only loads, and stores, then extend to the selected
   access modes, fences, dependencies, and RMWs. Prove the initialized-load WP
   example while retaining permitted reads from writes emitted later.
 - **RCU ownership protocol:** connect the primitive RCU rules to a client
   protocol that justifies reclamation.
-- **Adequacy and prefix safety:** combine resource initialization and per-agent
-  WPs into guarantees for coupled executions. Current domain positions have
+- **Adequacy and prefix safety:** connect resource initialization and the guarded
+  parallel-execution result to external guarantees. Current domain positions have
   complete execution witnesses; safety for arbitrary raw prefixes still needs
   a separate argument. No termination or grace-period liveness claim is intended.

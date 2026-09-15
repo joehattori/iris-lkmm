@@ -38,6 +38,7 @@ theories/logic/coupled_graph_judgment.v
 theories/logic/state_interp.v
 theories/logic/wp.v
 theories/logic/wp_rcu.v
+theories/logic/wp_parallel.v
 theories/examples/rcu_graph_examples.v
 theories/examples/rcu_ghost_examples.v
 theories/examples/core_replay_examples.v
@@ -47,5 +48,6 @@ theories/examples/graph_correspondence_examples.v
 theories/examples/state_interp_examples.v
 theories/examples/wp_body_examples.v
 theories/examples/wp_rcu_examples.v
+theories/examples/wp_parallel_examples.v
 theories/examples/rcu_replay_examples.v
 theories/examples/core_to_machine_examples.v
