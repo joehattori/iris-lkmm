@@ -996,8 +996,7 @@ Module RcuMatching.
 
   Lemma filter_rcu_token_ids_nodup tokens agent :
     NoDup (token_id <$> tokens) ->
-    NoDup (token_id <$>
-      filter (fun token => token.(token_agent) = agent) tokens).
+    NoDup (token_id <$> filter (fun token => token.(token_agent) = agent) tokens).
   Proof.
     induction tokens as [|token tokens IH]; simpl; first done.
     intros Hnodup. pose proof (NoDup_cons_1_1 _ _ Hnodup) as Hfresh.

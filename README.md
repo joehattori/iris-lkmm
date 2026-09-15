@@ -42,8 +42,9 @@ program graph has a completed coupled execution up to event-ID renaming, by
 
 The Iris layer supports resource tracking and composition of local WP proofs
 along accepted executions, with fractional ownership of emitted write histories
-and load/store rules that permit reads from later-emitted writes. External
-adequacy, safety for arbitrary prefixes, and client reclamation remain open. See the
+and load/store rules that permit reads from later-emitted writes. A client RCU
+protocol recovers protected ownership after retirement and a grace period.
+External adequacy and safety for arbitrary prefixes remain open. See the
 [WP design](docs/wp-design.md), [semantic architecture](docs/semantics.md), and
 [scope](docs/scope.md).
 

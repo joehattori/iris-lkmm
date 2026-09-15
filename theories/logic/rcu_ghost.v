@@ -131,8 +131,8 @@ Module RcuGhost.
       iFrame "#".
     Qed.
 
-    (** The completion update is stable under an arbitrary client frame.
-        This update supplies the compositional reclamation rule. *)
+    (** Completion preserves an already-owned client frame. Recovering a
+        borrowed resource additionally requires the protocol in [rcu_client]. *)
     Lemma rcu_gp_finish_frame γ open gps epoch gid snapshot start
         (R : iProp Σ) :
       snapshot ## dom open ->

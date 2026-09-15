@@ -304,14 +304,18 @@ Module LkmmWpRcu.
     Qed.
 
     (** Beginning a GP emits no event. Its snapshot and start epoch depend
-        on the execution, so the continuation accepts every captured set. *)
-    Lemma wp_begin_gp P G γ E agent v Φ :
+        on the execution, so the continuation accepts every captured set.
+        The accessor exposes the post-step state to seal client loans against
+        this exact snapshot before the next scheduled step. *)
+    Lemma wp_begin_gp_acc P G γ E agent v Φ :
       v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
       v.(coupled_view_pending_gp) = None ->
-      (▷ ∀ locks start,
+      (▷ ∀ s locks start,
+        ⌜all_open_readers s.(coupled_machine) = locks⌝ -∗
+        state_interp γ s -∗
         gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
           (list_to_set locks) start -∗
-        wp P G γ E agent (gp_wait_view v locks) Φ) -∗
+        |={E}=> state_interp γ s ∗ wp P G γ E agent (gp_wait_view v locks) Φ) -∗
       wp P G γ E agent v Φ.
     Proof.
       intros Hstmt Hpending. iIntros "Hwp". iApply wp_lift_step.
@@ -329,26 +333,44 @@ Module LkmmWpRcu.
       iMod (state_interp_begin_gp _ _ _ _ _ _ Hstep Halloc with "Hstate")
         as "(Hstate & Hthread & Hpending)".
       cbn in Hindex. rewrite Hindex.
+      iMod ("Hwp" with "[] Hstate Hpending") as "[Hstate Hwp]"; first done.
       iModIntro. iExists (gp_wait_view v (all_open_readers s.(coupled_machine))).
-      iFrame "Hstate Hthread". iSplit; first done. iApply ("Hwp" with "Hpending").
+      iFrame "Hstate Hthread Hwp". done.
+    Qed.
+
+    Lemma wp_begin_gp P G γ E agent v Φ :
+      v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
+      v.(coupled_view_pending_gp) = None ->
+      (▷ ∀ locks start,
+        gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+          (list_to_set locks) start -∗
+        wp P G γ E agent (gp_wait_view v locks) Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hstmt Hpending. iIntros "Hwp". iApply wp_begin_gp_acc; try done.
+      iNext. iIntros (s locks start _) "Hstate Hpending". iModIntro.
+      iFrame "Hstate". iApply ("Hwp" with "Hpending").
     Qed.
 
     (** Finishing consumes the pending token for this GP and returns persistent
         completion and synchronization-event facts. Certificate allocation is
-        obtained from the machine prefix, independently of the final graph. *)
-    Lemma wp_finish_gp P G γ E agent v locks start sync Φ :
+        obtained from the machine prefix, independently of the final graph.
+        The accessor supplies that prefix for client reclamation updates. *)
+    Lemma wp_finish_gp_acc P G γ E agent v locks start sync Φ :
       v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
       v.(coupled_view_pending_gp) = Some locks ->
       lookup_event G.(candidate_events) sync =
         Some (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) ->
       gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
         (list_to_set locks) start -∗
-      (▷ ∀ finish,
+      (▷ ∀ actions s finish,
+        ⌜coupled_run P (initial_coupled P) actions s⌝ -∗
+        state_interp γ s -∗
         event_fact γ sync
           (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) -∗
         gp_done γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
           (list_to_set locks) start finish -∗
-        wp P G γ E agent (rcu_next_view agent v) Φ) -∗
+        |={E}=> state_interp γ s ∗ wp P G γ E agent (rcu_next_view agent v) Φ) -∗
       wp P G γ E agent v Φ.
     Proof.
       intros Hstmt Hpending Hevent. iIntros "Hpending Hwp". iApply wp_lift_step.
@@ -370,8 +392,30 @@ Module LkmmWpRcu.
       iMod (state_interp_finish_gp _ _ _ _ _ _ _ _ Hstep Halloc Hcerts
         with "[$Hstate $Hthread $Hpending]") as "(Hstate & Hthread & #Hsync & #Hdone)".
       cbn in Hid. rewrite Hid Hindex.
+      iMod ("Hwp" $! _ _ _ (proj1 Hnext) with "Hstate Hsync Hdone") as "[Hstate Hwp]".
       iModIntro. iExists (rcu_next_view agent v). iFrame "Hstate Hthread".
-      iSplit; first done. iApply ("Hwp" with "Hsync Hdone").
+      by iFrame.
+    Qed.
+
+    Lemma wp_finish_gp P G γ E agent v locks start sync Φ :
+      v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
+      v.(coupled_view_pending_gp) = Some locks ->
+      lookup_event G.(candidate_events) sync =
+        Some (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) ->
+      gp_pending γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+        (list_to_set locks) start -∗
+      (▷ ∀ finish,
+        event_fact γ sync
+          (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) -∗
+        gp_done γ.(rcu_name) (gp_encoding agent v.(coupled_view_core).(view_event_index))
+          (list_to_set locks) start finish -∗
+        wp P G γ E agent (rcu_next_view agent v) Φ) -∗
+      wp P G γ E agent v Φ.
+    Proof.
+      intros Hstmt Hpending Hevent. iIntros "Hpending Hwp".
+      iApply (wp_finish_gp_acc with "Hpending"); try done.
+      iNext. iIntros (actions s finish _) "Hstate #Hsync #Hdone". iModIntro.
+      iFrame "Hstate". iApply ("Hwp" with "Hsync Hdone").
     Qed.
   End rules.
 End LkmmWpRcu.

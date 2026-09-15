@@ -25,6 +25,8 @@ candidate does not grant memory ownership.
 
 The current WP domain has complete execution witnesses and final reads-from
 and coherence obligations. Its parallel-execution result remains guarded
-inside Iris. External adequacy, safety for arbitrary raw prefixes, and client
-reclamation guarantees remain unproved. No Linux C correspondence, termination,
-or grace-period liveness claim is made.
+inside Iris, as does the client RCU rule for recovering protected ownership.
+Clients must separately justify publication and admission to the protected
+resource. External adequacy and safety for arbitrary raw prefixes remain
+unproved. No Linux C correspondence, termination, or grace-period liveness
+claim is made.

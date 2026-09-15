@@ -106,6 +106,18 @@ Module LkmmWp.
       wp P G γ E agent v Φ ⊣⊢ wp_body P G γ (wp P G γ) E agent v Φ.
     Proof. apply (fixpoint_unfold (wp_body P G γ)). Qed.
 
+    Lemma fupd_wp P G γ E agent v Φ :
+      (|={E}=> wp P G γ E agent v Φ) -∗ wp P G γ E agent v Φ.
+    Proof.
+      rewrite !wp_unfold /wp_body.
+      destruct v as [[thread index actions] pending].
+      destruct thread as [statement continuation regs].
+      destruct statement, continuation, pending; simpl; iIntros "Hwp";
+        try (by iMod "Hwp" as "$").
+      all: iIntros (prefix s a suffix final) "Hcurrent Hstate";
+        iMod "Hwp" as "Hwp"; iApply ("Hwp" with "Hcurrent Hstate").
+    Qed.
+
     (** The postcondition transformation may own resources and update them
         at [E]. It is carried through the guarded steps and used at completion;
         the program, candidate, agent, and mask remain fixed. *)

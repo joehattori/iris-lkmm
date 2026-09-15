@@ -41,8 +41,8 @@ Module LkmmWpMemory.
       candidate. This proposition contains no Iris resources. *)
   Definition read_from (G : core_candidate) (read source : event_id)
       (loc : location) (observed : value) : Prop :=
-    rf G.(candidate_rf) source read /\ exists ev,
-      lookup_event G.(candidate_events) source = Some ev /\
+    rf G.(candidate_rf) source read /\
+      exists ev, lookup_event G.(candidate_events) source = Some ev /\
       is_write ev /\ location_of ev = Some loc /\ value_of ev = Some observed.
 
   Lemma position_read_from P G p read agent index mode mark loc observed :

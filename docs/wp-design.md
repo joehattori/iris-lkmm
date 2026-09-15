@@ -22,8 +22,14 @@ shared invariants coordinate access to memory ownership.
 [Memory ownership](../theories/logic/memory_ghost.v) describes emitted write
 histories. Reads retain a fractional share; writes require full ownership to
 extend the history. A read's value comes from the complete candidate and may
-be absent from the owned history. Resource transfer and reclamation require
-additional client protocols.
+be absent from the owned history.
+
+The [client RCU protocol](../theories/logic/wp_rcu_client.v) keeps protected
+resources in a shared invariant. Admission lends access to a reader until it
+returns its loan before unlocking. Retirement closes admission; a subsequent
+grace period covers the outstanding readers and recovers the protected
+resources on completion. Clients must justify admission through their
+publication protocol: observing a pointer alone does not grant access.
 
 The [WP](../theories/logic/wp.v) retains continuations and dependency provenance.
 [Parallel composition](../theories/logic/wp_parallel.v) follows the supplied
@@ -32,6 +38,5 @@ under guarded updates; extracting an external guarantee requires adequacy.
 
 ## Remaining work
 
-- A client RCU protocol connecting grace-period completion to reclamation.
 - External adequacy and safety for arbitrary execution prefixes. Termination
   and grace-period liveness are outside the intended guarantee.
