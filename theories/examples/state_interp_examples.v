@@ -67,17 +67,22 @@ Module StateInterpExamples.
     Proof.
       assert (coupled_step program (initial_coupled program)
         (CoupledMachineAction (Execute (CoreObserve 0 observed))) (after observed)) as Hstep.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply CoupledStepMachine. eapply StepCore; try done.
         eapply StepXchg with (dst := 0) (mode := RmwRelaxed) (address := EConst 0)
-          (expression := EConst 1) (result := RegValue 1%Z ∅); try reflexivity.
+          (expression := EConst 1) (result := RegValue 1%Z ∅); try done.
         by eexists. }
-      iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & #Hfacts)".
+      iMod (state_interp_alloc_memory program) as (γ) "(Hstate & Hthreads & #Hfacts & Hlocations)".
       iDestruct (big_sepM_lookup _ _ 0 with "Hthreads") as "Hthread"; first reflexivity.
       iDestruct (big_sepM_lookup _ _ 0 with "Hfacts") as "#Hinit"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 0 with "Hlocations") as "Hloc"; first reflexivity.
       iMod (state_interp_execute _ _ _ _ _ _ _ Hstep with "[$Hstate $Hthread]")
-        as "(Hstate & Hthread & #Hnew)".
+        as "(Hrestore & Hmemory & Hthread & #Hnew)"; try done.
       { apply core_initial_allocation_wf. }
-      { reflexivity. }
+      iMod (memory_auth_rmw _ _ 0 _ 1 2
+        (EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 observed))
+        (EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z))
+        with "[$Hmemory $Hloc]") as "[Hmemory Hloc]"; try done.
+      iDestruct ("Hrestore" with "Hmemory") as "Hstate".
       iDestruct (big_sepM_lookup _ _ 1 with "Hnew") as "#Hread"; first reflexivity.
       iDestruct (big_sepM_lookup _ _ 2 with "Hnew") as "#Hwrite"; first reflexivity.
       iModIntro. iExists γ. iFrame "Hstate Hthread Hinit Hread Hwrite".

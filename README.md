@@ -41,8 +41,9 @@ program graph has a completed coupled execution up to event-ID renaming, by
 [coupled completeness](docs/semantics.md#coupled-operational-completeness).
 
 The Iris layer supports resource tracking and composition of local WP proofs
-along accepted executions. External adequacy, safety for arbitrary prefixes,
-memory ownership, and client reclamation remain open. See the
+along accepted executions, with fractional ownership of emitted write histories
+and load/store rules that permit reads from later-emitted writes. External
+adequacy, safety for arbitrary prefixes, and client reclamation remain open. See the
 [WP design](docs/wp-design.md), [semantic architecture](docs/semantics.md), and
 [scope](docs/scope.md).
 

@@ -195,9 +195,11 @@ Module LkmmWp.
 
     (** Ordinary steps allocate persistent facts for exactly their new events.
         The wrapper supplies allocation well-formedness from the prefix and
-        maintains the state/thread resources internally. The continuation
-        covers every compatible action and successor, including observed values
-        and both events of an RMW; event facts grant no memory ownership. *)
+        maintains the thread resources internally. The handler must return
+        memory authority matching the new emitted writes before the state
+        interpretation can be restored. It covers every compatible action and
+        successor, including observations and both events of an RMW.
+        Event facts grant no memory ownership. *)
     Lemma wp_lift_execute P G γ E agent v Φ :
       ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
       ->
@@ -210,9 +212,11 @@ Module LkmmWp.
         ⌜coupled_thread_at P G p agent v /\ action_agent a = agent /\
           coupled_step P s (CoupledMachineAction (Execute a)) next /\
           coupled_position P G p' /\ lookup_coupled_thread_view p' agent = Some v'⌝ -∗
+        memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
         ([∗ map] eid ↦ ev ∈ next.(coupled_machine).(machine_core).(core_events) ∖
             s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev)
-          ={E}=∗ wp P G γ E agent v' Φ) -∗
+          ={E}=∗ memory_auth γ.(memory_names_of)
+            next.(coupled_machine).(machine_core).(core_events) ∗ wp P G γ E agent v' Φ) -∗
       wp P G γ E agent v Φ.
     Proof.
       intros Hactive Hordinary. iIntros "Hwp". iApply wp_lift_step; first done.
@@ -226,10 +230,12 @@ Module LkmmWp.
         (proj1 (coupled_position_projection _ _ _ (proj1 Hcurrent)))) as Halloc.
       cbn in Hagent. rewrite <- Hagent in Hlookup'.
       iMod (state_interp_execute _ _ _ _ _ _ _ Hstep Halloc Hlookup'
-        with "[Hstate]") as "(Hstate & Hthread & Hnew)".
+        with "[Hstate]") as "(Hrestore & Hmemory & Hthread & Hnew)".
       { rewrite Hagent. iExact "Hstate". }
-      iMod ("Hwp" $! prefix s action suffix final next v' with "[] Hnew") as "Hwp".
+      iMod ("Hwp" $! prefix s action suffix final next v' with "[] [$Hmemory $Hnew]")
+        as "[Hmemory Hwp]".
       { iPureIntro. split_and!; done. }
+      iDestruct ("Hrestore" with "Hmemory") as "Hstate".
       iModIntro. iExists v'. rewrite Hagent. iFrame. done.
     Qed.
 

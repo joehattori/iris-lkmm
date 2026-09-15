@@ -113,5 +113,6 @@ The [graph-relative WP design](wp-design.md) uses the operational semantics
 without changing its transitions. A shared candidate keeps local proofs
 compatible, and a state interpretation connects resources to execution
 prefixes. The reader/grace-period protocol supports completion updates while
-later readers remain active. Client memory ownership and reclamation protocols,
-external adequacy, and safety for arbitrary raw prefixes remain open.
+later readers remain active. Memory ownership tracks emitted write histories.
+Client reclamation, external adequacy, and safety for arbitrary raw prefixes
+remain open.

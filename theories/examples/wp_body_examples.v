@@ -109,16 +109,15 @@ Module WpBodyExamples.
 
     (** One nondeterministic observation produces two event facts, a register
         origin, and one action-history entry. Both facts remain duplicable. *)
-    Example exchange_records_both_events `{!invGS Σ, !stateG Σ} P G γ E (R : iProp Σ) :
-      ▷ R -∗ wp P G γ E 0 before (fun v => ∃ read observed,
+    Example exchange_records_both_events `{!invGS Σ, !stateG Σ} P G γ E history (R : iProp Σ) :
+      memory_own γ.(memory_names_of) 0 1 history -∗ ▷ R -∗ wp P G γ E 0 before (fun v => ∃ read observed,
         ⌜v = after read observed⌝ ∗ R ∗
         event_fact γ read (read_event observed) ∗
         event_fact γ (S read) write_event ∗ event_fact γ (S read) write_event).
     Proof.
-      iIntros "HR". iApply wp_lift_execute.
+      iIntros "Hloc HR". iApply wp_lift_execute; try done.
       { intros [[Hstmt _] _]. discriminate. }
-      { done. }
-      iNext. iIntros (prefix s a suffix final next v') "%Hfacts #Hnew".
+      iNext. iIntros (prefix s a suffix final next v') "%Hfacts [Hmemory #Hnew]".
       destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
       pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
       pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
@@ -148,21 +147,32 @@ Module WpBodyExamples.
         - cbn. rewrite lookup_insert_eq. reflexivity.
         - apply eq_None_not_Some. intros [ev Hev].
           pose proof (proj1 (proj2 Halloc) _ _ Hev). lia. }
-      rewrite wp_unfold /wp_body /after /=. iModIntro. iModIntro.
+      iMod (memory_auth_rmw _ _ 0 _ m.(machine_core).(core_next_id)
+        (S m.(machine_core).(core_next_id))
+        (EAgent 0 (next_agent_index m.(machine_core) 0)
+          (LMemory AccessRead AccessOnce RmwMarked 0 observed))
+        (EAgent 0 (S (next_agent_index m.(machine_core) 0))
+          (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z))
+        with "[$Hmemory $Hloc]") as "[Hmemory Hloc]"; try done.
+      { by apply core_next_id_fresh. }
+      { apply eq_None_not_Some. intros [ev Hev].
+        pose proof (proj1 (proj2 Halloc) _ _ Hev). lia. }
+      iModIntro. iFrame "Hmemory".
+      rewrite wp_unfold /wp_body /after /=. iModIntro.
       iExists _, _. iSplit; first done. cbn in Hindex.
       iEval (rewrite Hindex) in "Hread Hwrite". iFrame "HR Hread Hwrite".
     Qed.
     (** Reuse the exchange proof, weaken its exact-view postcondition, and
         consume an owned update only when the exchange has completed. *)
-    Example exchange_consequence `{!invGS Σ, !stateG Σ} P G γ E (R S : iProp Σ) :
-      ▷ R -∗ (R ={E}=∗ S) -∗
+    Example exchange_consequence `{!invGS Σ, !stateG Σ} P G γ E history (R S : iProp Σ) :
+      memory_own γ.(memory_names_of) 0 1 history -∗ ▷ R -∗ (R ={E}=∗ S) -∗
       wp P G γ E 0 before (fun v =>
         ⌜thread_complete v.(coupled_view_core).(view_thread) /\
           v.(coupled_view_core).(view_event_index) = 2⌝ ∗ S ∗
         ∃ write, event_fact γ write write_event).
     Proof.
-      iIntros "HR Hupdate". iApply (wp_consequence with "[HR] [Hupdate]").
-      { iApply (exchange_records_both_events with "HR"). }
+      iIntros "Hloc HR Hupdate". iApply (wp_consequence with "[Hloc HR] [Hupdate]").
+      { iApply (exchange_records_both_events with "Hloc HR"). }
       iIntros (v) "Hpost".
       iDestruct "Hpost" as (read observed) "(-> & HR & _ & #Hwrite & _)".
       iMod ("Hupdate" with "HR") as "HS".
@@ -171,15 +181,15 @@ Module WpBodyExamples.
 
     (** Frame a separate owned assertion around the existing exchange proof,
         outside its existential postcondition, using proof-mode framing. *)
-    Example exchange_frames_resource `{!invGS Σ, !stateG Σ} P G γ E (R F : iProp Σ) :
-      ▷ R -∗ F -∗ wp P G γ E 0 before (fun v =>
+    Example exchange_frames_resource `{!invGS Σ, !stateG Σ} P G γ E history (R F : iProp Σ) :
+      memory_own γ.(memory_names_of) 0 1 history -∗ ▷ R -∗ F -∗ wp P G γ E 0 before (fun v =>
         (∃ read observed, ⌜v = after read observed⌝ ∗ R ∗
           event_fact γ read (read_event observed) ∗
           event_fact γ (S read) write_event ∗
           event_fact γ (S read) write_event) ∗ F).
     Proof.
-      iIntros "HR HF". iFrame "HF".
-      iApply (exchange_records_both_events with "HR").
+      iIntros "Hloc HR HF". iFrame "HF".
+      iApply (exchange_records_both_events with "Hloc HR").
     Qed.
   End RmwEmission.
 End WpBodyExamples.

@@ -5,11 +5,12 @@ From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
 From iris_lkmm.lang Require Import core_rcu.
 From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled rcu_builder.
-From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost.
+From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost memory_ghost.
 
 Module LkmmStateInterp.
   Import LkmmMachine LkmmCoupled RcuBuilder RcuGhost LkmmMachineGhost.
   Import RcuMatching LkmmCoreRcu.
+  Export LkmmMemoryGhost.
 
   (** A waiting agent emits no events until GP finish. Its local event index
       identifies the GP before the global event ID is allocated. *)
@@ -252,12 +253,13 @@ Module LkmmStateInterp.
   Qed.
 
   Definition stateΣ : gFunctors :=
-    #[ghost_mapΣ agent_id thread_state; ghost_mapΣ event_id event; rcuΣ].
+    #[ghost_mapΣ agent_id thread_state; ghost_mapΣ event_id event; rcuΣ; memoryΣ].
 
   Class stateG Σ := StateG {
     #[local] state_threads_G :: ghost_mapG Σ agent_id thread_state;
     #[local] state_events_G :: ghost_mapG Σ event_id event;
-    #[global] state_rcu_G :: rcuG Σ
+    #[global] state_rcu_G :: rcuG Σ;
+    #[global] state_memory_G :: memoryG Σ
   }.
 
   Global Instance subG_stateΣ Σ : subG stateΣ Σ -> stateG Σ.
@@ -266,7 +268,8 @@ Module LkmmStateInterp.
   Record state_names := StateNames {
     threads_name : gname;
     events_name : gname;
-    rcu_name : rcu_names
+    rcu_name : rcu_names;
+    memory_names_of : memory_names
   }.
 
   Section resources.
@@ -285,22 +288,27 @@ Module LkmmStateInterp.
 
     (** Interpret the current coupled state. The final graph and execution
         witnesses stay in [coupled_position], outside this resource assertion.
-        Thread, reader, and pending-GP tokens are held separately by clients. *)
+        Thread, location-history, reader, and pending-GP tokens are held
+        separately by clients. *)
     Definition state_interp (γ : state_names) (s : coupled_state) : iProp Σ :=
       ⌜generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw)⌝ ∗
       ghost_map_auth γ.(threads_name) 1 s.(coupled_machine).(machine_core).(core_threads) ∗
       ghost_map_auth γ.(events_name) 1 s.(coupled_machine).(machine_core).(core_events) ∗
+      memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
       ∃ gps, ⌜rcu_state_matches s.(coupled_machine) gps⌝ ∗
         rcu_auth γ.(rcu_name) (open_reader_map s.(coupled_machine)) gps
           (length s.(coupled_machine).(gp_certificates)).
 
     (** Allocation uses only the initial program state, with no final-graph
-        or completion premise. Thread tokens can be distributed to agents. *)
-    Lemma state_interp_alloc P :
+        or completion premise. Location resources contain exactly the
+        initialized writes and can be distributed to agents or invariants. *)
+    Lemma state_interp_alloc_memory P :
       ⊢ |==> ∃ γ, state_interp γ (initial_coupled P) ∗
         ([∗ map] agent ↦ body ∈ P.(program_agents),
           thread_token γ agent (initial_thread body)) ∗
-        ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev).
+        ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev) ∗
+        ([∗ map] loc ↦ val ∈ P.(program_initial_memory),
+          memory_own γ.(memory_names_of) loc 1 (write_history (core_initial_events P) loc)).
     Proof.
       iMod (ghost_map_alloc (initial_thread <$> P.(program_agents)))
         as (γthreads) "[Hthreads Htokens]".
@@ -309,15 +317,35 @@ Module LkmmStateInterp.
         as "[Hevents #Hfacts]"; first apply map_disjoint_empty_r.
       iEval (rewrite right_id_L) in "Hevents".
       iMod rcu_ghost_alloc as (γrcu) "Hrcu".
-      iModIntro. iExists (StateNames γthreads γevents γrcu).
-      iSplitL "Hthreads Hevents Hrcu".
+      iMod (memory_alloc P.(program_initial_memory) (core_initial_events P))
+        as (γmemory) "(_ & Hmemory & Hlocations)".
+      iModIntro. iExists (StateNames γthreads γevents γrcu γmemory).
+      iSplitL "Hthreads Hevents Hmemory Hrcu".
       - rewrite /state_interp /=. iSplit.
         { iPureIntro. apply (coupled_run_generated_prefix P nil (initial_coupled P)).
           constructor. }
-        iFrame "Hthreads Hevents". iExists ∅. iSplit.
+        iFrame "Hthreads Hevents Hmemory". iExists ∅. iSplit.
         { iPureIntro. apply initial_rcu_state_matches. }
         by rewrite initial_open_reader_map.
-      - rewrite /thread_token /event_fact /= big_sepM_fmap. iFrame "Htokens Hfacts".
+      - rewrite /thread_token /event_fact /= big_sepM_fmap. iFrame "Htokens Hfacts Hlocations".
+    Qed.
+
+    Lemma state_interp_alloc P :
+      ⊢ |==> ∃ γ, state_interp γ (initial_coupled P) ∗
+        ([∗ map] agent ↦ body ∈ P.(program_agents),
+          thread_token γ agent (initial_thread body)) ∗
+        ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev).
+    Proof.
+      iMod (state_interp_alloc_memory P) as (γ) "(Hstate & Hthreads & Hfacts & _)".
+      iModIntro. iExists γ. iFrame.
+    Qed.
+
+    Lemma state_interp_memory γ s loc q history :
+      state_interp γ s -∗ memory_own γ.(memory_names_of) loc q history -∗
+      ⌜history = write_history s.(coupled_machine).(machine_core).(core_events) loc⌝.
+    Proof.
+      iIntros "(_ & _ & _ & Hmemory & _) Hloc".
+      iDestruct (memory_auth_lookup with "Hmemory Hloc") as %[_ Hhistory]. done.
     Qed.
 
     Lemma state_interp_thread γ s agent thread :
@@ -339,12 +367,12 @@ Module LkmmStateInterp.
       change (<[agent := next]> s.(coupled_machine).(machine_core).(core_threads) !! agent =
         Some thread') in Hlookup.
       rewrite lookup_insert_eq in Hlookup. injection Hlookup as ->.
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread)".
       iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
       iMod (ghost_map_update thread' with "Hthreads Hthread") as "[Hthreads Hthread]".
       iModIntro. rewrite /state_interp /thread_token /=. iFrame "Hthread".
       iSplit; first by iPureIntro.
-      iFrame "Hthreads Hevents". iExists gps. iFrame "Hrcu". by iPureIntro.
+      iFrame "Hthreads Hevents Hmemory". iExists gps. iFrame "Hrcu". by iPureIntro.
     Qed.
 
     (** Builder steps supply the new generated-prefix condition and leave
@@ -354,19 +382,24 @@ Module LkmmStateInterp.
       state_interp γ s ⊢ state_interp γ s'.
     Proof.
       intros Hstep. inversion Hstep; subst.
-      iIntros "(_ & Hthreads & Hevents & Hrcu)".
+      iIntros "(_ & Hthreads & Hevents & Hmemory & Hrcu)".
       rewrite /state_interp /=. iFrame. by iPureIntro.
     Qed.
 
     (** Ordinary execution updates its thread and allocates facts for exactly
         the new events (two for a successful RMW). Allocation well-formedness
-        comes from the execution prefix; no final-graph premise is needed. *)
+        comes from the execution prefix; no final-graph premise is needed.
+        The caller must update the memory authority before restoring the
+        state interpretation. A write requires full location ownership. *)
     Lemma state_interp_execute P γ s a s' thread thread' :
       coupled_step P s (CoupledMachineAction (Execute a)) s' ->
       core_allocation_wf s.(coupled_machine).(machine_core) ->
       s'.(coupled_machine).(machine_core).(core_threads) !! action_agent a = Some thread' ->
       state_interp γ s ∗ thread_token γ (action_agent a) thread ==∗
-      state_interp γ s' ∗ thread_token γ (action_agent a) thread' ∗
+      (memory_auth γ.(memory_names_of) s'.(coupled_machine).(machine_core).(core_events) -∗
+        state_interp γ s') ∗
+      memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
+      thread_token γ (action_agent a) thread' ∗
         ([∗ map] eid ↦ ev ∈ s'.(coupled_machine).(machine_core).(core_events) ∖
             s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev).
     Proof.
@@ -383,7 +416,7 @@ Module LkmmStateInterp.
         cbn in Hlookup. rewrite Heq lookup_insert_eq in Hlookup. by simplify_eq. }
       assert (m.(machine_core).(core_events) ⊆ core'.(core_events)) as Hevents.
       { apply map_subseteq_spec. by eapply core_step_events_included. }
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread)".
       iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
       pose proof (rcu_state_matches_execute _ _ _ _ gps Hmachine Hwf Hmatches) as Hmatches'.
       iMod (ghost_map_update thread' with "Hthreads Hthread") as "[Hthreads Hthread]".
@@ -393,8 +426,9 @@ Module LkmmStateInterp.
       iEval (rewrite map_union_comm; last by apply map_disjoint_difference_l1) in "Hevents".
       iEval (rewrite map_difference_union //) in "Hevents".
       iModIntro. rewrite /state_interp /thread_token /event_fact /=.
-      iFrame "Hthread Hfacts". iSplit; first by iPureIntro; apply Hprefix'.
-      rewrite Hthreads'. iFrame "Hthreads Hevents".
+      iFrame "Hthread Hfacts Hmemory". iIntros "Hmemory".
+      iSplit; first by iPureIntro; apply Hprefix'.
+      rewrite Hthreads'. iFrame "Hthreads Hevents Hmemory".
       iExists gps. iSplit; first by iPureIntro; apply Hmatches'.
       by rewrite /open_reader_map /all_open_readers /= Hmatching.
     Qed.
@@ -414,7 +448,7 @@ Module LkmmStateInterp.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [|m0 agent0 actual [Hlookup Hstmt] Hready| | |]; subst.
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread)".
       iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
       cbn in Howned.
       assert (thread = actual) as -> by congruence.
@@ -428,7 +462,10 @@ Module LkmmStateInterp.
         as "[Hrcu Hreader]"; first by apply open_reader_map_next_fresh.
       iModIntro. rewrite /state_interp /thread_token /event_fact /=.
       iFrame "Hthread Hlock Hreader". iSplit; first by iPureIntro; apply Hprefix'.
-      iFrame "Hthreads Hevents". iExists gps. iSplit.
+      iFrame "Hthreads Hevents". iSplitL "Hmemory".
+      { iApply (memory_auth_read with "Hmemory"); try done.
+        by apply core_next_id_fresh. }
+      iExists gps. iSplit.
       { iPureIntro. apply rcu_state_matches_emit_rcu; done. }
       by rewrite open_reader_map_read_lock.
     Qed.
@@ -450,7 +487,7 @@ Module LkmmStateInterp.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [| |m0 agent0 actual lock0 rest0 [Hlookup Hstmt] Hready Hstack0| |]; subst.
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread & Hreader)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread & Hreader)".
       iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
       cbn in Howned.
       assert (thread = actual) as -> by congruence.
@@ -463,7 +500,10 @@ Module LkmmStateInterp.
       iMod (rcu_reader_exit with "[$Hrcu $Hreader]") as "Hrcu".
       iModIntro. rewrite /state_interp /thread_token /event_fact /=.
       iFrame "Hthread Hunlock". iSplit; first by iPureIntro; apply Hprefix'.
-      iFrame "Hthreads Hevents". iExists gps. iSplit.
+      iFrame "Hthreads Hevents". iSplitL "Hmemory".
+      { iApply (memory_auth_read with "Hmemory"); try done.
+        by apply core_next_id_fresh. }
+      iExists gps. iSplit.
       { iPureIntro. apply rcu_state_matches_emit_rcu; done. }
       by rewrite (open_reader_map_read_unlock _ _ _ lock rest Hwf Hstack).
     Qed.
@@ -481,14 +521,14 @@ Module LkmmStateInterp.
       intros Hstep Hwf.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [| | |m0 agent0 actual Hcurrent Hready|]; subst.
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread)".
       iDestruct "Hrcu" as (gps) "[%Hmatches Hrcu]".
       iMod (rcu_gp_begin _ _ _ _ (gp_encoding agent (next_agent_index m.(machine_core) agent))
         with "Hrcu") as "[Hrcu Hpending]".  { by apply rcu_state_matches_next_gp_fresh. }
       iEval (rewrite dom_open_reader_map) in "Hrcu Hpending".
       iModIntro. rewrite /state_interp /=. iFrame "Hthread Hpending".
       iSplit; first by iPureIntro.
-      iFrame "Hthreads Hevents". iExists _. iFrame "Hrcu".
+      iFrame "Hthreads Hevents Hmemory". iExists _. iFrame "Hrcu".
       iPureIntro. by apply rcu_state_matches_begin_gp.
     Qed.
 
@@ -515,7 +555,7 @@ Module LkmmStateInterp.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [| | | |m0 agent0 actual locks [Hlookup Hstmt] Hwaiting Hclosed]; subst.
-      iIntros "((%Hprefix & Hthreads & Hevents & Hrcu) & Hthread & Hpending)".
+      iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread & Hpending)".
       iDestruct (ghost_map_lookup with "Hthreads Hthread") as %Howned.
       cbn in Howned. assert (thread = actual) as -> by congruence.
       iDestruct "Hrcu" as (gps) "(%Hmatches & Hopen & Hgps & Hepoch)".
@@ -533,7 +573,10 @@ Module LkmmStateInterp.
       { apply all_closed_open_reader_map_disjoint; [exact (proj1 Hwf) | done]. }
       iModIntro. rewrite /state_interp /thread_token /event_fact /=.
       iFrame "Hthread Hsync Hdone". iSplit; first by iPureIntro; apply Hprefix'.
-      iFrame "Hthreads Hevents". iExists _. iSplit.
+      iFrame "Hthreads Hevents". iSplitL "Hmemory".
+      { iApply (memory_auth_read with "Hmemory"); try done.
+        by apply core_next_id_fresh. }
+      iExists _. iSplit.
       { iPureIntro. by apply rcu_state_matches_finish_gp. }
       by rewrite open_reader_map_finish_gp.
     Qed.
@@ -550,7 +593,7 @@ Module LkmmStateInterp.
       state_interp γ s -∗ reader_token γ.(rcu_name) rid -∗
       ⌜open_reader_map s.(coupled_machine) !! rid = Some tt⌝.
     Proof.
-      iIntros "(_ & _ & _ & Hrcu) Hreader".
+      iIntros "(_ & _ & _ & _ & Hrcu) Hreader".
       iDestruct "Hrcu" as (gps) "(_ & Hopen & _)".
       iApply (ghost_map_lookup with "Hopen Hreader").
     Qed.
@@ -559,7 +602,7 @@ Module LkmmStateInterp.
       state_interp γ s -∗ gp_pending γ.(rcu_name) gid captured start -∗
       ⌜pending_gp_at s.(coupled_machine) gid captured⌝.
     Proof.
-      iIntros "(_ & _ & _ & Hrcu) Hpending".
+      iIntros "(_ & _ & _ & _ & Hrcu) Hpending".
       iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".
       iDestruct (ghost_map_lookup with "Hgps Hpending") as %Hlookup.
       iPureIntro. apply (proj2 (proj1 Hmatch gid captured)). by exists start.
@@ -569,7 +612,7 @@ Module LkmmStateInterp.
       state_interp γ s -∗ gp_done γ.(rcu_name) gid captured start finish -∗
       ⌜completed_gp_at s.(coupled_machine) gid captured⌝.
     Proof.
-      iIntros "(_ & _ & _ & Hrcu) [Hdone _]".
+      iIntros "(_ & _ & _ & _ & Hrcu) [Hdone _]".
       iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".
       iDestruct (ghost_map_lookup with "Hgps Hdone") as %Hlookup.
       iPureIntro. apply (proj2 (proj1 (proj2 Hmatch) gid captured)). by exists start, finish.

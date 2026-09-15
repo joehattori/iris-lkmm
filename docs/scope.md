@@ -21,9 +21,9 @@ See the [semantic architecture](semantics.md) for the design.
 
 The [Iris logic](wp-design.md) has a state interpretation, a guarded per-agent
 WP, primitive RCU rules, and parallel composition over accepted executions.
-Initial resources are allocated from the program. Memory events are recorded,
-but location ownership and client reclamation protocols remain future work.
-External adequacy and safety for arbitrary execution prefixes are also open.
+Initial resources come from the program; memory ownership tracks emitted write
+histories. Client reclamation, external adequacy, and safety for arbitrary
+execution prefixes remain open.
 
 Differential testing against `herd7`, source-language refinement, and the
 `percpu_ref` case study remain future work. SRCU, kernel locks, verification of
