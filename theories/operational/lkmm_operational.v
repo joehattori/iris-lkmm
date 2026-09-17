@@ -6,11 +6,11 @@ From iris_lkmm.operational Require Import
   lkmm_machine rcu_builder rcu_candidate candidate_encoding core_to_machine.
 Import ListNotations.
 
-(** Core execution coupled to the incremental graph builder.  Builder commitments
+(** LKMM execution combines the machine and the incremental graph builder.  Builder commitments
     may lag behind execution, but events, RMW pairs, and dependency provenance
     must already have been generated.  The builder chooses [rf]/[co], while
     [hb]/[pb] are derived; neither transition rule consults a completed candidate. *)
-Module LkmmCoupled.
+Module LkmmOperational.
   Import LkmmMachine RcuGraph RcuMono RcuBuilder RcuCandidate.
   Import LkmmProgramGraph LkmmMemoryRelations LkmmCandidateRenaming
     LkmmCandidateEncoding LkmmCoreToMachine.
@@ -32,96 +32,96 @@ Module LkmmCoupled.
     (list_to_set r.(raw_direct_data) : edge_set) = m.(machine_core).(core_direct_data) /\
     (list_to_set r.(raw_direct_ctrl) : edge_set) = m.(machine_core).(core_direct_ctrl).
 
-  Record coupled_state := CoupledState {
-    coupled_machine : LkmmMachine.state;
-    coupled_builder : builder_state
+  Record lkmm_state := LkmmState {
+    lkmm_machine : LkmmMachine.state;
+    lkmm_builder : builder_state
   }.
 
-  Inductive coupled_action :=
-  | CoupledMachineAction (a : LkmmMachine.action)
-  | CoupledBuilderAction.
+  Inductive lkmm_action :=
+  | LkmmMachineAction (a : LkmmMachine.action)
+  | LkmmBuilderAction.
 
-  Inductive coupled_step (P : core_program) :
-      coupled_state -> coupled_action -> coupled_state -> Prop :=
-  | CoupledStepMachine m m' b a :
+  Inductive lkmm_step (P : core_program) :
+      lkmm_state -> lkmm_action -> lkmm_state -> Prop :=
+  | LkmmStepMachine m m' b a :
       LkmmMachine.step P m a m' ->
-      coupled_step P (CoupledState m b) (CoupledMachineAction a) (CoupledState m' b)
-  | CoupledStepBuilder m b b' :
+      lkmm_step P (LkmmState m b) (LkmmMachineAction a) (LkmmState m' b)
+  | LkmmStepBuilder m b b' :
       builder_step b b' ->
       generated_prefix m b'.(bs_raw) ->
-      coupled_step P (CoupledState m b) CoupledBuilderAction (CoupledState m b').
+      lkmm_step P (LkmmState m b) LkmmBuilderAction (LkmmState m b').
 
-  Inductive coupled_run (P : core_program) :
-      coupled_state -> list coupled_action -> coupled_state -> Prop :=
-  | CoupledRunNil s : coupled_run P s [] s
-  | CoupledRunCons s1 s2 s3 a actions :
-      coupled_step P s1 a s2 -> coupled_run P s2 actions s3 ->
-      coupled_run P s1 (a :: actions) s3.
+  Inductive lkmm_run (P : core_program) :
+      lkmm_state -> list lkmm_action -> lkmm_state -> Prop :=
+  | LkmmRunNil s : lkmm_run P s [] s
+  | LkmmRunCons s1 s2 s3 a actions :
+      lkmm_step P s1 a s2 -> lkmm_run P s2 actions s3 ->
+      lkmm_run P s1 (a :: actions) s3.
 
-  Fixpoint machine_actions (actions : list coupled_action) : list LkmmMachine.action :=
+  Fixpoint machine_actions (actions : list lkmm_action) : list LkmmMachine.action :=
     match actions with
     | [] => []
-    | CoupledMachineAction a :: rest => a :: machine_actions rest
-    | CoupledBuilderAction :: rest => machine_actions rest
+    | LkmmMachineAction a :: rest => a :: machine_actions rest
+    | LkmmBuilderAction :: rest => machine_actions rest
     end.
 
-  Definition initial_coupled (P : core_program) : coupled_state :=
-    CoupledState (LkmmMachine.initial_state P) initial_builder.
+  Definition initial_lkmm (P : core_program) : lkmm_state :=
+    LkmmState (LkmmMachine.initial_state P) initial_builder.
 
-  Definition coupled_complete (s : coupled_state) : Prop :=
-    LkmmMachine.complete s.(coupled_machine) /\
-    machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw).
+  Definition lkmm_complete (s : lkmm_state) : Prop :=
+    LkmmMachine.complete s.(lkmm_machine) /\
+    machine_matches_raw s.(lkmm_machine) s.(lkmm_builder).(bs_raw).
 
   (** Every candidate relation comes from the builder. *)
-  Definition coupled_candidate (s : coupled_state) : core_candidate :=
-    CoreCandidate s.(coupled_builder).(bs_raw).(raw_events)
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_rf))
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_co))
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_rmw))
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_addr))
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_data))
-      (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_ctrl)).
+  Definition lkmm_candidate (s : lkmm_state) : core_candidate :=
+    CoreCandidate s.(lkmm_builder).(bs_raw).(raw_events)
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_rf))
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_co))
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_rmw))
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_addr))
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_data))
+      (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_ctrl)).
 
   (** These base-relation obligations are not transition guards.  Allocation,
       generated-relation well-formedness, and complete RCU matching follow
-      from a completed coupled run. *)
-  Definition coupled_program_graph_obligations (s : coupled_state) : Prop :=
-    let C := coupled_candidate s in
+      from a completed operational run. *)
+  Definition lkmm_program_graph_obligations (s : lkmm_state) : Prop :=
+    let C := lkmm_candidate s in
     rf_wf C.(candidate_events) C.(candidate_rf) /\
     co_wf C.(candidate_events) C.(candidate_co).
 
   (** Silent steps change only the acting thread; this equality retains
       event indices, generated relations, RCU bookkeeping, and builder state. *)
-  Lemma coupled_silent_step_update_thread P s agent s' :
-    coupled_step P s (CoupledMachineAction (Execute (CoreSilent agent))) s' ->
-    exists thread', s' = CoupledState
-      (with_core s.(coupled_machine)
-        (update_thread s.(coupled_machine).(machine_core) agent thread'))
-      s.(coupled_builder).
+  Lemma lkmm_silent_step_update_thread P s agent s' :
+    lkmm_step P s (LkmmMachineAction (Execute (CoreSilent agent))) s' ->
+    exists thread', s' = LkmmState
+      (with_core s.(lkmm_machine)
+        (update_thread s.(lkmm_machine).(machine_core) agent thread'))
+      s.(lkmm_builder).
   Proof.
     intros Hstep. inversion Hstep as [m m' b a Hmachine |]; subst.
     inversion Hmachine as [s core' a thread Hlookup Hordinary Hpending Hcore | | | |]; subst.
     inversion Hcore; subst; eexists; reflexivity.
   Qed.
 
-  Lemma coupled_run_trans P s1 actions1 s2 actions2 s3 :
-    coupled_run P s1 actions1 s2 -> coupled_run P s2 actions2 s3 ->
-    coupled_run P s1 (actions1 ++ actions2) s3.
+  Lemma lkmm_run_trans P s1 actions1 s2 actions2 s3 :
+    lkmm_run P s1 actions1 s2 -> lkmm_run P s2 actions2 s3 ->
+    lkmm_run P s1 (actions1 ++ actions2) s3.
   Proof.
     intros Hrun Hrest. induction Hrun; simpl; first done.
     econstructor; [done | by apply IHHrun].
   Qed.
 
-  Lemma coupled_run_machine_projection P s actions s' :
-    coupled_run P s actions s' ->
-    LkmmMachine.run P s.(coupled_machine) (machine_actions actions) s'.(coupled_machine).
+  Lemma lkmm_run_machine_projection P s actions s' :
+    lkmm_run P s actions s' ->
+    LkmmMachine.run P s.(lkmm_machine) (machine_actions actions) s'.(lkmm_machine).
   Proof.
     intros Hrun. induction Hrun; first constructor.
     destruct H; simpl in *; last done. econstructor; done.
   Qed.
 
-  Lemma coupled_run_builder_projection P s actions s' :
-    coupled_run P s actions s' -> builder_run s.(coupled_builder) s'.(coupled_builder).
+  Lemma lkmm_run_builder_projection P s actions s' :
+    lkmm_run P s actions s' -> builder_run s.(lkmm_builder) s'.(lkmm_builder).
   Proof.
     intros Hrun. induction Hrun; first constructor.
     destruct H; simpl in *; first done. econstructor; done.
@@ -165,9 +165,9 @@ Module LkmmCoupled.
   Qed.
 
   Lemma step_preserves_generated_prefix P s a s' :
-    coupled_step P s a s' -> core_allocation_wf s.(coupled_machine).(machine_core) ->
-    generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw) ->
-    generated_prefix s'.(coupled_machine) s'.(coupled_builder).(bs_raw).
+    lkmm_step P s a s' -> core_allocation_wf s.(lkmm_machine).(machine_core) ->
+    generated_prefix s.(lkmm_machine) s.(lkmm_builder).(bs_raw) ->
+    generated_prefix s'.(lkmm_machine) s'.(lkmm_builder).(bs_raw).
   Proof.
     intros Hstep Hwf (HE & HRMW & HADDR & HDATA & HCTRL).
     destruct Hstep; simpl in *; last done.
@@ -183,14 +183,14 @@ Module LkmmCoupled.
   Qed.
 
   (** No reachable builder prefix invents an event or generated relation. *)
-  Theorem coupled_run_generated_prefix P actions s :
-    coupled_run P (initial_coupled P) actions s ->
-    generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw).
+  Theorem lkmm_run_generated_prefix P actions s :
+    lkmm_run P (initial_lkmm P) actions s ->
+    generated_prefix s.(lkmm_machine) s.(lkmm_builder).(bs_raw).
   Proof.
-    assert (forall s1 actions0 s2, coupled_run P s1 actions0 s2 ->
-      core_allocation_wf s1.(coupled_machine).(machine_core) ->
-      generated_prefix s1.(coupled_machine) s1.(coupled_builder).(bs_raw) ->
-      generated_prefix s2.(coupled_machine) s2.(coupled_builder).(bs_raw)) as Hpreserve.
+    assert (forall s1 actions0 s2, lkmm_run P s1 actions0 s2 ->
+      core_allocation_wf s1.(lkmm_machine).(machine_core) ->
+      generated_prefix s1.(lkmm_machine) s1.(lkmm_builder).(bs_raw) ->
+      generated_prefix s2.(lkmm_machine) s2.(lkmm_builder).(bs_raw)) as Hpreserve.
     { intros s1 actions0 s2 Hrun. induction Hrun; intros Hwf Hprefix; first done.
       apply IHHrun; last by eapply step_preserves_generated_prefix.
       destruct H; simpl in *; last done.
@@ -200,19 +200,19 @@ Module LkmmCoupled.
     - split_and!; try set_solver. intros eid ev Hlookup. discriminate Hlookup.
   Qed.
 
-  Theorem coupled_operational_soundness P actions s :
-    coupled_run P (initial_coupled P) actions s -> coupled_complete s ->
+  Theorem lkmm_operational_soundness P actions s :
+    lkmm_run P (initial_lkmm P) actions s -> lkmm_complete s ->
     complete_core_run P (project_actions (machine_actions actions))
-      s.(coupled_machine).(machine_core) /\
-    machine_matches_raw s.(coupled_machine) s.(coupled_builder).(bs_raw) /\
-    graph_consistent (graph_of_raw s.(coupled_builder).(bs_raw)) /\
-    core_allocation_wf s.(coupled_machine).(machine_core) /\
-    no_unmatched_unlocks s.(coupled_machine) /\
-    certificates_sound s.(coupled_machine).
+      s.(lkmm_machine).(machine_core) /\
+    machine_matches_raw s.(lkmm_machine) s.(lkmm_builder).(bs_raw) /\
+    graph_consistent (graph_of_raw s.(lkmm_builder).(bs_raw)) /\
+    core_allocation_wf s.(lkmm_machine).(machine_core) /\
+    no_unmatched_unlocks s.(lkmm_machine) /\
+    certificates_sound s.(lkmm_machine).
   Proof.
     intros Hrun [Hcomplete Hmatches].
-    pose proof (coupled_run_machine_projection _ _ _ _ Hrun) as Hmachine.
-    pose proof (coupled_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
+    pose proof (lkmm_run_machine_projection _ _ _ _ Hrun) as Hmachine.
+    pose proof (lkmm_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
     destruct (run_rcu_safety _ _ _ Hmachine) as [Hsafe Hcerts].
     pose proof (run_allocation_wf _ _ _ Hmachine) as Halloc.
     split_and!; try done.
@@ -220,82 +220,82 @@ Module LkmmCoupled.
     - by eapply completed_builder_run_consistent.
   Qed.
 
-  Theorem coupled_completed_certificate_snapshot_clear P actions s cert :
-    coupled_run P (initial_coupled P) actions s ->
-    In cert s.(coupled_machine).(gp_certificates) ->
-    forall lock, In lock cert.(gc_captured_readers) -> ~ In lock (all_open_readers s.(coupled_machine)).
+  Theorem lkmm_completed_certificate_snapshot_clear P actions s cert :
+    lkmm_run P (initial_lkmm P) actions s ->
+    In cert s.(lkmm_machine).(gp_certificates) ->
+    forall lock, In lock cert.(gc_captured_readers) -> ~ In lock (all_open_readers s.(lkmm_machine)).
   Proof.
     intros Hrun Hcert.
-    pose proof (coupled_run_machine_projection _ _ _ _ Hrun) as Hmachine.
-    exact (completed_snapshot_clear P (machine_actions actions) s.(coupled_machine)
+    pose proof (lkmm_run_machine_projection _ _ _ _ Hrun) as Hmachine.
+    exact (completed_snapshot_clear P (machine_actions actions) s.(lkmm_machine)
       cert Hmachine Hcert).
   Qed.
 
-  Theorem coupled_run_program_graph P actions s :
-    coupled_run P (initial_coupled P) actions s -> coupled_complete s ->
-    coupled_program_graph_obligations s -> program_graph P (coupled_candidate s).
+  Theorem lkmm_run_program_graph P actions s :
+    lkmm_run P (initial_lkmm P) actions s -> lkmm_complete s ->
+    lkmm_program_graph_obligations s -> program_graph P (lkmm_candidate s).
   Proof.
     intros Hrun Hcomplete Hobligations.
-    destruct (coupled_operational_soundness _ _ _ Hrun Hcomplete)
+    destruct (lkmm_operational_soundness _ _ _ Hrun Hcomplete)
       as (Hcore & (Hevents & Hrmw_eq & Haddr_eq & Hdata_eq & Hctrl_eq) &
         _ & [Halloc _] & _).
     pose proof (complete_core_run_generated_relations_wf _ _ _ Hcore) as
       (Hrmw & Haddr & Hdata & Hctrl).
     destruct Hcomplete as [[_ [_ Hmatching]] _].
     constructor.
-    - exists (project_actions (machine_actions actions)), s.(coupled_machine).(machine_core).
+    - exists (project_actions (machine_actions actions)), s.(lkmm_machine).(machine_core).
       split_and!; try done; symmetry; done.
     - destruct Hobligations as [Hrf Hco].
       unfold core_candidate_wf. split_and!; try done.
-      + change (event_structure_wf s.(coupled_builder).(bs_raw).(raw_events)).
+      + change (event_structure_wf s.(lkmm_builder).(bs_raw).(raw_events)).
         by rewrite Hevents.
-      + change (rmw_wf s.(coupled_builder).(bs_raw).(raw_events)
-          (list_to_set s.(coupled_builder).(bs_raw).(raw_rmw))).
+      + change (rmw_wf s.(lkmm_builder).(bs_raw).(raw_events)
+          (list_to_set s.(lkmm_builder).(bs_raw).(raw_rmw))).
         by rewrite Hevents, Hrmw_eq.
-      + change (direct_addr_wf s.(coupled_builder).(bs_raw).(raw_events)
-          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_addr))).
+      + change (direct_addr_wf s.(lkmm_builder).(bs_raw).(raw_events)
+          (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_addr))).
         by rewrite Hevents, Haddr_eq.
-      + change (direct_data_wf s.(coupled_builder).(bs_raw).(raw_events)
-          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_data))).
+      + change (direct_data_wf s.(lkmm_builder).(bs_raw).(raw_events)
+          (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_data))).
         by rewrite Hevents, Hdata_eq.
-      + change (direct_ctrl_wf s.(coupled_builder).(bs_raw).(raw_events)
-          (list_to_set s.(coupled_builder).(bs_raw).(raw_direct_ctrl))).
+      + change (direct_ctrl_wf s.(lkmm_builder).(bs_raw).(raw_events)
+          (list_to_set s.(lkmm_builder).(bs_raw).(raw_direct_ctrl))).
         by rewrite Hevents, Hctrl_eq.
-      + change (rcu_matching_complete s.(coupled_builder).(bs_raw).(raw_events)).
+      + change (rcu_matching_complete s.(lkmm_builder).(bs_raw).(raw_events)).
         by rewrite Hevents.
   Qed.
 
   (** The builder's consistency constraints hold even on execution prefixes.
       The extracted candidate need not yet be complete or well formed. *)
-  Theorem coupled_candidate_lkmm_consistent P actions s :
-    coupled_run P (initial_coupled P) actions s ->
-    lkmm_consistent (coupled_candidate s).
+  Theorem lkmm_candidate_lkmm_consistent P actions s :
+    lkmm_run P (initial_lkmm P) actions s ->
+    lkmm_consistent (lkmm_candidate s).
   Proof.
     intros Hrun.
-    pose proof (coupled_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
-    change (graph_consistent (graph_of_raw s.(coupled_builder).(bs_raw))).
+    pose proof (lkmm_run_builder_projection _ _ _ _ Hrun) as Hbuilder.
+    change (graph_consistent (graph_of_raw s.(lkmm_builder).(bs_raw))).
     by eapply completed_builder_run_consistent.
   Qed.
 
   (** Completion supplies agreement with generated events and relations.
       Only well-formedness of the independent [rf]/[co] choices remains a
       caller obligation; generated RMW and dependency facts follow from Core. *)
-  Theorem coupled_run_soundness P actions s :
-    coupled_run P (initial_coupled P) actions s -> coupled_complete s ->
-    coupled_program_graph_obligations s ->
-    program_graph P (coupled_candidate s) /\ lkmm_consistent (coupled_candidate s).
+  Theorem lkmm_run_soundness P actions s :
+    lkmm_run P (initial_lkmm P) actions s -> lkmm_complete s ->
+    lkmm_program_graph_obligations s ->
+    program_graph P (lkmm_candidate s) /\ lkmm_consistent (lkmm_candidate s).
   Proof.
     intros Hrun Hcomplete Hobligations. split.
-    - by eapply coupled_run_program_graph.
-    - by eapply coupled_candidate_lkmm_consistent.
+    - by eapply lkmm_run_program_graph.
+    - by eapply lkmm_candidate_lkmm_consistent.
   Qed.
 
   Lemma lift_machine_run P m actions m' b :
     LkmmMachine.run P m actions m' ->
-    coupled_run P (CoupledState m b) (map CoupledMachineAction actions) (CoupledState m' b).
+    lkmm_run P (LkmmState m b) (map LkmmMachineAction actions) (LkmmState m' b).
   Proof.
     intros Hrun. induction Hrun; simpl; first constructor.
-    econstructor; [by apply CoupledStepMachine | done].
+    econstructor; [by apply LkmmStepMachine | done].
   Qed.
 
   Local Lemma builder_run_graph_le b b' :
@@ -320,12 +320,12 @@ Module LkmmCoupled.
 
   Lemma lift_builder_run P m b b' :
     builder_run b b' -> generated_prefix m b'.(bs_raw) ->
-    exists actions, coupled_run P (CoupledState m b) actions (CoupledState m b').
+    exists actions, lkmm_run P (LkmmState m b) actions (LkmmState m b').
   Proof.
     intros Hrun Hprefix. induction Hrun; first by exists []; constructor.
     destruct IHHrun as [actions Hactions]; first done.
-    exists (CoupledBuilderAction :: actions). econstructor; last done.
-    apply CoupledStepBuilder; first done.
+    exists (LkmmBuilderAction :: actions). econstructor; last done.
+    apply LkmmStepBuilder; first done.
     eapply generated_prefix_backward; [by apply builder_run_graph_le | done].
   Qed.
 
@@ -339,8 +339,8 @@ Module LkmmCoupled.
   Theorem consistent_program_candidate_is_schedulable P C :
     consistent_program_candidate P C ->
     exists actions s,
-      coupled_run P (initial_coupled P) actions s /\ coupled_complete s /\
-      s.(coupled_builder).(bs_raw) = candidate_raw C.
+      lkmm_run P (initial_lkmm P) actions s /\ lkmm_complete s /\
+      s.(lkmm_builder).(bs_raw) = candidate_raw C.
   Proof.
     intros (Hwf & Hconsistent & machine_actions0 & m & [Hmachine Hcomplete] & Hmatches).
     destruct (consistent_candidate_is_incrementally_schedulable C Hwf Hconsistent)
@@ -354,23 +354,23 @@ Module LkmmCoupled.
       - rewrite HDATA. done.
       - rewrite HCTRL. done. }
     destruct (lift_builder_run P m _ _ Hbuilder Hprefix) as [builder_actions Hbuilder_lift].
-    exists (map CoupledMachineAction machine_actions0 ++ builder_actions), (CoupledState m b).
-    split; first by eapply coupled_run_trans.
+    exists (map LkmmMachineAction machine_actions0 ++ builder_actions), (LkmmState m b).
+    split; first by eapply lkmm_run_trans.
     split; last done. split; first done. simpl. by rewrite Hraw.
   Qed.
 
-  (** Every consistent program graph has a completed coupled execution.
+  (** Every consistent program graph has a completed operational execution.
       Replay supplies the machine run; the builder then commits the same
       events and relations, with [rf]/[co] transported by the replay's ID map.
       The constructed schedule is existential, with no progress guarantee
       for other schedules. The proof inherits the candidate scheduler's
       excluded-middle dependency. *)
-  Theorem coupled_run_completeness P G :
+  Theorem lkmm_run_completeness P G :
     program_graph P G -> lkmm_consistent G ->
     exists actions s f,
-      coupled_run P (initial_coupled P) actions s /\
-      coupled_complete s /\ coupled_program_graph_obligations s /\
-      candidate_renaming f G (coupled_candidate s).
+      lkmm_run P (initial_lkmm P) actions s /\
+      lkmm_complete s /\ lkmm_program_graph_obligations s /\
+      candidate_renaming f G (lkmm_candidate s).
   Proof.
     intros Hprogram Hconsistent.
     pose proof (program_graph_rcu_replay_wf P G Hprogram Hconsistent) as Hrcu.
@@ -402,12 +402,12 @@ Module LkmmCoupled.
       rewrite !list_to_set_elements_L. split_and!; done. }
     destruct (consistent_program_candidate_is_schedulable P _ Hcandidate)
       as (actions & s & Hrun & Hcomplete & Hraw).
-    assert (coupled_candidate s = replayed) as Hfinal.
-    { unfold coupled_candidate. rewrite Hraw, finite_candidate_of_core_raw.
+    assert (lkmm_candidate s = replayed) as Hfinal.
+    { unfold lkmm_candidate. rewrite Hraw, finite_candidate_of_core_raw.
       cbn. by rewrite !list_to_set_elements_L. }
     exists actions, s, f. split; first done. split; first done.
     rewrite Hfinal. split; last done.
-    unfold coupled_program_graph_obligations. rewrite Hfinal.
+    unfold lkmm_program_graph_obligations. rewrite Hfinal.
     destruct Hreplayed_wf as (_ & Hrf & Hco & _). done.
   Qed.
 
@@ -494,8 +494,8 @@ Module LkmmCoupled.
     Example generated_rmw_commitments :
       graph_consistent (candidate_graph candidate) ->
       exists actions s,
-        coupled_run program (initial_coupled program) actions s /\ coupled_complete s /\
-        s.(coupled_builder).(bs_raw) = candidate_raw candidate.
+        lkmm_run program (initial_lkmm program) actions s /\ lkmm_complete s /\
+        s.(lkmm_builder).(bs_raw) = candidate_raw candidate.
     Proof.
       intros Hconsistent.
       apply consistent_program_candidate_is_schedulable. split; first apply candidate_wf.
@@ -512,9 +512,9 @@ Module LkmmCoupled.
       ~ generated_prefix (LkmmMachine.initial_state program) (candidate_raw candidate) /\
       ~ generated_prefix finished (add_rmw (candidate_raw candidate) (2, 1)) /\
       ~ generated_prefix finished (add_direct_addr (candidate_raw candidate) (2, 1)) /\
-      ~ coupled_complete (initial_coupled program) /\
-      ~ coupled_complete (CoupledState finished initial_builder) /\
-      ~ coupled_complete (CoupledState finished
+      ~ lkmm_complete (initial_lkmm program) /\
+      ~ lkmm_complete (LkmmState finished initial_builder) /\
+      ~ lkmm_complete (LkmmState finished
         (BuilderState (RawGraph finished.(machine_core).(core_events) [] [] [] [] [] []) []
           initial_builder.(bs_seen_consistency))).
     Proof.
@@ -549,24 +549,24 @@ Module LkmmCoupled.
 
     (** Exercise completeness from a program graph, including both completion
         obligations, then use soundness to check the reconstructed execution. *)
-    Example consistent_program_graph_has_completed_coupled_run :
+    Example consistent_program_graph_has_completed_lkmm_run :
       lkmm_consistent candidate ->
       exists actions s f,
-        coupled_run program (initial_coupled program) actions s /\ coupled_complete s /\
-        coupled_program_graph_obligations s /\
-        program_graph program (coupled_candidate s) /\
-        lkmm_consistent (coupled_candidate s) /\
-        candidate_renaming f candidate (coupled_candidate s).
+        lkmm_run program (initial_lkmm program) actions s /\ lkmm_complete s /\
+        lkmm_program_graph_obligations s /\
+        program_graph program (lkmm_candidate s) /\
+        lkmm_consistent (lkmm_candidate s) /\
+        candidate_renaming f candidate (lkmm_candidate s).
     Proof.
       intros Hconsistent.
-      destruct (coupled_run_completeness _ _ two_agent_program_graph Hconsistent)
+      destruct (lkmm_run_completeness _ _ two_agent_program_graph Hconsistent)
         as (actions & s & f & Hrun & Hcomplete & Hobligations & Hrename).
-      destruct (coupled_run_soundness _ _ _ Hrun Hcomplete Hobligations) as [Hprogram Hlkmm].
+      destruct (lkmm_run_soundness _ _ _ Hrun Hcomplete Hobligations) as [Hprogram Hlkmm].
       exists actions, s, f. split_and!; done.
     Qed.
 
     Example malformed_rf_is_an_explicit_obligation :
-      ~ coupled_program_graph_obligations (CoupledState finished
+      ~ lkmm_program_graph_obligations (LkmmState finished
         (BuilderState (RawGraph sample_events [(1, 1)] [(0, 1)] [] [] [] []) []
           initial_builder.(bs_seen_consistency))).
     Proof.
@@ -577,4 +577,4 @@ Module LkmmCoupled.
     Qed.
   End ProgramGraphBridgeTests.
 
-End LkmmCoupled.
+End LkmmOperational.

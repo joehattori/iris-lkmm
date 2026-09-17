@@ -1,31 +1,31 @@
 From Stdlib Require Import List Lia.
 From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import graph_correspondence state_interp wp.
 From iris_lkmm.examples Require Import graph_correspondence_examples.
 Import ListNotations.
 
 Module WpBodyExamples.
-  Import LkmmMachine LkmmCoupled LkmmGraphCorrespondence LkmmStateInterp LkmmWp.
+  Import LkmmMachine LkmmOperational LkmmGraphCorrespondence LkmmStateInterp LkmmWp.
   Module GP := GraphCorrespondenceExamples.GpState.
 
   Definition sync_view := ThreadView (initial_thread SSynchronizeRcu) 0 [].
 
   (** Even an empty captured set changes which half of synchronization runs. *)
   Example begin_distinguishes_local_gp_phases suffix final :
-    lookup_coupled_thread_view (CoupledExecutionPosition [] GP.before
-      (CoupledMachineAction (BeginGp 0) :: suffix) final) 0 =
-      Some (CoupledThreadView sync_view None) /\
-    lookup_coupled_thread_view (CoupledExecutionPosition [CoupledMachineAction (BeginGp 0)]
-      GP.waiting suffix final) 0 = Some (CoupledThreadView sync_view (Some [])) /\
-    CoupledThreadView sync_view None <> CoupledThreadView sync_view (Some []).
+    lookup_lkmm_thread_view (LkmmExecutionPosition [] GP.before
+      (LkmmMachineAction (BeginGp 0) :: suffix) final) 0 =
+      Some (LkmmThreadView sync_view None) /\
+    lookup_lkmm_thread_view (LkmmExecutionPosition [LkmmMachineAction (BeginGp 0)]
+      GP.waiting suffix final) 0 = Some (LkmmThreadView sync_view (Some [])) /\
+    LkmmThreadView sync_view None <> LkmmThreadView sync_view (Some []).
   Proof. split; first reflexivity. split; first reflexivity. discriminate. Qed.
 
   (** Unfolding the WP of a finished thread exposes its resource postcondition. *)
   Example terminal_wp_requires_postcondition `{!invGS Σ, !stateG Σ}
-      P G γ E agent regs index actions (Φ : coupled_thread_view -> iProp Σ) :
-    let v := CoupledThreadView (ThreadView (ThreadState SSkip [] regs) index actions) None in
+      P G γ E agent regs index actions (Φ : lkmm_thread_view -> iProp Σ) :
+    let v := LkmmThreadView (ThreadView (ThreadState SSkip [] regs) index actions) None in
     wp P G γ E agent v Φ ⊣⊢ |={E}=> Φ v.
   Proof. intros v. by rewrite wp_unfold /wp_body. Qed.
 
@@ -35,9 +35,9 @@ Module WpBodyExamples.
     Definition sum (left right : reg_value) := RegValue
       (left.(reg_integer) + right.(reg_integer))%Z
       (left.(reg_origins) ∪ right.(reg_origins)).
-    Definition before left right index actions := CoupledThreadView
+    Definition before left right index actions := LkmmThreadView
       (ThreadView (ThreadState body [] {[0 := left; 1 := right]}) index actions) None.
-    Definition after left right index actions := CoupledThreadView
+    Definition after left right index actions := LkmmThreadView
       (ThreadView (ThreadState SSkip [] {[0 := sum left right; 1 := sum left right]})
         index (actions ++ replicate 4 (CoreSilent 0))) None.
 
@@ -67,9 +67,9 @@ Module WpBodyExamples.
       (SIf (EReg 0) (SAssign 1 (EConst 11)) (SAssign 1 (EConst 22))) copy_result.
     Definition branch_value (condition : reg_value) := RegValue
       (if decide (condition.(reg_integer) = 0%Z) then 22%Z else 11%Z) ∅.
-    Definition before condition outer index actions := CoupledThreadView
+    Definition before condition outer index actions := LkmmThreadView
       (ThreadView (ThreadState body [KControl outer] {[0 := condition]}) index actions) None.
-    Definition after condition index actions := CoupledThreadView
+    Definition after condition index actions := LkmmThreadView
       (ThreadView (ThreadState SSkip []
         {[2 := branch_value condition; 1 := branch_value condition; 0 := condition]})
         index (actions ++ replicate 7 (CoreSilent 0))) None.
@@ -100,8 +100,8 @@ Module WpBodyExamples.
 
   Module RmwEmission.
     Definition body := SXchg 0 RmwRelaxed (EConst 0) (EConst 1).
-    Definition before := CoupledThreadView (ThreadView (initial_thread body) 0 []) None.
-    Definition after read observed := CoupledThreadView
+    Definition before := LkmmThreadView (ThreadView (initial_thread body) 0 []) None.
+    Definition after read observed := LkmmThreadView
       (ThreadView (ThreadState SSkip [] {[0 := RegValue observed {[read]}]})
         2 [CoreObserve 0 observed]) None.
     Definition read_event observed := EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 observed).
@@ -119,10 +119,10 @@ Module WpBodyExamples.
       { intros [[Hstmt _] _]. discriminate. }
       iNext. iIntros (prefix s a suffix final next v') "%Hfacts [Hmemory #Hnew]".
       destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
-      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_index _ _ _ Hview) as Hindex.
       pose proof (core_run_allocation_wf _ _ _
-        (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
+        (proj1 (lkmm_position_projection _ _ _ Hpos))) as Halloc.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [m0 core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
       rewrite Hagent in Hthread. cbn in Hlookup. rewrite Hlookup in Hthread.
@@ -130,7 +130,7 @@ Module WpBodyExamples.
       unfold body in *. simplify_eq/=.
       injection H1 as <- <-.
       assert (v' = after m.(machine_core).(core_next_id) observed) as ->.
-      { unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core in *.
+      { unfold lookup_lkmm_thread_view, lookup_thread_view, lkmm_position_to_core in *.
         cbn in Hview. rewrite Hlookup Hready in Hview. cbn in Hview.
         injection Hview as Hindex' Hactions.
         cbn in Hview'. rewrite lookup_insert_eq Hready in Hview'. cbn in Hview'.
@@ -167,8 +167,8 @@ Module WpBodyExamples.
     Example exchange_consequence `{!invGS Σ, !stateG Σ} P G γ E history (R S : iProp Σ) :
       memory_own γ.(memory_names_of) 0 1 history -∗ ▷ R -∗ (R ={E}=∗ S) -∗
       wp P G γ E 0 before (fun v =>
-        ⌜thread_complete v.(coupled_view_core).(view_thread) /\
-          v.(coupled_view_core).(view_event_index) = 2⌝ ∗ S ∗
+        ⌜thread_complete v.(lkmm_view_core).(view_thread) /\
+          v.(lkmm_view_core).(view_event_index) = 2⌝ ∗ S ∗
         ∃ write, event_fact γ write write_event).
     Proof.
       iIntros "Hloc HR Hupdate". iApply (wp_consequence with "[Hloc HR] [Hupdate]").

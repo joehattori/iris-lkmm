@@ -7,12 +7,12 @@ testing and independent review remain outstanding; there is no verified CAT
 interpreter or source-to-Core refinement.
 
 The finite candidate completeness construction uses propositional excluded
-middle to partition successor relations into old and new pairs. Coupled
+middle to partition successor relations into old and new pairs. Operational
 completeness and reverse graph coverage inherit that dependency. Builder and
-coupled soundness, Core replay, renaming, and machine lifting add no axioms.
+operational soundness, Core replay, renaming, and machine lifting add no axioms.
 The relational model is independent of Iris.
 
-Coupled soundness requires explicit completion-time reads-from and coherence
+Operational soundness requires explicit completion-time reads-from and coherence
 well-formedness obligations. These are premises about candidate choices;
 generated RMW and dependency well-formedness follow from execution. The
 obligations are not new axioms or operational transition guards.

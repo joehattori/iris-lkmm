@@ -1,10 +1,10 @@
 From iris.base_logic.lib Require Import ghost_map ghost_var.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost state_interp.
 
 Module RcuClient.
-  Import LkmmMachine LkmmCoupled.
+  Import LkmmMachine LkmmOperational.
   Import RcuGhost LkmmMachineGhost LkmmStateInterp.
   Local Existing Instance rcu_open_G.
 
@@ -150,13 +150,13 @@ Module RcuClient.
     Lemma client_wait γ δ s R :
       client_control δ ClientRetired -∗
       state_interp γ s -∗ client_pool γ.(rcu_name) δ ClientRetired R -∗
-      |==> let phase := ClientWaiting (list_to_set (all_open_readers s.(coupled_machine))) in
+      |==> let phase := ClientWaiting (list_to_set (all_open_readers s.(lkmm_machine))) in
         state_interp γ s ∗ client_control δ phase ∗ client_pool γ.(rcu_name) δ phase R.
     Proof.
       iIntros "Hcontrol Hstate Hpool".
       iDestruct "Hpool" as (loans) "(Hphase & Hauth & Hreaders & HR)".
       iAssert (⌜forall rid, rid ∈ dom loans ->
-        rid ∈ (list_to_set (all_open_readers s.(coupled_machine)) : gset rscs_id)⌝)%I
+        rid ∈ (list_to_set (all_open_readers s.(lkmm_machine)) : gset rscs_id)⌝)%I
         as %Hcovered.
       { rewrite bi.pure_forall. iIntros (rid). rewrite bi.pure_impl.
         iIntros (Hrid). apply elem_of_dom in Hrid as [[] Hlookup].
@@ -171,7 +171,7 @@ Module RcuClient.
         machine state: operational event freshness prevents reader-ID reuse.
         Raw RCU ghost state alone does not establish this fact. *)
     Lemma client_reclaim P actions s γ δ snapshot gid start finish R :
-      coupled_run P (initial_coupled P) actions s ->
+      lkmm_run P (initial_lkmm P) actions s ->
       client_control δ (ClientWaiting snapshot) -∗
       state_interp γ s -∗
       gp_done γ.(rcu_name) gid snapshot start finish -∗
@@ -193,7 +193,7 @@ Module RcuClient.
         pose proof (Hcovered rid (elem_of_dom_2 loans rid tt Hlookup)) as Hcaptured.
         rewrite Hsnapshot elem_of_list_to_set list_elem_of_In in Hcaptured.
         rewrite elem_of_list_to_set list_elem_of_In in Hopen.
-        by eapply coupled_completed_certificate_snapshot_clear. }
+        by eapply lkmm_completed_certificate_snapshot_clear. }
       iMod (ghost_var_update_halves ClientReclaimed with "Hcontrol Hphase")
         as "[Hcontrol Hphase]".
       iModIntro. iFrame "Hstate Hcontrol HR". iExists ∅. by iFrame.

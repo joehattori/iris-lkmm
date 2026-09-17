@@ -2,12 +2,12 @@ From Stdlib Require Import List.
 From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import graph_correspondence rcu_ghost state_interp wp wp_rcu.
 Import ListNotations.
 
 Module WpRcuExamples.
-  Import LkmmMachine LkmmCoupled RcuMatching LkmmGraphCorrespondence.
+  Import LkmmMachine LkmmOperational RcuMatching LkmmGraphCorrespondence.
   Import RcuGhost LkmmStateInterp LkmmWp LkmmWpRcu.
 
   Definition nested_graph := CoreCandidate {[
@@ -18,7 +18,7 @@ Module WpRcuExamples.
   ]} ∅ ∅ ∅ ∅ ∅ ∅.
 
   (** The view after unfolding the sequences of ((lock; lock); unlock); unlock. *)
-  Definition nested_start := CoupledThreadView
+  Definition nested_start := LkmmThreadView
     (ThreadView (ThreadState SRcuReadLock
       [KSeq SRcuReadLock; KSeq SRcuReadUnlock; KSeq SRcuReadUnlock] ∅) 0
       [CoreSilent 0; CoreSilent 0; CoreSilent 0]) None.
@@ -28,32 +28,32 @@ Module WpRcuExamples.
 
   Definition nested_program := CoreProgram ∅ {[0 := nested_body]}.
 
-  Definition nested_initial_view := CoupledThreadView
+  Definition nested_initial_view := LkmmThreadView
     (ThreadView (initial_thread nested_body) 0 []) None.
 
-  Definition nested_prefix := replicate 3 (CoupledMachineAction (Execute (CoreSilent 0))).
+  Definition nested_prefix := replicate 3 (LkmmMachineAction (Execute (CoreSilent 0))).
 
-  Definition nested_prepared := CoupledState
+  Definition nested_prepared := LkmmState
     (with_core (initial_state nested_program) (update_thread (core_initial_state nested_program)
-      0 nested_start.(coupled_view_core).(view_thread)))
-    (initial_coupled nested_program).(coupled_builder).
+      0 nested_start.(lkmm_view_core).(view_thread)))
+    (initial_lkmm nested_program).(lkmm_builder).
 
   Example nested_start_reachable suffix final :
-    coupled_run nested_program (initial_coupled nested_program) nested_prefix nested_prepared /\
-    lookup_coupled_thread_view (CoupledExecutionPosition nested_prefix nested_prepared suffix final)
+    lkmm_run nested_program (initial_lkmm nested_program) nested_prefix nested_prepared /\
+    lookup_lkmm_thread_view (LkmmExecutionPosition nested_prefix nested_prepared suffix final)
       0 = Some nested_start.
   Proof.
     split; last reflexivity.
-    do 3 (econstructor; first (apply CoupledStepMachine; eapply StepCore;
+    do 3 (econstructor; first (apply LkmmStepMachine; eapply StepCore;
       [reflexivity | done | reflexivity |]; eapply StepSequence; reflexivity)).
     constructor.
   Qed.
 
   Example nested_readers `{!invGS Σ, !stateG Σ} γ E (R : iProp Σ) :
     R -∗ wp nested_program nested_graph γ E 0 nested_initial_view (fun v =>
-      ⌜thread_complete v.(coupled_view_core).(view_thread) /\
-        v.(coupled_view_core).(view_event_index) = 4 /\
-        length v.(coupled_view_core).(view_actions) = 10⌝ ∗ R ∗
+      ⌜thread_complete v.(lkmm_view_core).(view_thread) /\
+        v.(lkmm_view_core).(view_event_index) = 4 /\
+        length v.(lkmm_view_core).(view_actions) = 10⌝ ∗ R ∗
       event_fact γ 0 (EAgent 0 0 (LBarrier BarrierRcuLock)) ∗
       event_fact γ 1 (EAgent 0 1 (LBarrier BarrierRcuLock)) ∗
       event_fact γ 2 (EAgent 0 2 (LBarrier BarrierRcuUnlock)) ∗
@@ -78,7 +78,7 @@ Module WpRcuExamples.
     iModIntro. iFrame "HR Hlock0 Hlock1 Hunlock2 Hunlock3". done.
   Qed.
 
-  Definition sync_start index actions regs := CoupledThreadView
+  Definition sync_start index actions regs := LkmmThreadView
     (ThreadView (ThreadState SSynchronizeRcu [] regs) index actions) None.
 
   (** The captured snapshot is supplied by begin and preserved by finish.
@@ -89,7 +89,7 @@ Module WpRcuExamples.
     lookup_event G.(candidate_events) sync =
       Some (EAgent agent index (LBarrier BarrierSyncRcu)) ->
     R -∗ wp P G γ E agent (sync_start index actions regs) (fun v =>
-      ⌜v = CoupledThreadView (ThreadView (ThreadState SSkip [] regs)
+      ⌜v = LkmmThreadView (ThreadView (ThreadState SSkip [] regs)
         (S index) (actions ++ [CoreEmit agent])) None⌝ ∗ R ∗
       event_fact γ sync (EAgent agent index (LBarrier BarrierSyncRcu)) ∗
       ∃ locks start finish,

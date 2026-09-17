@@ -73,9 +73,9 @@ Completeness schedules the components of a finite consistent candidate and
 uses monotonicity to justify each local check. The existence proof uses the
 candidate, while the operational state and transitions do not preload it.
 
-## Coupled execution
+## Operational execution
 
-The [coupled semantics](../theories/operational/lkmm_coupled.v) interleaves
+The [operational semantics](../theories/operational/lkmm_operational.v) interleaves
 machine and builder steps. The builder may commit only events and generated
 RMW/dependency edges already supplied by Core. Reads-from and coherence remain
 independent builder choices. Commitments may lag behind emission, allowing RCU
@@ -86,9 +86,9 @@ relations. Soundness combines that agreement with the builder's consistency
 invariant. The resulting graph is a well-formed, consistent program graph
 under explicit completion-time reads-from and coherence obligations.
 
-## Coupled operational completeness
+## Operational completeness
 
-Every consistent program graph admits a completed coupled execution up to
+Every consistent program graph admits a completed operational execution up to
 event-ID renaming. The construction separates replay from graph commitment:
 
 1. Replay each agent's Core actions as a whole block, preserving observed

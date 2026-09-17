@@ -63,7 +63,7 @@ constraints.
 
 [Core execution](../theories/lang/program_graph.v) generates RMW pairing and
 dependency provenance; reads-from and coherence remain independent candidate
-choices. The [coupled semantics](semantics.md#coupled-execution) requires
+choices. The [operational semantics](semantics.md#operational-execution) requires
 committed provenance to come from Core. The standalone graph builder has no
 program-execution premise.
 

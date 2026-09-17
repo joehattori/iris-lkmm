@@ -1,12 +1,12 @@
 From Stdlib Require Import List.
 From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import graph_correspondence graph_judgment state_interp wp wp_parallel.
 Import ListNotations.
 
 Module LkmmAdequacy.
-  Import LkmmMachine LkmmCoupled LkmmGraphCorrespondence LkmmGraphJudgment.
+  Import LkmmMachine LkmmOperational LkmmGraphCorrespondence LkmmGraphJudgment.
   Import LkmmStateInterp LkmmWp LkmmWpParallel.
 
   Section program_proof.
@@ -20,28 +20,28 @@ Module LkmmAdequacy.
         memory_own γ.(memory_names_of) loc 1
           (write_history (core_initial_events P) loc)).
 
-    Definition agent_wps P G γ (Φ : agent_id -> coupled_thread_view -> iProp Σ) : iProp Σ :=
+    Definition agent_wps P G γ (Φ : agent_id -> lkmm_thread_view -> iProp Σ) : iProp Σ :=
       [∗ map] agent ↦ body ∈ P.(program_agents),
         wp P G γ ⊤ agent (initial_thread_view body) (Φ agent).
 
     Definition final_posts P
-        (Φ : agent_id -> coupled_thread_view -> iProp Σ) actions final : iProp Σ :=
+        (Φ : agent_id -> lkmm_thread_view -> iProp Σ) actions final : iProp Σ :=
       [∗ map] agent ↦ body ∈ P.(program_agents),
-        ∃ v, ⌜lookup_coupled_thread_view
-          (CoupledExecutionPosition actions final [] final) agent = Some v⌝ ∗
+        ∃ v, ⌜lookup_lkmm_thread_view
+          (LkmmExecutionPosition actions final [] final) agent = Some v⌝ ∗
           Φ agent v.
 
     (** Setup precedes candidate selection. Each candidate supplies one WP
         per agent and an extraction rule for every accepted trace and final
         state. The extraction rule may retain resources alongside the WPs. *)
     Definition completed_program_wp
-        P (Q : list coupled_action -> coupled_state -> Prop) : iProp Σ :=
+        P (Q : list lkmm_action -> lkmm_state -> Prop) : iProp Σ :=
       (∀ γ, initial_resources P γ ={⊤}=∗
         all_candidates P (fun G =>
-          ∃ Φ : agent_id -> coupled_thread_view -> iProp Σ,
+          ∃ Φ : agent_id -> lkmm_thread_view -> iProp Σ,
             agent_wps P G γ Φ ∗
             (∀ actions final,
-              ⌜coupled_position P G (CoupledExecutionPosition actions final [] final)⌝ -∗
+              ⌜lkmm_position P G (LkmmExecutionPosition actions final [] final)⌝ -∗
               state_interp γ final ∗ final_posts P Φ actions final
               ={⊤,∅}=∗ ⌜Q actions final⌝)))%I.
 
@@ -61,20 +61,20 @@ Module LkmmAdequacy.
   (** External partial correctness for the supplied completed execution.
       No prefix-safety, termination, or GP-liveness premise is used. *)
   Theorem wp_adequacy {Σ : gFunctors} `{!invGpreS Σ, !stateG Σ}
-      P (Q : list coupled_action -> coupled_state -> Prop) :
+      P (Q : list lkmm_action -> lkmm_state -> Prop) :
     (forall `{!invGS Σ}, ⊢ completed_program_wp P Q) ->
     forall actions final,
-      coupled_run P (initial_coupled P) actions final ->
-      coupled_complete final ->
-      coupled_program_graph_obligations final ->
+      lkmm_run P (initial_lkmm P) actions final ->
+      lkmm_complete final ->
+      lkmm_program_graph_obligations final ->
       Q actions final.
   Proof.
     intros Hwp actions final Hrun Hcomplete Hobligations.
-    assert (coupled_position P (coupled_candidate final)
-      (CoupledExecutionPosition [] (initial_coupled P) actions final)) as Hinitial.
+    assert (lkmm_position P (lkmm_candidate final)
+      (LkmmExecutionPosition [] (initial_lkmm P) actions final)) as Hinitial.
     { split; first constructor. split_and!; done. }
-    assert (coupled_position P (coupled_candidate final)
-      (CoupledExecutionPosition actions final [] final)) as Hfinal.
+    assert (lkmm_position P (lkmm_candidate final)
+      (LkmmExecutionPosition actions final [] final)) as Hfinal.
     { split; first done. split; first constructor. split_and!; done. }
     apply (pure_soundness (PROP := iPropI Σ)).
     eapply (step_fupdN_soundness_lc _ (length actions) 0).
@@ -82,8 +82,8 @@ Module LkmmAdequacy.
     iMod (state_interp_alloc_memory P) as (γ) "(Hstate & Htokens & Hfacts & Hmemory)".
     iMod (Hwp Hinv $! γ with "[$Hfacts $Hmemory]") as "Hclient".
     iDestruct (all_candidates_elim with "Hclient") as (Φ) "[Hwps Hfinish]".
-    { by eapply coupled_run_soundness. }
-    iPoseProof (wp_parallel_init P (coupled_candidate final) γ ⊤ actions final Φ
+    { by eapply lkmm_run_soundness. }
+    iPoseProof (wp_parallel_init P (lkmm_candidate final) γ ⊤ actions final Φ
       with "Htokens Hwps") as "Hpool".
     iPoseProof (wp_parallel_run_post _ _ _ _ _ _ _ _ _ Hinitial
       with "[$Hstate $Hpool]") as "Hposts".

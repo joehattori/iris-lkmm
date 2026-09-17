@@ -1,10 +1,10 @@
 From iris.base_logic.lib Require Import invariants.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import graph_correspondence rcu_ghost state_interp rcu_client wp wp_rcu.
 
 Module LkmmWpRcuClient.
-  Import LkmmMachine LkmmCoupled LkmmGraphCorrespondence.
+  Import LkmmMachine LkmmOperational LkmmGraphCorrespondence.
   Import RcuGhost LkmmStateInterp RcuClient LkmmWp LkmmWpRcu.
 
   Section rules.
@@ -82,10 +82,10 @@ Module LkmmWpRcuClient.
         access the invariant and return their loans while the GP waits. *)
     Lemma wp_synchronize_reclaim P G γ δ N E agent v sync R Φ `{!Timeless R} :
       ↑N ⊆ E ->
-      v.(coupled_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
-      v.(coupled_view_pending_gp) = None ->
+      v.(lkmm_view_core).(view_thread).(thread_statement) = SSynchronizeRcu ->
+      v.(lkmm_view_pending_gp) = None ->
       lookup_event G.(candidate_events) sync =
-        Some (EAgent agent v.(coupled_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) ->
+        Some (EAgent agent v.(lkmm_view_core).(view_event_index) (LBarrier BarrierSyncRcu)) ->
       client_inv γ.(rcu_name) δ N R -∗ client_control δ ClientLive -∗
       (▷ (R -∗ wp P G γ E agent (rcu_next_view agent v) Φ)) -∗
       wp P G γ E agent v Φ.

@@ -4,14 +4,14 @@ From iris.base_logic Require Import invariants.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
 From iris_lkmm.lang Require Import core_rcu.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import rcu_ghost.
 
 (** Completed Core-machine GPs justify the Iris completion update.  The
     authoritative open-reader map and the registered pending-GP token remain
     explicit resources; a machine certificate alone does not manufacture them. *)
 Module LkmmMachineGhost.
-  Import LkmmMachine LkmmCoupled RcuGhost.
+  Import LkmmMachine LkmmOperational RcuGhost.
   Import RcuMatching LkmmCoreRcu.
 
   Definition open_reader_map (s : LkmmMachine.state) : gmap rscs_id unit :=
@@ -191,20 +191,20 @@ Module LkmmMachineGhost.
       by eapply completed_certificate_enables_iris_finish.
     Qed.
 
-    Theorem completed_coupled_gp_reclamation_frame
+    Theorem completed_lkmm_gp_reclamation_frame
         P actions s cert γ gps epoch gid start (R : iProp Σ) :
-      coupled_run P (initial_coupled P) actions s ->
-      In cert s.(coupled_machine).(gp_certificates) ->
-      rcu_auth γ (open_reader_map s.(coupled_machine)) gps epoch ∗
+      lkmm_run P (initial_lkmm P) actions s ->
+      In cert s.(lkmm_machine).(gp_certificates) ->
+      rcu_auth γ (open_reader_map s.(lkmm_machine)) gps epoch ∗
         gp_pending γ gid (list_to_set cert.(gc_captured_readers)) start ∗ R ==∗
-      rcu_auth γ (open_reader_map s.(coupled_machine))
+      rcu_auth γ (open_reader_map s.(lkmm_machine))
           (<[gid := GpDone (list_to_set cert.(gc_captured_readers)) start (S epoch)]> gps) (S epoch) ∗
         gp_done γ gid (list_to_set cert.(gc_captured_readers)) start (S epoch) ∗ R.
     Proof.
       intros Hrun Hcert.
-      pose proof (coupled_run_machine_projection _ _ _ _ Hrun) as Hmachine.
+      pose proof (lkmm_run_machine_projection _ _ _ _ Hrun) as Hmachine.
       exact (completed_machine_gp_reclamation_frame P (machine_actions actions)
-        s.(coupled_machine) cert γ gps epoch gid start R Hmachine Hcert).
+        s.(lkmm_machine) cert γ gps epoch gid start R Hmachine Hcert).
     Qed.
   End bridge.
 End LkmmMachineGhost.

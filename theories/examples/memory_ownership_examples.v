@@ -19,16 +19,16 @@ Module MemoryOwnershipExamples.
     Definition body := SCmpxchg 0 RmwAcquire (EConst 0) (EConst 1) (EConst 2).
     Definition program := CoreProgram {[0 := 0%Z]} {[0 := body]}.
     Definition read_event := EAgent 0 0 (LMemory AccessRead AccessAcquire RmwMarked 0 0%Z).
-    Definition after := CoupledState
+    Definition after := LkmmState
       (with_core (initial_state program)
         (add_single_event (core_initial_state program) 0 (initial_thread body)
           (LMemory AccessRead AccessAcquire RmwMarked 0 0%Z)
-          {[0 := RegValue 0%Z {[1]}]} ∅ ∅ ∅)) (initial_coupled program).(coupled_builder).
+          {[0 := RegValue 0%Z {[1]}]} ∅ ∅ ∅)) (initial_lkmm program).(lkmm_builder).
 
-    Lemma step : coupled_step program (initial_coupled program)
-      (CoupledMachineAction (Execute (CoreObserve 0 0%Z))) after.
+    Lemma step : lkmm_step program (initial_lkmm program)
+      (LkmmMachineAction (Execute (CoreObserve 0 0%Z))) after.
     Proof.
-      apply CoupledStepMachine. eapply StepCore; try done.
+      apply LkmmStepMachine. eapply StepCore; try done.
       eapply StepCmpxchgFailure with (dst := 0) (mode := RmwAcquire)
         (address := EConst 0) (expected := EConst 1) (desired := EConst 2)
         (expected_result := RegValue 1%Z ∅) (desired_result := RegValue 2%Z ∅);
@@ -40,7 +40,7 @@ Module MemoryOwnershipExamples.
     Context `{!invGS Σ, !stateG Σ}.
 
     Example future_write_cannot_be_owned_as_emitted γ b q :
-      state_interp γ (CoupledState (State Future.after_read ∅ []) b) -∗
+      state_interp γ (LkmmState (State Future.after_read ∅ []) b) -∗
       memory_own γ.(memory_names_of) 0 q (<[2 := Sample.write]> initial_history) -∗ False.
     Proof.
       iIntros "Hstate Hloc".
@@ -75,11 +75,11 @@ Module MemoryOwnershipExamples.
     Definition shared_memory γ N : iProp Σ :=
       inv N (∃ history, memory_own γ.(memory_names_of) 0 1 history).
 
-    Definition reader_post γ (v : coupled_thread_view) : iProp Σ :=
-      ⌜v.(coupled_view_core).(view_thread).(thread_registers) !! 0 =
+    Definition reader_post γ (v : lkmm_thread_view) : iProp Σ :=
+      ⌜v.(lkmm_view_core).(view_thread).(thread_registers) !! 0 =
         Some (RegValue 1%Z {[1]})⌝ ∗ event_fact γ 1 Sample.read.
 
-    Definition writer_post γ (_ : coupled_thread_view) : iProp Σ :=
+    Definition writer_post γ (_ : lkmm_thread_view) : iProp Σ :=
       ∃ write, event_fact γ write Sample.write.
 
     Lemma shared_reader γ E N :
@@ -120,15 +120,15 @@ Module MemoryOwnershipExamples.
 
     (** Resources are allocated from the program. The invariant lends and
         recovers ownership independently at each agent's scheduled step.
-        [GraphCorrespondenceExamples.future_source_coupled_cut] witnesses
+        [GraphCorrespondenceExamples.future_source_lkmm_cut] witnesses
         the read-before-write schedule. The reader uses half the share. *)
     Example parallel_future_read E N actions final :
       ↑N ⊆ E ->
-      coupled_position Sample.program Future.candidate
-        (CoupledExecutionPosition [] (initial_coupled Sample.program) actions final) ->
+      lkmm_position Sample.program Future.candidate
+        (LkmmExecutionPosition [] (initial_lkmm Sample.program) actions final) ->
       ⊢ |={E}=> ∃ γ, |={E}[∅]▷=>^(length actions) |={E}=>
         state_interp γ final ∗
-        ⌜exists thread, final.(coupled_machine).(machine_core).(core_threads) !! 1 = Some thread /\
+        ⌜exists thread, final.(lkmm_machine).(machine_core).(core_threads) !! 1 = Some thread /\
           thread.(thread_registers) !! 0 = Some (RegValue 1%Z {[1]})⌝ ∗
         event_fact γ 1 Sample.read ∗ (∃ write, event_fact γ write Sample.write).
     Proof.
@@ -154,8 +154,8 @@ Module MemoryOwnershipExamples.
       iDestruct "Hwriter" as (vw) "(_ & Hwrite)".
       iDestruct "Hreader" as (vr) "(%Hview & %Hreg & Hread)".
       iModIntro. iFrame "Hstate Hread Hwrite". iPureIntro.
-      exists vr.(coupled_view_core).(view_thread). split; last done.
-      exact (lookup_coupled_thread_view_lookup _ _ _ Hview).
+      exists vr.(lkmm_view_core).(view_thread). split; last done.
+      exact (lookup_lkmm_thread_view_lookup _ _ _ Hview).
     Qed.
   End resources.
 End MemoryOwnershipExamples.

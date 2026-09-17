@@ -2,12 +2,12 @@ From Stdlib Require Import List.
 From iris.base_logic.lib Require Import fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import memory_relations.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled rcu_builder.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational rcu_builder.
 From iris_lkmm.logic Require Import graph_correspondence state_interp wp wp_parallel.
 Import ListNotations.
 
 Module WpParallelExamples.
-  Import LkmmMachine LkmmCoupled RcuBuilder LkmmGraphCorrespondence.
+  Import LkmmMachine LkmmOperational RcuBuilder LkmmGraphCorrespondence.
   Import LkmmStateInterp LkmmWp LkmmWpParallel LkmmMemoryRelations.
 
   Definition increment := SAssign 0 (EBin OpAdd (EReg 0) (EConst 2)).
@@ -16,39 +16,39 @@ Module WpParallelExamples.
   Definition program := CoreProgram ∅ {[0 := first; 1 := second]}.
   Definition graph := CoreCandidate ∅ ∅ ∅ ∅ ∅ ∅ ∅.
   Definition result_thread value := ThreadState SSkip [] {[0 := RegValue value ∅]}.
-  Definition result_view agent value steps := CoupledThreadView
+  Definition result_view agent value steps := LkmmThreadView
     (ThreadView (result_thread value) 0 (replicate steps (CoreSilent agent))) None.
 
-  Definition finished := CoupledState
+  Definition finished := LkmmState
     (State (CoreState {[0 := result_thread 42; 1 := result_thread 7]} 0 ∅ ∅ ∅ ∅ ∅ ∅) ∅ [])
     initial_builder.
-  Definition interleaving := [CoupledMachineAction (Execute (CoreSilent 0));
-    CoupledMachineAction (Execute (CoreSilent 1));
-    CoupledMachineAction (Execute (CoreSilent 0));
-    CoupledMachineAction (Execute (CoreSilent 0));
-    CoupledMachineAction (Execute (CoreSilent 0))].
+  Definition interleaving := [LkmmMachineAction (Execute (CoreSilent 0));
+    LkmmMachineAction (Execute (CoreSilent 1));
+    LkmmMachineAction (Execute (CoreSilent 0));
+    LkmmMachineAction (Execute (CoreSilent 0));
+    LkmmMachineAction (Execute (CoreSilent 0))].
 
   (** Agent 1 completes between agent 0's sequence entry and first assignment.
       This concrete witness also establishes that the tested domain is inhabited. *)
   Example interleaved_position :
-    coupled_position program graph
-      (CoupledExecutionPosition [] (initial_coupled program) interleaving finished).
+    lkmm_position program graph
+      (LkmmExecutionPosition [] (initial_lkmm program) interleaving finished).
   Proof.
     split; first constructor. split.
     - econstructor.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSequence; reflexivity. }
       econstructor.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepAssign; reflexivity. }
       econstructor.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepAssign; reflexivity. }
       econstructor.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSkipSequence; reflexivity. }
       econstructor.
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepAssign; reflexivity. }
       constructor.
     - split.
@@ -59,7 +59,7 @@ Module WpParallelExamples.
           apply lookup_singleton_Some in Hlookup as [<- <-]. done.
         * split_and!; reflexivity.
       + split; last reflexivity.
-        unfold coupled_program_graph_obligations, rf_wf, rf_functional, rf_total,
+        unfold lkmm_program_graph_obligations, rf_wf, rf_functional, rf_total,
           co_wf, co_irreflexive, co_transitive, co_total, initial_writes_exist,
           initial_writes_unique, co_initial_first, initial_write_at, location_used, event_has_location,
           rf, co, edge_relation. cbn.
@@ -91,13 +91,13 @@ Module WpParallelExamples.
     (** Each local proof receives its own resource. Composition follows any
         accepted schedule and returns both results, even if an agent ended early. *)
     Example parallel_assignments E actions final (R0 R1 : iProp Σ) :
-      coupled_position program graph
-        (CoupledExecutionPosition [] (initial_coupled program) actions final) ->
+      lkmm_position program graph
+        (LkmmExecutionPosition [] (initial_lkmm program) actions final) ->
       R0 ∗ R1 -∗ |={E}=> ∃ γ,
         |={E}[∅]▷=>^(length actions) |={E}=>
           state_interp γ final ∗ R0 ∗ R1 ∗
-          ⌜final.(coupled_machine).(machine_core).(core_threads) !! 0 = Some (result_thread 42) /\
-            final.(coupled_machine).(machine_core).(core_threads) !! 1 = Some (result_thread 7)⌝.
+          ⌜final.(lkmm_machine).(machine_core).(core_threads) !! 0 = Some (result_thread 42) /\
+            final.(lkmm_machine).(machine_core).(core_threads) !! 1 = Some (result_thread 7)⌝.
     Proof.
       intros Hpos. iIntros "[HR0 HR1]".
       iMod (state_interp_alloc program) as (γ) "(Hstate & Htokens & _)".
@@ -112,8 +112,8 @@ Module WpParallelExamples.
       iDestruct "H0" as (v0) "(%Hview0 & %Hv0 & HR0)".
       iDestruct "H1" as (v1) "(%Hview1 & %Hv1 & HR1)".
       subst v0 v1. iModIntro. iFrame. iPureIntro. split.
-      - exact (lookup_coupled_thread_view_lookup _ _ _ Hview0).
-      - exact (lookup_coupled_thread_view_lookup _ _ _ Hview1).
+      - exact (lookup_lkmm_thread_view_lookup _ _ _ Hview0).
+      - exact (lookup_lkmm_thread_view_lookup _ _ _ Hview1).
     Qed.
   End proof.
 End WpParallelExamples.

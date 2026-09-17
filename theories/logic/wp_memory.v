@@ -11,23 +11,23 @@ Module LkmmWpMemory.
   Import LkmmMachine LkmmMemoryRelations.
 
   Definition memory_view (thread : thread_state) index actions :=
-    CoupledThreadView (ThreadView thread index actions) None.
+    LkmmThreadView (ThreadView thread index actions) None.
 
   Local Lemma single_event_view prefix s a suffix final agent thread index actions
       label regs addr data ctrl :
     action_agent a = agent ->
-    lookup_coupled_thread_view
-      (CoupledExecutionPosition prefix s (CoupledMachineAction (Execute a) :: suffix) final)
+    lookup_lkmm_thread_view
+      (LkmmExecutionPosition prefix s (LkmmMachineAction (Execute a) :: suffix) final)
       agent = Some (memory_view thread index actions) ->
-    lookup_coupled_thread_view
-      (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute a)])
-        (CoupledState (with_core s.(coupled_machine)
-          (add_single_event s.(coupled_machine).(machine_core) agent thread label regs addr data ctrl))
-          s.(coupled_builder)) suffix final) agent =
+    lookup_lkmm_thread_view
+      (LkmmExecutionPosition (prefix ++ [LkmmMachineAction (Execute a)])
+        (LkmmState (with_core s.(lkmm_machine)
+          (add_single_event s.(lkmm_machine).(machine_core) agent thread label regs addr data ctrl))
+          s.(lkmm_builder)) suffix final) agent =
       Some (memory_view (emitted_thread thread regs) (S index) (actions ++ [a])).
   Proof.
     intros Hagent Hview.
-    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core in *.
+    unfold lookup_lkmm_thread_view, lookup_thread_view, lkmm_position_to_core in *.
     cbn in Hview. apply fmap_Some in Hview as (cv & Hcore & Heq).
     apply fmap_Some in Hcore as (actual & Hlookup & Hcv). subst cv.
     injection Heq as Hthread Hindex Hactions Hpending. subst actual.
@@ -46,17 +46,17 @@ Module LkmmWpMemory.
       is_write ev /\ location_of ev = Some loc /\ value_of ev = Some observed.
 
   Lemma position_read_from P G p read agent index mode mark loc observed :
-    coupled_position P G p ->
-    lookup_event p.(coupled_position_state).(coupled_machine).(machine_core).(core_events) read =
+    lkmm_position P G p ->
+    lookup_event p.(lkmm_position_state).(lkmm_machine).(machine_core).(core_events) read =
       Some (EAgent agent index (LMemory AccessRead mode mark loc observed)) ->
     exists source, read_from G read source loc observed.
   Proof.
     intros Hpos Hread.
-    destruct (coupled_position_consistent_program_graph _ _ _ Hpos) as [Hgraph _].
+    destruct (lkmm_position_consistent_program_graph _ _ _ Hpos) as [Hgraph _].
     destruct (candidate_position_read_source _ _ _ _ _ Hgraph
-      (coupled_position_projection _ _ _ Hpos) Hread eq_refl) as (source & Hrf & Hwf & _).
+      (lkmm_position_projection _ _ _ Hpos) Hread eq_refl) as (source & Hrf & Hwf & _).
     destruct Hwf as (we & re & val & Hw & Hr & Hwrite & _ & Hloc & Hwval & Hrval).
-    pose proof (candidate_position_events _ _ _ (coupled_position_projection _ _ _ Hpos)
+    pose proof (candidate_position_events _ _ _ (lkmm_position_projection _ _ _ Hpos)
       _ _ Hread) as Hr'.
     rewrite Hr' in Hr. injection Hr as <-. cbn in Hloc, Hrval.
     unfold same_location, same_attribute in Hloc.
@@ -95,10 +95,10 @@ Module LkmmWpMemory.
       iNext. iIntros (prefix s a suffix final next v') "%Hfacts [Hmemory #Hnew]".
       iMod "Hacc" as (q history) "[Hloc Hwp]".
       destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
-      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_index _ _ _ Hview) as Hindex.
       pose proof (core_run_allocation_wf _ _ _
-        (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
+        (proj1 (lkmm_position_projection _ _ _ Hpos))) as Halloc.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [m0 core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
       cbn in Hlookup. rewrite Hlookup in Hthread.
@@ -163,10 +163,10 @@ Module LkmmWpMemory.
       iNext. iIntros (prefix s a suffix final next v') "%Hfacts [Hmemory #Hnew]".
       iMod "Hacc" as (history) "[Hloc Hwp]".
       destruct Hfacts as ((Hpos & Hview) & Hagent & Hstep & Hnext & Hview').
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
-      pose proof (lookup_coupled_thread_view_index _ _ _ Hview) as Hindex.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_index _ _ _ Hview) as Hindex.
       pose proof (core_run_allocation_wf _ _ _
-        (proj1 (coupled_position_projection _ _ _ Hpos))) as Halloc.
+        (proj1 (lkmm_position_projection _ _ _ Hpos))) as Halloc.
       inversion Hstep as [m m' b action Hmachine |]; subst.
       inversion Hmachine as [m0 core' action thread Hthread Hordinary Hready Hcore | | | |]; subst.
       cbn in Hlookup. rewrite Hlookup in Hthread.

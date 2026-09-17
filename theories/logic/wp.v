@@ -8,13 +8,13 @@ Import ListNotations.
 Module LkmmWp.
   Import LkmmMachine LkmmGraphCorrespondence LkmmStateInterp.
 
-  Local Lemma ordinary_coupled_successor P prefix s a suffix final next agent thread :
-    s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread ->
+  Local Lemma ordinary_lkmm_successor P prefix s a suffix final next agent thread :
+    s.(lkmm_machine).(machine_core).(core_threads) !! agent = Some thread ->
     ordinary_statement thread.(thread_statement) -> executing_agent a = agent ->
-    coupled_step P s (CoupledMachineAction a) next ->
+    lkmm_step P s (LkmmMachineAction a) next ->
     exists action v', a = Execute action /\
-      lookup_coupled_thread_view
-        (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
+      lookup_lkmm_thread_view
+        (LkmmExecutionPosition (prefix ++ [LkmmMachineAction a]) next suffix final)
         agent = Some v'.
   Proof.
     intros Hlookup Hordinary Hagent Hstep.
@@ -29,24 +29,24 @@ Module LkmmWp.
       try rewrite Hagent in Hthread;
       rewrite Hlookup in Hthread; injection Hthread as <-;
       try solve [rewrite Hstmt in Hordinary; done].
-    exists action. unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
+    exists action. unfold lookup_lkmm_thread_view, lookup_thread_view, lkmm_position_to_core.
     destruct Hcore; simpl; rewrite lookup_insert_eq; eexists; done.
   Qed.
 
   Local Lemma silent_project_next prefix s suffix final agent v thread' :
-    lookup_coupled_thread_view
-      (CoupledExecutionPosition prefix s
-        (CoupledMachineAction (Execute (CoreSilent agent)) :: suffix) final) agent = Some v ->
-    v.(coupled_view_pending_gp) = None ->
-    lookup_coupled_thread_view
-      (CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute (CoreSilent agent))])
-        (CoupledState (with_core s.(coupled_machine)
-          (update_thread s.(coupled_machine).(machine_core) agent thread')) s.(coupled_builder))
-        suffix final) agent = Some (CoupledThreadView
-          (ThreadView thread' v.(coupled_view_core).(view_event_index)
-            (v.(coupled_view_core).(view_actions) ++ [CoreSilent agent])) None).
+    lookup_lkmm_thread_view
+      (LkmmExecutionPosition prefix s
+        (LkmmMachineAction (Execute (CoreSilent agent)) :: suffix) final) agent = Some v ->
+    v.(lkmm_view_pending_gp) = None ->
+    lookup_lkmm_thread_view
+      (LkmmExecutionPosition (prefix ++ [LkmmMachineAction (Execute (CoreSilent agent))])
+        (LkmmState (with_core s.(lkmm_machine)
+          (update_thread s.(lkmm_machine).(machine_core) agent thread')) s.(lkmm_builder))
+        suffix final) agent = Some (LkmmThreadView
+          (ThreadView thread' v.(lkmm_view_core).(view_event_index)
+            (v.(lkmm_view_core).(view_actions) ++ [CoreSilent agent])) None).
   Proof.
-    unfold lookup_coupled_thread_view, lookup_thread_view, coupled_position_to_core.
+    unfold lookup_lkmm_thread_view, lookup_thread_view, lkmm_position_to_core.
     intros Hview Hpending. apply fmap_Some in Hview as (cv & Hcore & Heq). subst v.
     apply fmap_Some in Hcore as (thread & Hlookup & Heq). subst cv.
     cbn in Hpending |- *. rewrite lookup_insert_eq Hpending /=.
@@ -66,28 +66,28 @@ Module LkmmWp.
         Reader and pending-GP tokens must come from the proof's resources
         and pass to the continuation when still owned. *)
     Definition wp_body (P : core_program) (G : core_candidate) (γ : state_names)
-        (recurse : coPset -d> agent_id -d> coupled_thread_view -d>
-          (coupled_thread_view -d> iPropO Σ) -d> iPropO Σ) :
-        coPset -d> agent_id -d> coupled_thread_view -d>
-          (coupled_thread_view -d> iPropO Σ) -d> iPropO Σ := λ E agent v Φ,
-      match v.(coupled_view_core).(view_thread).(thread_statement),
-          v.(coupled_view_core).(view_thread).(thread_continuation),
-          v.(coupled_view_pending_gp) with
+        (recurse : coPset -d> agent_id -d> lkmm_thread_view -d>
+          (lkmm_thread_view -d> iPropO Σ) -d> iPropO Σ) :
+        coPset -d> agent_id -d> lkmm_thread_view -d>
+          (lkmm_thread_view -d> iPropO Σ) -d> iPropO Σ := λ E agent v Φ,
+      match v.(lkmm_view_core).(view_thread).(thread_statement),
+          v.(lkmm_view_core).(view_thread).(thread_continuation),
+          v.(lkmm_view_pending_gp) with
       | SSkip, [], None => |={E}=> Φ v
       | _, _, _ =>
           ∀ prefix s a suffix final,
-            let p := CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final in
-            ⌜coupled_thread_at P G p agent v /\ executing_agent a = agent⌝ -∗
-            state_interp γ s ∗ thread_token γ agent v.(coupled_view_core).(view_thread)
+            let p := LkmmExecutionPosition prefix s (LkmmMachineAction a :: suffix) final in
+            ⌜lkmm_thread_at P G p agent v /\ executing_agent a = agent⌝ -∗
+            state_interp γ s ∗ thread_token γ agent v.(lkmm_view_core).(view_thread)
               ={E,∅}=∗
             ∀ next,
-              let p' := CoupledExecutionPosition (prefix ++ [CoupledMachineAction a])
+              let p' := LkmmExecutionPosition (prefix ++ [LkmmMachineAction a])
                 next suffix final in
-              ⌜coupled_step P s (CoupledMachineAction a) next /\ coupled_position P G p'⌝ -∗
+              ⌜lkmm_step P s (LkmmMachineAction a) next /\ lkmm_position P G p'⌝ -∗
               |={∅}=> ▷ |={∅,E}=> ∃ v',
-                ⌜lookup_coupled_thread_view p' agent = Some v'⌝ ∗
+                ⌜lookup_lkmm_thread_view p' agent = Some v'⌝ ∗
                 state_interp γ next ∗
-                thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
+                thread_token γ agent v'.(lkmm_view_core).(view_thread) ∗
                 recurse E agent v' Φ
       end%I.
 
@@ -98,8 +98,8 @@ Module LkmmWp.
     Qed.
 
     Definition wp P G γ :
-        coPset -d> agent_id -d> coupled_thread_view -d>
-          (coupled_thread_view -d> iPropO Σ) -d> iPropO Σ :=
+        coPset -d> agent_id -d> lkmm_thread_view -d>
+          (lkmm_thread_view -d> iPropO Σ) -d> iPropO Σ :=
       fixpoint (wp_body P G γ).
 
     Lemma wp_unfold P G γ E agent v Φ :
@@ -177,18 +177,18 @@ Module LkmmWp.
         The handler may own additional resources for the operation; this
         rule supplies the state/thread resources and handles the later and masks. *)
     Lemma wp_lift_step P G γ E agent v Φ :
-      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ~ (thread_complete v.(lkmm_view_core).(view_thread) /\ v.(lkmm_view_pending_gp) = None)
       ->
       (▷ ∀ prefix s a suffix final next,
-        let p := CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final in
-        let p' := CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final in
-        ⌜coupled_thread_at P G p agent v /\ executing_agent a = agent /\
-          coupled_step P s (CoupledMachineAction a) next /\ coupled_position P G p'⌝ -∗
-        state_interp γ s ∗ thread_token γ agent v.(coupled_view_core).(view_thread)
+        let p := LkmmExecutionPosition prefix s (LkmmMachineAction a :: suffix) final in
+        let p' := LkmmExecutionPosition (prefix ++ [LkmmMachineAction a]) next suffix final in
+        ⌜lkmm_thread_at P G p agent v /\ executing_agent a = agent /\
+          lkmm_step P s (LkmmMachineAction a) next /\ lkmm_position P G p'⌝ -∗
+        state_interp γ s ∗ thread_token γ agent v.(lkmm_view_core).(view_thread)
           ={E}=∗ ∃ v',
-            ⌜lookup_coupled_thread_view p' agent = Some v'⌝ ∗
+            ⌜lookup_lkmm_thread_view p' agent = Some v'⌝ ∗
             state_interp γ next ∗
-            thread_token γ agent v'.(coupled_view_core).(view_thread) ∗
+            thread_token γ agent v'.(lkmm_view_core).(view_thread) ∗
             wp P G γ E agent v' Φ) -∗
       wp P G γ E agent v Φ.
     Proof.
@@ -213,33 +213,33 @@ Module LkmmWp.
         successor, including observations and both events of an RMW.
         Event facts grant no memory ownership. *)
     Lemma wp_lift_execute P G γ E agent v Φ :
-      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ~ (thread_complete v.(lkmm_view_core).(view_thread) /\ v.(lkmm_view_pending_gp) = None)
       ->
-      ordinary_statement v.(coupled_view_core).(view_thread).(thread_statement) ->
+      ordinary_statement v.(lkmm_view_core).(view_thread).(thread_statement) ->
       (▷ ∀ prefix s a suffix final next v',
-        let p := CoupledExecutionPosition prefix s (CoupledMachineAction (Execute a) :: suffix)
+        let p := LkmmExecutionPosition prefix s (LkmmMachineAction (Execute a) :: suffix)
           final in
-        let p' := CoupledExecutionPosition (prefix ++ [CoupledMachineAction (Execute a)]) next
+        let p' := LkmmExecutionPosition (prefix ++ [LkmmMachineAction (Execute a)]) next
           suffix final in
-        ⌜coupled_thread_at P G p agent v /\ action_agent a = agent /\
-          coupled_step P s (CoupledMachineAction (Execute a)) next /\
-          coupled_position P G p' /\ lookup_coupled_thread_view p' agent = Some v'⌝ -∗
-        memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
-        ([∗ map] eid ↦ ev ∈ next.(coupled_machine).(machine_core).(core_events) ∖
-            s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev)
+        ⌜lkmm_thread_at P G p agent v /\ action_agent a = agent /\
+          lkmm_step P s (LkmmMachineAction (Execute a)) next /\
+          lkmm_position P G p' /\ lookup_lkmm_thread_view p' agent = Some v'⌝ -∗
+        memory_auth γ.(memory_names_of) s.(lkmm_machine).(machine_core).(core_events) ∗
+        ([∗ map] eid ↦ ev ∈ next.(lkmm_machine).(machine_core).(core_events) ∖
+            s.(lkmm_machine).(machine_core).(core_events), event_fact γ eid ev)
           ={E}=∗ memory_auth γ.(memory_names_of)
-            next.(coupled_machine).(machine_core).(core_events) ∗ wp P G γ E agent v' Φ) -∗
+            next.(lkmm_machine).(machine_core).(core_events) ∗ wp P G γ E agent v' Φ) -∗
       wp P G γ E agent v Φ.
     Proof.
       intros Hactive Hordinary. iIntros "Hwp". iApply wp_lift_step; first done.
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ (proj2 Hcurrent)) as Hlookup.
-      destruct (ordinary_coupled_successor P prefix s a suffix final next agent _
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ (proj2 Hcurrent)) as Hlookup.
+      destruct (ordinary_lkmm_successor P prefix s a suffix final next agent _
         Hlookup Hordinary Hagent Hstep) as (action & v' & -> & Hview).
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup'.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup'.
       pose proof (core_run_allocation_wf _ _ _
-        (proj1 (coupled_position_projection _ _ _ (proj1 Hcurrent)))) as Halloc.
+        (proj1 (lkmm_position_projection _ _ _ (proj1 Hcurrent)))) as Halloc.
       cbn in Hagent. rewrite <- Hagent in Hlookup'.
       iMod (state_interp_execute _ _ _ _ _ _ _ Hstep Halloc Hlookup'
         with "[Hstate]") as "(Hrestore & Hmemory & Hthread & Hnew)".
@@ -252,15 +252,15 @@ Module LkmmWp.
     Qed.
 
     Lemma wp_lift_silent_step P G γ E agent v v' Φ :
-      ~ (thread_complete v.(coupled_view_core).(view_thread) /\ v.(coupled_view_pending_gp) = None)
+      ~ (thread_complete v.(lkmm_view_core).(view_thread) /\ v.(lkmm_view_pending_gp) = None)
       ->
       (forall prefix s a suffix final next,
-        coupled_thread_at P G
-          (CoupledExecutionPosition prefix s (CoupledMachineAction a :: suffix) final) agent v ->
-        executing_agent a = agent -> coupled_step P s (CoupledMachineAction a) next ->
+        lkmm_thread_at P G
+          (LkmmExecutionPosition prefix s (LkmmMachineAction a :: suffix) final) agent v ->
+        executing_agent a = agent -> lkmm_step P s (LkmmMachineAction a) next ->
         a = Execute (CoreSilent agent) /\
-        lookup_coupled_thread_view
-          (CoupledExecutionPosition (prefix ++ [CoupledMachineAction a]) next suffix final)
+        lookup_lkmm_thread_view
+          (LkmmExecutionPosition (prefix ++ [LkmmMachineAction a]) next suffix final)
           agent = Some v') ->
       ▷ wp P G γ E agent v' Φ -∗ wp P G γ E agent v Φ.
     Proof.
@@ -268,7 +268,7 @@ Module LkmmWp.
       iNext. iIntros (prefix s a suffix final next) "%Hfacts Hstate".
       destruct Hfacts as (Hcurrent & Hagent & Hstep & Hpos).
       destruct (Hsilent _ _ _ _ _ _ Hcurrent Hagent Hstep) as [-> Hview].
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       iMod (state_interp_silent_step _ _ _ _ _ _ _ Hstep Hlookup with "Hstate")
         as "[Hstate Hthread]".
       iModIntro. iExists v'. iFrame. done.
@@ -278,16 +278,16 @@ Module LkmmWp.
         Entering the first statement is one silent step. *)
     Lemma wp_seq P G γ E agent first second ks regs index actions Φ :
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState first (KSeq second :: ks) regs)
+        (LkmmThreadView (ThreadView (ThreadState first (KSeq second :: ks) regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState (SSeq first second) ks regs)
+        (LkmmThreadView (ThreadView (ThreadState (SSeq first second) ks regs)
           index actions) None) Φ.
     Proof.
       apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -305,16 +305,16 @@ Module LkmmWp.
     (** Resume the saved statement, retaining registers and the outer frames. *)
     Lemma wp_skip_seq P G γ E agent next ks regs index actions Φ :
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState next ks regs)
+        (LkmmThreadView (ThreadView (ThreadState next ks regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState SSkip (KSeq next :: ks) regs)
+        (LkmmThreadView (ThreadView (ThreadState SSkip (KSeq next :: ks) regs)
           index actions) None) Φ.
     Proof.
       apply wp_lift_silent_step.
       { intros [[_ Hempty] _]. discriminate. }
       intros prefix s a suffix final s' [_ Hview] Hagent Hstep.
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -334,16 +334,16 @@ Module LkmmWp.
     Lemma wp_assign P G γ E agent dst expression result ks regs index actions Φ :
       eval_expr regs expression = Some result ->
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState SSkip ks (<[dst := result]> regs))
+        (LkmmThreadView (ThreadView (ThreadState SSkip ks (<[dst := result]> regs))
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState (SAssign dst expression) ks regs)
+        (LkmmThreadView (ThreadView (ThreadState (SAssign dst expression) ks regs)
           index actions) None) Φ.
     Proof.
       intros Heval. apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -363,18 +363,18 @@ Module LkmmWp.
     Lemma wp_if P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
       eval_expr regs condition = Some result ->
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView
+        (LkmmThreadView (ThreadView
           (ThreadState (if decide (result.(reg_integer) = 0%Z) then else_branch else then_branch)
             (KControl result.(reg_origins) :: ks) regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+        (LkmmThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
           index actions) None) Φ.
     Proof.
       intros Heval. apply wp_lift_silent_step.
       { intros [[Hskip _] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |
@@ -395,11 +395,11 @@ Module LkmmWp.
     Lemma wp_if_true P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
       eval_expr regs condition = Some result -> result.(reg_integer) <> 0%Z ->
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView
+        (LkmmThreadView (ThreadView
           (ThreadState then_branch (KControl result.(reg_origins) :: ks) regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+        (LkmmThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
           index actions) None) Φ.
     Proof.
       intros Heval Hnonzero.
@@ -411,11 +411,11 @@ Module LkmmWp.
     Lemma wp_if_false P G γ E agent condition then_branch else_branch result ks regs index actions Φ :
       eval_expr regs condition = Some result -> result.(reg_integer) = 0%Z ->
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView
+        (LkmmThreadView (ThreadView
           (ThreadState else_branch (KControl result.(reg_origins) :: ks) regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
+        (LkmmThreadView (ThreadView (ThreadState (SIf condition then_branch else_branch) ks regs)
           index actions) None) Φ.
     Proof.
       intros Heval Hzero.
@@ -427,16 +427,16 @@ Module LkmmWp.
     (** Leave the completed branch's control scope, retaining outer frames. *)
     Lemma wp_skip_control P G γ E agent condition_origins ks regs index actions Φ :
       ▷ wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState SSkip ks regs)
+        (LkmmThreadView (ThreadView (ThreadState SSkip ks regs)
           index (actions ++ [CoreSilent agent])) None) Φ -∗
       wp P G γ E agent
-        (CoupledThreadView (ThreadView (ThreadState SSkip (KControl condition_origins :: ks) regs)
+        (LkmmThreadView (ThreadView (ThreadState SSkip (KControl condition_origins :: ks) regs)
           index actions) None) Φ.
     Proof.
       apply wp_lift_silent_step.
       { intros [[_ Hempty] _]. discriminate. }
       intros prefix s a suffix final next [_ Hview] Hagent Hstep.
-      pose proof (lookup_coupled_thread_view_lookup _ _ _ Hview) as Hlookup.
+      pose proof (lookup_lkmm_thread_view_lookup _ _ _ Hview) as Hlookup.
       revert Hagent. inversion Hstep as [m m' b action Hmachine |]; subst. intros Hagent.
       destruct Hmachine as
         [m core' action thread Hthread Hordinary Hready Hcore |

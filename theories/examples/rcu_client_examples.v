@@ -2,20 +2,20 @@ From Stdlib Require Import List.
 From iris.base_logic.lib Require Import invariants.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import graph_correspondence rcu_ghost state_interp rcu_client
   wp wp_memory wp_rcu wp_rcu_client.
 Import ListNotations.
 
 Module RcuClientExamples.
-  Import LkmmMachine LkmmCoupled RcuMatching LkmmGraphCorrespondence.
+  Import LkmmMachine LkmmOperational RcuMatching LkmmGraphCorrespondence.
   Import RcuGhost LkmmStateInterp RcuClient LkmmWp LkmmWpMemory LkmmWpRcu LkmmWpRcuClient.
 
-  Definition reader_view index actions := CoupledThreadView
+  Definition reader_view index actions := LkmmThreadView
     (ThreadView (ThreadState (SSeq (SLoad 0 LoadOnce (EConst 0)) SRcuReadUnlock) [] ∅)
       index actions) None.
 
-  Definition updater_view := CoupledThreadView
+  Definition updater_view := LkmmThreadView
     (ThreadView (initial_thread SSynchronizeRcu) 0 []) None.
 
   Section example.

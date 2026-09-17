@@ -40,18 +40,18 @@ external guarantee for accepted completed executions.
 ## Completed-execution adequacy
 
 The first external theorem is partial correctness for accepted completed
-coupled executions. Let `Q : list coupled_action -> coupled_state -> Prop`
+operational executions. Let `Q : list lkmm_action -> lkmm_state -> Prop`
 be the external property of the actual trace and final state. The proved
 theorem `LkmmAdequacy.wp_adequacy` is:
 
 ```coq
 Theorem wp_adequacy {Σ : gFunctors} `{!invGpreS Σ, !stateG Σ}
-    P (Q : list coupled_action -> coupled_state -> Prop) :
+    P (Q : list lkmm_action -> lkmm_state -> Prop) :
   (forall `{!invGS Σ}, ⊢ completed_program_wp P Q) ->
   forall actions final,
-    coupled_run P (initial_coupled P) actions final ->
-    coupled_complete final ->
-    coupled_program_graph_obligations final ->
+    lkmm_run P (initial_lkmm P) actions final ->
+    lkmm_complete final ->
+    lkmm_program_graph_obligations final ->
     Q actions final.
 ```
 
@@ -74,7 +74,7 @@ Definition initial_resources P γ : iProp Σ :=
 ```
 
 The adequacy proof allocates these resources using `state_interp_alloc_memory`.
-It retains `state_interp γ (initial_coupled P)` and the initial thread tokens
+It retains `state_interp γ (initial_lkmm P)` and the initial thread tokens
 for `wp_parallel_init`. The client may split memory ownership, establish shared
 invariants, and allocate additional ghost resources using Iris allocation rules.
 The ambient `Σ` may include the client's additional ghost resource functors.
@@ -88,15 +88,15 @@ on ghost names allocated during setup:
 
 ```coq
 Definition agent_wps P G γ
-    (Φ : agent_id -> coupled_thread_view -> iProp Σ) : iProp Σ :=
+    (Φ : agent_id -> lkmm_thread_view -> iProp Σ) : iProp Σ :=
   [∗ map] agent ↦ body ∈ P.(program_agents),
     wp P G γ ⊤ agent (initial_thread_view body) (Φ agent).
 
 Definition final_posts P
-    (Φ : agent_id -> coupled_thread_view -> iProp Σ) actions final : iProp Σ :=
+    (Φ : agent_id -> lkmm_thread_view -> iProp Σ) actions final : iProp Σ :=
   [∗ map] agent ↦ body ∈ P.(program_agents),
-    ∃ v, ⌜lookup_coupled_thread_view
-      (CoupledExecutionPosition actions final [] final) agent = Some v⌝ ∗
+    ∃ v, ⌜lookup_lkmm_thread_view
+      (LkmmExecutionPosition actions final [] final) agent = Some v⌝ ∗
       Φ agent v.
 ```
 
@@ -107,14 +107,14 @@ These are the initial WP collection and final assertions already used by
 
 ```coq
 Definition completed_program_wp P
-    (Q : list coupled_action -> coupled_state -> Prop) : iProp Σ :=
+    (Q : list lkmm_action -> lkmm_state -> Prop) : iProp Σ :=
   (∀ γ, initial_resources P γ ={⊤}=∗
     all_candidates P (fun G =>
-      ∃ Φ : agent_id -> coupled_thread_view -> iProp Σ,
+      ∃ Φ : agent_id -> lkmm_thread_view -> iProp Σ,
         agent_wps P G γ Φ ∗
         (∀ actions final,
-          ⌜coupled_position P G
-            (CoupledExecutionPosition actions final [] final)⌝ -∗
+          ⌜lkmm_position P G
+            (LkmmExecutionPosition actions final [] final)⌝ -∗
           state_interp γ final ∗ final_posts P Φ actions final
             ={⊤,∅}=∗ ⌜Q actions final⌝)))%I.
 ```
@@ -136,10 +136,10 @@ The quantifier order is intentional:
   assertion that holds only under assumed invariant ownership is insufficient.
 
 The proof allocates the initial resources, specializes the client
-proof at `G := coupled_candidate final`, applies `wp_parallel_run_post`, and
+proof at `G := lkmm_candidate final`, applies `wp_parallel_run_post`, and
 uses the final extraction rule. Iris's generic fancy-update and step-update
 soundness then yield the ordinary Rocq proposition `Q actions final`.
-The proof preserves one guard per coupled action and handles the empty trace
+The proof preserves one guard per operational action and handles the empty trace
 separately when eliminating the final update. It adds no axioms.
 
 The [adequacy regressions](../theories/examples/adequacy_examples.v) extract

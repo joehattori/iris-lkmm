@@ -4,11 +4,11 @@ From iris.base_logic.lib Require Import ghost_map.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.lkmm Require Import rcu_matching.
 From iris_lkmm.lang Require Import core_rcu.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled rcu_builder.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational rcu_builder.
 From iris_lkmm.logic Require Import rcu_ghost lkmm_machine_ghost memory_ghost.
 
 Module LkmmStateInterp.
-  Import LkmmMachine LkmmCoupled RcuBuilder RcuGhost LkmmMachineGhost.
+  Import LkmmMachine LkmmOperational RcuBuilder RcuGhost LkmmMachineGhost.
   Import RcuMatching LkmmCoreRcu.
   Export LkmmMemoryGhost.
 
@@ -286,24 +286,24 @@ Module LkmmStateInterp.
     Global Instance event_fact_persistent γ eid ev : Persistent (event_fact γ eid ev).
     Proof. apply _. Qed.
 
-    (** Interpret the current coupled state. The final graph and execution
-        witnesses stay in [coupled_position], outside this resource assertion.
+    (** Interpret the current operational state. The final graph and execution
+        witnesses stay in [lkmm_position], outside this resource assertion.
         Thread, location-history, reader, and pending-GP tokens are held
         separately by clients. *)
-    Definition state_interp (γ : state_names) (s : coupled_state) : iProp Σ :=
-      ⌜generated_prefix s.(coupled_machine) s.(coupled_builder).(bs_raw)⌝ ∗
-      ghost_map_auth γ.(threads_name) 1 s.(coupled_machine).(machine_core).(core_threads) ∗
-      ghost_map_auth γ.(events_name) 1 s.(coupled_machine).(machine_core).(core_events) ∗
-      memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
-      ∃ gps, ⌜rcu_state_matches s.(coupled_machine) gps⌝ ∗
-        rcu_auth γ.(rcu_name) (open_reader_map s.(coupled_machine)) gps
-          (length s.(coupled_machine).(gp_certificates)).
+    Definition state_interp (γ : state_names) (s : lkmm_state) : iProp Σ :=
+      ⌜generated_prefix s.(lkmm_machine) s.(lkmm_builder).(bs_raw)⌝ ∗
+      ghost_map_auth γ.(threads_name) 1 s.(lkmm_machine).(machine_core).(core_threads) ∗
+      ghost_map_auth γ.(events_name) 1 s.(lkmm_machine).(machine_core).(core_events) ∗
+      memory_auth γ.(memory_names_of) s.(lkmm_machine).(machine_core).(core_events) ∗
+      ∃ gps, ⌜rcu_state_matches s.(lkmm_machine) gps⌝ ∗
+        rcu_auth γ.(rcu_name) (open_reader_map s.(lkmm_machine)) gps
+          (length s.(lkmm_machine).(gp_certificates)).
 
     (** Allocation uses only the initial program state, with no final-graph
         or completion premise. Location resources contain exactly the
         initialized writes and can be distributed to agents or invariants. *)
     Lemma state_interp_alloc_memory P :
-      ⊢ |==> ∃ γ, state_interp γ (initial_coupled P) ∗
+      ⊢ |==> ∃ γ, state_interp γ (initial_lkmm P) ∗
         ([∗ map] agent ↦ body ∈ P.(program_agents),
           thread_token γ agent (initial_thread body)) ∗
         ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev) ∗
@@ -322,7 +322,7 @@ Module LkmmStateInterp.
       iModIntro. iExists (StateNames γthreads γevents γrcu γmemory).
       iSplitL "Hthreads Hevents Hmemory Hrcu".
       - rewrite /state_interp /=. iSplit.
-        { iPureIntro. apply (coupled_run_generated_prefix P nil (initial_coupled P)).
+        { iPureIntro. apply (lkmm_run_generated_prefix P nil (initial_lkmm P)).
           constructor. }
         iFrame "Hthreads Hevents Hmemory". iExists ∅. iSplit.
         { iPureIntro. apply initial_rcu_state_matches. }
@@ -331,7 +331,7 @@ Module LkmmStateInterp.
     Qed.
 
     Lemma state_interp_alloc P :
-      ⊢ |==> ∃ γ, state_interp γ (initial_coupled P) ∗
+      ⊢ |==> ∃ γ, state_interp γ (initial_lkmm P) ∗
         ([∗ map] agent ↦ body ∈ P.(program_agents),
           thread_token γ agent (initial_thread body)) ∗
         ([∗ map] eid ↦ ev ∈ core_initial_events P, event_fact γ eid ev).
@@ -342,7 +342,7 @@ Module LkmmStateInterp.
 
     Lemma state_interp_memory γ s loc q history :
       state_interp γ s -∗ memory_own γ.(memory_names_of) loc q history -∗
-      ⌜history = write_history s.(coupled_machine).(machine_core).(core_events) loc⌝.
+      ⌜history = write_history s.(lkmm_machine).(machine_core).(core_events) loc⌝.
     Proof.
       iIntros "(_ & _ & _ & Hmemory & _) Hloc".
       iDestruct (memory_auth_lookup with "Hmemory Hloc") as %[_ Hhistory]. done.
@@ -350,21 +350,21 @@ Module LkmmStateInterp.
 
     Lemma state_interp_thread γ s agent thread :
       state_interp γ s -∗ thread_token γ agent thread -∗
-      ⌜s.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread⌝.
+      ⌜s.(lkmm_machine).(machine_core).(core_threads) !! agent = Some thread⌝.
     Proof.
       iIntros "(_ & Hthreads & _) Hthread".
       iApply (ghost_map_lookup with "Hthreads Hthread").
     Qed.
 
     Lemma state_interp_silent_step P γ s agent s' thread thread' :
-      coupled_step P s (CoupledMachineAction (Execute (CoreSilent agent))) s' ->
-      s'.(coupled_machine).(machine_core).(core_threads) !! agent = Some thread' ->
+      lkmm_step P s (LkmmMachineAction (Execute (CoreSilent agent))) s' ->
+      s'.(lkmm_machine).(machine_core).(core_threads) !! agent = Some thread' ->
       state_interp γ s ∗ thread_token γ agent thread ==∗
       state_interp γ s' ∗ thread_token γ agent thread'.
     Proof.
       intros Hstep Hlookup.
-      destruct (coupled_silent_step_update_thread _ _ _ _ Hstep) as (next & ->).
-      change (<[agent := next]> s.(coupled_machine).(machine_core).(core_threads) !! agent =
+      destruct (lkmm_silent_step_update_thread _ _ _ _ Hstep) as (next & ->).
+      change (<[agent := next]> s.(lkmm_machine).(machine_core).(core_threads) !! agent =
         Some thread') in Hlookup.
       rewrite lookup_insert_eq in Hlookup. injection Hlookup as ->.
       iIntros "((%Hprefix & Hthreads & Hevents & Hmemory & Hrcu) & Hthread)".
@@ -378,7 +378,7 @@ Module LkmmStateInterp.
     (** Builder steps supply the new generated-prefix condition and leave
         the machine, hence every ghost resource, unchanged. *)
     Lemma state_interp_builder_step P γ s s' :
-      coupled_step P s CoupledBuilderAction s' ->
+      lkmm_step P s LkmmBuilderAction s' ->
       state_interp γ s ⊢ state_interp γ s'.
     Proof.
       intros Hstep. inversion Hstep; subst.
@@ -392,16 +392,16 @@ Module LkmmStateInterp.
         The caller must update the memory authority before restoring the
         state interpretation. A write requires full location ownership. *)
     Lemma state_interp_execute P γ s a s' thread thread' :
-      coupled_step P s (CoupledMachineAction (Execute a)) s' ->
-      core_allocation_wf s.(coupled_machine).(machine_core) ->
-      s'.(coupled_machine).(machine_core).(core_threads) !! action_agent a = Some thread' ->
+      lkmm_step P s (LkmmMachineAction (Execute a)) s' ->
+      core_allocation_wf s.(lkmm_machine).(machine_core) ->
+      s'.(lkmm_machine).(machine_core).(core_threads) !! action_agent a = Some thread' ->
       state_interp γ s ∗ thread_token γ (action_agent a) thread ==∗
-      (memory_auth γ.(memory_names_of) s'.(coupled_machine).(machine_core).(core_events) -∗
+      (memory_auth γ.(memory_names_of) s'.(lkmm_machine).(machine_core).(core_events) -∗
         state_interp γ s') ∗
-      memory_auth γ.(memory_names_of) s.(coupled_machine).(machine_core).(core_events) ∗
+      memory_auth γ.(memory_names_of) s.(lkmm_machine).(machine_core).(core_events) ∗
       thread_token γ (action_agent a) thread' ∗
-        ([∗ map] eid ↦ ev ∈ s'.(coupled_machine).(machine_core).(core_events) ∖
-            s.(coupled_machine).(machine_core).(core_events), event_fact γ eid ev).
+        ([∗ map] eid ↦ ev ∈ s'.(lkmm_machine).(machine_core).(core_events) ∖
+            s.(lkmm_machine).(machine_core).(core_events), event_fact γ eid ev).
     Proof.
       intros Hstep Hwf Hlookup.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
@@ -434,15 +434,15 @@ Module LkmmStateInterp.
     Qed.
 
     Lemma state_interp_read_lock P γ s agent s' thread :
-      coupled_step P s (CoupledMachineAction (ReadLock agent)) s' ->
-      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      lkmm_step P s (LkmmMachineAction (ReadLock agent)) s' ->
+      core_allocation_wf s.(lkmm_machine).(machine_core) ->
       state_interp γ s ∗ thread_token γ agent thread ==∗
       state_interp γ s' ∗
         thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
-        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
-          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+        event_fact γ s.(lkmm_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(lkmm_machine).(machine_core) agent)
             (LBarrier BarrierRcuLock)) ∗
-        reader_token γ.(rcu_name) s.(coupled_machine).(machine_core).(core_next_id).
+        reader_token γ.(rcu_name) s.(lkmm_machine).(machine_core).(core_next_id).
     Proof.
       intros Hstep Hwf.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
@@ -473,14 +473,14 @@ Module LkmmStateInterp.
     (** Unlock consumes the innermost reader token. Captured GP snapshots
         retain the lock's identity after it leaves the open-reader map. *)
     Lemma state_interp_read_unlock P γ s agent s' thread lock rest :
-      coupled_step P s (CoupledMachineAction (ReadUnlock agent)) s' ->
-      core_allocation_wf s.(coupled_machine).(machine_core) ->
-      open_readers s.(coupled_machine) agent = lock :: rest ->
+      lkmm_step P s (LkmmMachineAction (ReadUnlock agent)) s' ->
+      core_allocation_wf s.(lkmm_machine).(machine_core) ->
+      open_readers s.(lkmm_machine) agent = lock :: rest ->
       state_interp γ s ∗ thread_token γ agent thread ∗ reader_token γ.(rcu_name) lock ==∗
       state_interp γ s' ∗
         thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
-        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
-          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+        event_fact γ s.(lkmm_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(lkmm_machine).(machine_core) agent)
             (LBarrier BarrierRcuUnlock)).
     Proof.
       intros Hstep Hwf Hstack.
@@ -509,14 +509,14 @@ Module LkmmStateInterp.
     Qed.
 
     Lemma state_interp_begin_gp P γ s agent s' thread :
-      coupled_step P s (CoupledMachineAction (BeginGp agent)) s' ->
-      core_allocation_wf s.(coupled_machine).(machine_core) ->
+      lkmm_step P s (LkmmMachineAction (BeginGp agent)) s' ->
+      core_allocation_wf s.(lkmm_machine).(machine_core) ->
       state_interp γ s ∗ thread_token γ agent thread ==∗
       state_interp γ s' ∗ thread_token γ agent thread ∗
         gp_pending γ.(rcu_name)
-          (gp_encoding agent (next_agent_index s.(coupled_machine).(machine_core) agent))
-          (list_to_set (all_open_readers s.(coupled_machine)))
-          (length s.(coupled_machine).(gp_certificates)).
+          (gp_encoding agent (next_agent_index s.(lkmm_machine).(machine_core) agent))
+          (list_to_set (all_open_readers s.(lkmm_machine)))
+          (length s.(lkmm_machine).(gp_certificates)).
     Proof.
       intros Hstep Hwf.
       inversion Hstep as [m m' b action Hmachine |]; subst.
@@ -535,21 +535,21 @@ Module LkmmStateInterp.
     (** The pending token fixes the captured readers and start epoch. Both
         allocation premises follow from the machine execution prefix. *)
     Lemma state_interp_finish_gp P γ s agent s' thread captured start :
-      coupled_step P s (CoupledMachineAction (FinishGp agent)) s' ->
-      core_allocation_wf s.(coupled_machine).(machine_core) ->
-      certificate_events_allocated s.(coupled_machine) ->
+      lkmm_step P s (LkmmMachineAction (FinishGp agent)) s' ->
+      core_allocation_wf s.(lkmm_machine).(machine_core) ->
+      certificate_events_allocated s.(lkmm_machine) ->
       state_interp γ s ∗ thread_token γ agent thread ∗
         gp_pending γ.(rcu_name)
-          (gp_encoding agent (next_agent_index s.(coupled_machine).(machine_core) agent))
+          (gp_encoding agent (next_agent_index s.(lkmm_machine).(machine_core) agent))
           captured start ==∗
       state_interp γ s' ∗
         thread_token γ agent (emitted_thread thread thread.(thread_registers)) ∗
-        event_fact γ s.(coupled_machine).(machine_core).(core_next_id)
-          (EAgent agent (next_agent_index s.(coupled_machine).(machine_core) agent)
+        event_fact γ s.(lkmm_machine).(machine_core).(core_next_id)
+          (EAgent agent (next_agent_index s.(lkmm_machine).(machine_core) agent)
             (LBarrier BarrierSyncRcu)) ∗
         gp_done γ.(rcu_name)
-          (gp_encoding agent (next_agent_index s.(coupled_machine).(machine_core) agent))
-          captured start (S (length s.(coupled_machine).(gp_certificates))).
+          (gp_encoding agent (next_agent_index s.(lkmm_machine).(machine_core) agent))
+          captured start (S (length s.(lkmm_machine).(gp_certificates))).
     Proof.
       intros Hstep Hwf Hcerts.
       pose proof (step_preserves_generated_prefix _ _ _ _ Hstep Hwf) as Hprefix'.
@@ -583,7 +583,7 @@ Module LkmmStateInterp.
 
     Lemma state_interp_event γ s eid ev :
       state_interp γ s -∗ event_fact γ eid ev -∗
-      ⌜lookup_event s.(coupled_machine).(machine_core).(core_events) eid = Some ev⌝.
+      ⌜lookup_event s.(lkmm_machine).(machine_core).(core_events) eid = Some ev⌝.
     Proof.
       iIntros "(_ & _ & Hevents & _) Hevent".
       iApply (ghost_map_lookup with "Hevents Hevent").
@@ -591,7 +591,7 @@ Module LkmmStateInterp.
 
     Lemma state_interp_reader γ s rid :
       state_interp γ s -∗ reader_token γ.(rcu_name) rid -∗
-      ⌜open_reader_map s.(coupled_machine) !! rid = Some tt⌝.
+      ⌜open_reader_map s.(lkmm_machine) !! rid = Some tt⌝.
     Proof.
       iIntros "(_ & _ & _ & _ & Hrcu) Hreader".
       iDestruct "Hrcu" as (gps) "(_ & Hopen & _)".
@@ -600,7 +600,7 @@ Module LkmmStateInterp.
 
     Lemma state_interp_pending γ s gid captured start :
       state_interp γ s -∗ gp_pending γ.(rcu_name) gid captured start -∗
-      ⌜pending_gp_at s.(coupled_machine) gid captured⌝.
+      ⌜pending_gp_at s.(lkmm_machine) gid captured⌝.
     Proof.
       iIntros "(_ & _ & _ & _ & Hrcu) Hpending".
       iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".
@@ -610,7 +610,7 @@ Module LkmmStateInterp.
 
     Lemma state_interp_done γ s gid captured start finish :
       state_interp γ s -∗ gp_done γ.(rcu_name) gid captured start finish -∗
-      ⌜completed_gp_at s.(coupled_machine) gid captured⌝.
+      ⌜completed_gp_at s.(lkmm_machine) gid captured⌝.
     Proof.
       iIntros "(_ & _ & _ & _ & Hrcu) [Hdone _]".
       iDestruct "Hrcu" as (gps) "(%Hmatch & _ & Hgps & _)".

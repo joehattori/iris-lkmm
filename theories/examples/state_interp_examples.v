@@ -2,28 +2,28 @@ From Stdlib Require Import List Lia.
 From stdpp Require Import gmap tactics.
 From iris.base_logic.lib Require Import iprop.
 From iris.proofmode Require Import proofmode.
-From iris_lkmm.operational Require Import lkmm_machine lkmm_coupled.
+From iris_lkmm.operational Require Import lkmm_machine lkmm_operational.
 From iris_lkmm.logic Require Import rcu_ghost state_interp.
 From iris_lkmm.examples Require Import graph_domain_examples graph_correspondence_examples.
 Import ListNotations.
 
 Module StateInterpExamples.
-  Import LkmmMachine LkmmCoupled RcuGhost LkmmStateInterp.
+  Import LkmmMachine LkmmOperational RcuGhost LkmmStateInterp.
   Module GP := GraphCorrespondenceExamples.GpState.
 
   Module SilentAssignment.
     Definition body := SAssign 0 (EConst 42%Z).
     Definition program := CoreProgram {[3 := 7%Z]} {[0 := body; 1 := SSynchronizeRcu]}.
     Definition after_thread := ThreadState SSkip [] {[0 := RegValue 42%Z ∅]}.
-    Definition after := CoupledState
+    Definition after := LkmmState
       (with_core (initial_state program) (update_thread (core_initial_state program) 0 after_thread))
-      (initial_coupled program).(coupled_builder).
+      (initial_lkmm program).(lkmm_builder).
 
     Lemma silent_step :
-      coupled_step program (initial_coupled program)
-        (CoupledMachineAction (Execute (CoreSilent 0))) after.
+      lkmm_step program (initial_lkmm program)
+        (LkmmMachineAction (Execute (CoreSilent 0))) after.
     Proof.
-      apply CoupledStepMachine. eapply StepCore with (thread := initial_thread body).
+      apply LkmmStepMachine. eapply StepCore with (thread := initial_thread body).
       - reflexivity.
       - done.
       - reflexivity.
@@ -40,7 +40,7 @@ Module StateInterpExamples.
       iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[H0 Hthreads]"; first reflexivity.
       iDestruct (big_sepM_delete _ _ 1 with "Hthreads") as "[H1 _]"; first reflexivity.
       iDestruct (big_sepM_lookup _ _ 0 with "Hfacts") as "#Hinit"; first reflexivity.
-      iMod (state_interp_silent_step program γ (initial_coupled program) 0 after _ after_thread
+      iMod (state_interp_silent_step program γ (initial_lkmm program) 0 after _ after_thread
         with "[$Hstate $H0]") as "[Hstate H0]".
       { apply silent_step. }
       { reflexivity. }
@@ -52,11 +52,11 @@ Module StateInterpExamples.
     Definition body := SXchg 0 RmwRelaxed (EConst 0) (EConst 1).
     Definition program := CoreProgram {[0 := 0%Z]} {[0 := body]}.
     Definition result_regs observed : registers := {[0 := RegValue observed {[1]}]}.
-    Definition after observed := CoupledState
+    Definition after observed := LkmmState
       (with_core (initial_state program)
         (add_rmw_events (core_initial_state program) 0 (initial_thread body)
           AccessOnce 0 observed 1%Z (result_regs observed) ∅ ∅ ∅))
-      (initial_coupled program).(coupled_builder).
+      (initial_lkmm program).(lkmm_builder).
 
     Example exchange_allocates_both_event_facts `{!stateG Σ} observed :
       ⊢ |==> ∃ γ, state_interp (Σ := Σ) γ (after observed) ∗
@@ -65,9 +65,9 @@ Module StateInterpExamples.
         event_fact γ 1 (EAgent 0 0 (LMemory AccessRead AccessOnce RmwMarked 0 observed)) ∗
         event_fact γ 2 (EAgent 0 1 (LMemory AccessWrite AccessOnce RmwMarked 0 1%Z)).
     Proof.
-      assert (coupled_step program (initial_coupled program)
-        (CoupledMachineAction (Execute (CoreObserve 0 observed))) (after observed)) as Hstep.
-      { apply CoupledStepMachine. eapply StepCore; try done.
+      assert (lkmm_step program (initial_lkmm program)
+        (LkmmMachineAction (Execute (CoreObserve 0 observed))) (after observed)) as Hstep.
+      { apply LkmmStepMachine. eapply StepCore; try done.
         eapply StepXchg with (dst := 0) (mode := RmwRelaxed) (address := EConst 0)
           (expression := EConst 1) (result := RegValue 1%Z ∅); try done.
         by eexists. }
@@ -104,66 +104,66 @@ Module StateInterpExamples.
         event_fact γ 2 (EAgent 0 2 (LBarrier BarrierRcuUnlock)) ∗
         event_fact γ 3 (EAgent 0 3 (LBarrier BarrierRcuUnlock)) ∗
         event_fact γ 4 (EAgent 1 0 (LBarrier BarrierSyncRcu)) ∗
-        ⌜all_open_readers s.(coupled_machine) = [] /\ s.(coupled_machine).(pending_gp) = ∅⌝.
+        ⌜all_open_readers s.(lkmm_machine) = [] /\ s.(lkmm_machine).(pending_gp) = ∅⌝.
     Proof.
       iMod (state_interp_alloc program) as (γ) "(Hstate & Hthreads & _)".
       iDestruct (big_sepM_delete _ _ 0 with "Hthreads") as "[Hthread Hthreads]"; first reflexivity.
       iDestruct (big_sepM_lookup _ _ 1 with "Hthreads") as "Hgpthread"; first reflexivity.
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
         as "(Hstate & Hthread & #Hlock0 & Hreader0)".
-      { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
+      { apply LkmmStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
       { apply core_initial_allocation_wf. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSkipSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_read_lock program γ _ 0 _ _ with "[$Hstate $Hthread]")
         as "(Hstate & Hthread & #Hlock1 & Hreader1)".
-      { apply CoupledStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
+      { apply LkmmStepMachine. eapply StepReadLock; [split; reflexivity | reflexivity]. }
       { apply add_single_event_allocation_wf, core_initial_allocation_wf. }
       iMod (state_interp_begin_gp program γ _ 1 _ _ with "[$Hstate $Hgpthread]")
         as "(Hstate & Hgpthread & Hpending)".
-      { apply CoupledStepMachine. eapply StepBeginGp; [split; reflexivity | reflexivity]. }
+      { apply LkmmStepMachine. eapply StepBeginGp; [split; reflexivity | reflexivity]. }
       { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSkipSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_read_unlock program γ _ 0 _ _ 1 [0] with "[$Hstate $Hthread $Hreader1]")
         as "(Hstate & Hthread & #Hunlock1)".
-      { apply CoupledStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
+      { apply LkmmStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
       { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
       { reflexivity. }
       iMod (state_interp_silent_step program γ _ 0 _ _ _ with "[$Hstate $Hthread]")
         as "[Hstate Hthread]".
-      { apply CoupledStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
+      { apply LkmmStepMachine. eapply StepCore; [reflexivity | done | reflexivity |].
         eapply StepSkipSequence; reflexivity. }
       { reflexivity. }
       iMod (state_interp_read_unlock program γ _ 0 _ _ 0 [] with "[$Hstate $Hthread $Hreader0]")
         as "(Hstate & Hthread & #Hunlock0)".
-      { apply CoupledStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
+      { apply LkmmStepMachine. eapply StepReadUnlock; [split; reflexivity | reflexivity | reflexivity]. }
       { repeat apply add_single_event_allocation_wf. apply core_initial_allocation_wf. }
       { reflexivity. }
       iMod (state_interp_finish_gp program γ _ 1 _ _ _ _ with "[$Hstate $Hgpthread $Hpending]")
         as "(Hstate & Hgpthread & #Hsync & #Hdone)".
-      { apply CoupledStepMachine. eapply StepFinishGp; [split; reflexivity | reflexivity |].
+      { apply LkmmStepMachine. eapply StepFinishGp; [split; reflexivity | reflexivity |].
         intros lock [<- | [<- | []]].
         - exists 2, 0. by right; left.
         - exists 3, 0. by left. }
@@ -176,7 +176,7 @@ Module StateInterpExamples.
   End NestedReaders.
 
   Local Lemma waiting_pending gid captured :
-    pending_gp_at GP.waiting.(coupled_machine) gid captured <->
+    pending_gp_at GP.waiting.(lkmm_machine) gid captured <->
     gid = gp_encoding 0 0 /\ captured = ∅.
   Proof.
     split.
@@ -187,7 +187,7 @@ Module StateInterpExamples.
   Qed.
 
   Local Lemma finished_completed gid captured :
-    completed_gp_at GP.finished.(coupled_machine) gid captured <->
+    completed_gp_at GP.finished.(lkmm_machine) gid captured <->
     gid = gp_encoding 0 0 /\ captured = ∅.
   Proof.
     split.
@@ -201,7 +201,7 @@ Module StateInterpExamples.
   Qed.
 
   Example waiting_protocol_matches :
-    rcu_state_matches GP.waiting.(coupled_machine)
+    rcu_state_matches GP.waiting.(lkmm_machine)
       {[gp_encoding 0 0 := GpPending ∅ 0]}.
   Proof.
     split.
@@ -219,7 +219,7 @@ Module StateInterpExamples.
   Qed.
 
   Example finished_protocol_matches :
-    rcu_state_matches GP.finished.(coupled_machine)
+    rcu_state_matches GP.finished.(lkmm_machine)
       {[gp_encoding 0 0 := GpDone ∅ 0 1]}.
   Proof.
     split.
@@ -239,8 +239,8 @@ Module StateInterpExamples.
 
   (** An unchanged Core state does not allow us to omit the begun GP. *)
   Example begin_requires_pending_entry :
-    GP.before.(coupled_machine).(machine_core) = GP.waiting.(coupled_machine).(machine_core) /\
-    ~ rcu_state_matches GP.waiting.(coupled_machine) ∅.
+    GP.before.(lkmm_machine).(machine_core) = GP.waiting.(lkmm_machine).(machine_core) /\
+    ~ rcu_state_matches GP.waiting.(lkmm_machine) ∅.
   Proof.
     split; first reflexivity. intros [Hpending _].
     destruct (proj1 (Hpending (gp_encoding 0 0) ∅)) as (start & Hlookup).
@@ -250,7 +250,7 @@ Module StateInterpExamples.
 
   (** A permitted future source does not yet supply an emitted-event fact. *)
   Example future_source_has_no_event_fact `{!stateG Σ} γ b :
-    ⊢ state_interp (Σ := Σ) γ (CoupledState
+    ⊢ state_interp (Σ := Σ) γ (LkmmState
       (State GraphDomainExamples.FutureSource.after_read ∅ []) b) -∗
     event_fact γ 2 (EAgent 0 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z)) -∗ False.
   Proof.

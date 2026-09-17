@@ -28,13 +28,13 @@ theories/operational/core_to_machine.v
 theories/operational/rcu_builder.v
 theories/operational/rcu_candidate.v
 theories/operational/candidate_encoding.v
-theories/operational/lkmm_coupled.v
+theories/operational/lkmm_operational.v
 theories/logic/rcu_ghost.v
 theories/logic/lkmm_machine_ghost.v
 theories/logic/graph_domain.v
 theories/logic/graph_correspondence.v
 theories/logic/graph_judgment.v
-theories/logic/coupled_graph_judgment.v
+theories/logic/lkmm_graph_judgment.v
 theories/logic/memory_ghost.v
 theories/logic/state_interp.v
 theories/logic/rcu_client.v
