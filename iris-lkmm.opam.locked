@@ -5,8 +5,8 @@ synopsis: "Locked development dependencies for iris-lkmm"
 maintainer: "iris-lkmm contributors"
 authors: "iris-lkmm contributors"
 license: "BSD-3-Clause"
-homepage: "https://github.com/iris-lkmm/iris-lkmm"
-bug-reports: "https://github.com/iris-lkmm/iris-lkmm/issues"
+homepage: "https://github.com/joehattori/iris-lkmm"
+bug-reports: "https://github.com/joehattori/iris-lkmm/issues"
 
 depends: [
   "ocaml" {= "5.2.1"}

@@ -5,9 +5,9 @@ synopsis: "Rocq/Iris foundations for an LKMM concurrency model"
 maintainer: "iris-lkmm contributors"
 authors: "iris-lkmm contributors"
 license: "BSD-3-Clause"
-homepage: "https://github.com/iris-lkmm/iris-lkmm"
-bug-reports: "https://github.com/iris-lkmm/iris-lkmm/issues"
-dev-repo: "git+https://github.com/iris-lkmm/iris-lkmm.git"
+homepage: "https://github.com/joehattori/iris-lkmm"
+bug-reports: "https://github.com/joehattori/iris-lkmm/issues"
+dev-repo: "git+https://github.com/joehattori/iris-lkmm.git"
 
 depends: [
   "dune" {>= "3.8" & build}
