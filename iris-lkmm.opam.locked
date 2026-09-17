@@ -4,7 +4,7 @@ version: "dev"
 synopsis: "Locked development dependencies for iris-lkmm"
 maintainer: "iris-lkmm contributors"
 authors: "iris-lkmm contributors"
-license: "BSD-3-Clause"
+license: "GPL-3.0-or-later"
 homepage: "https://github.com/joehattori/iris-lkmm"
 bug-reports: "https://github.com/joehattori/iris-lkmm/issues"
 
