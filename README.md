@@ -44,7 +44,9 @@ The Iris layer supports resource tracking and composition of local WP proofs
 along accepted executions, with fractional ownership of emitted write histories
 and load/store rules that permit reads from later-emitted writes. A client RCU
 protocol recovers protected ownership after retirement and a grace period.
-External adequacy and safety for arbitrary prefixes remain open. See the
+[Completed-execution adequacy](theories/logic/adequacy.v) extracts pure trace
+and final-state properties from closed program proofs. Safety for arbitrary
+prefixes remains open. See the
 [WP design](docs/wp-design.md), [semantic architecture](docs/semantics.md), and
 [scope](docs/scope.md).
 

@@ -73,6 +73,21 @@ Module WpParallelExamples.
       (if decide (agent = 0) then ⌜v = result_view 0 42 4⌝ ∗ R0
       else ⌜v = result_view 1 7 1⌝ ∗ R1)%I.
 
+    Lemma assignment_wps G γ E (R0 R1 : iProp Σ) :
+      R0 ∗ R1 -∗
+      [∗ map] agent ↦ body ∈ program.(program_agents),
+        wp program G γ E agent (initial_thread_view body) (post R0 R1 agent).
+    Proof.
+      iIntros "[HR0 HR1]". iApply big_sepM_insert; first reflexivity. iSplitL "HR0".
+      - iApply wp_seq. iNext. iApply wp_assign; first reflexivity.
+        iNext. iApply wp_skip_seq. iNext. iApply wp_assign; first reflexivity.
+        iNext. rewrite wp_unfold /wp_body /post /result_view /result_thread /=.
+        iModIntro. iFrame. iPureIntro. by rewrite insert_insert_eq.
+      - iApply big_sepM_singleton. iApply wp_assign; first reflexivity.
+        iNext. rewrite wp_unfold /wp_body /post /result_view /result_thread /=.
+        iModIntro. iFrame. done.
+    Qed.
+
     (** Each local proof receives its own resource. Composition follows any
         accepted schedule and returns both results, even if an agent ended early. *)
     Example parallel_assignments E actions final (R0 R1 : iProp Σ) :
@@ -86,17 +101,7 @@ Module WpParallelExamples.
     Proof.
       intros Hpos. iIntros "[HR0 HR1]".
       iMod (state_interp_alloc program) as (γ) "(Hstate & Htokens & _)".
-      iAssert ([∗ map] agent ↦ body ∈ program.(program_agents),
-        wp program graph γ E agent (initial_thread_view body) (post R0 R1 agent))%I
-        with "[HR0 HR1]" as "Hwps".
-      { iApply big_sepM_insert; first reflexivity. iSplitL "HR0".
-        - iApply wp_seq. iNext. iApply wp_assign; first reflexivity.
-          iNext. iApply wp_skip_seq. iNext. iApply wp_assign; first reflexivity.
-          iNext. rewrite wp_unfold /wp_body /post /result_view /result_thread /=.
-          iModIntro. iFrame. iPureIntro. by rewrite insert_insert_eq.
-        - iApply big_sepM_singleton. iApply wp_assign; first reflexivity.
-          iNext. rewrite wp_unfold /wp_body /post /result_view /result_thread /=.
-          iModIntro. iFrame. done. }
+      iPoseProof (assignment_wps graph γ E R0 R1 with "[$HR0 $HR1]") as "Hwps".
       iPoseProof (wp_parallel_init program graph γ E actions final (post R0 R1)
         with "Htokens Hwps") as "Hpool".
       iPoseProof (wp_parallel_run_post _ _ _ _ _ _ _ _ _ Hpos with "[$Hstate $Hpool]") as "Hrun".

@@ -23,8 +23,9 @@ The [Iris logic](wp-design.md) has a state interpretation, a guarded per-agent
 WP, primitive RCU rules, and parallel composition over accepted executions.
 Initial resources come from the program; memory ownership tracks emitted write
 histories. A client RCU protocol recovers protected ownership after retirement
-and a grace period. External adequacy and safety for arbitrary execution
-prefixes remain open.
+and a grace period. [Completed-execution adequacy](../theories/logic/adequacy.v)
+extracts pure trace and final-state properties under the completion and
+`rf`/`co` obligations. Safety for arbitrary execution prefixes remains open.
 
 Differential testing against `herd7`, source-language refinement, and the
 `percpu_ref` case study remain future work. SRCU, kernel locks, verification of

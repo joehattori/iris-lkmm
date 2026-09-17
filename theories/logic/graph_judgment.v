@@ -5,7 +5,7 @@ From iris_lkmm.logic Require Import graph_domain.
 (** Universal closure for graph-relative Iris assertions. These connectives
     specify the quantifier boundary used by the logic. The recursive WP,
     state interpretation, and primitive rules live in separate modules;
-    external adequacy remains open. *)
+    completed-execution adequacy lives in [LkmmAdequacy]. *)
 Module LkmmGraphJudgment.
   Export LkmmGraphDomain.
 

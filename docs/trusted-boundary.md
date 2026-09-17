@@ -27,6 +27,9 @@ The current WP domain has complete execution witnesses and final reads-from
 and coherence obligations. Its parallel-execution result remains guarded
 inside Iris, as does the client RCU rule for recovering protected ownership.
 Clients must separately justify publication and admission to the protected
-resource. External adequacy and safety for arbitrary raw prefixes remain
-unproved. No Linux C correspondence, termination, or grace-period liveness
-claim is made.
+resource. [Completed-execution adequacy](../theories/logic/adequacy.v) uses
+Iris soundness to extract pure trace and final-state properties from closed
+program proofs, with initial resources allocated from the program. It adds no
+axioms and retains the completion and final `rf`/`co` premises. Safety for
+arbitrary raw prefixes remains unproved. No Linux C correspondence,
+termination, or grace-period liveness claim is made.
