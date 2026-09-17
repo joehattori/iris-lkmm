@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Rocq build and regression examples
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up OCaml and opam
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.2.1"
+          opam-pin: false
+          opam-repositories: |
+            iris-dev: git+https://gitlab.mpi-sws.org/iris/opam.git
+            rocq-released: https://rocq-prover.org/opam/released
+            default: git+https://github.com/ocaml/opam-repository.git
+
+      - name: Lint package metadata
+        run: opam lint iris-lkmm.opam iris-lkmm.opam.locked
+
+      - name: Install locked dependencies
+        run: opam install . --deps-only --locked --yes
+
+      - name: Build proofs and regression examples
+        run: opam exec -- make -j2 check
