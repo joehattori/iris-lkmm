@@ -152,6 +152,27 @@ not establish safety for arbitrary raw prefixes, existence of an accepted
 execution, termination, or eventual grace-period completion. Prefix safety
 needs its own execution domain and theorem.
 
+## Publication example
+
+`theories/logic/wp_publication.v` defines shared-location protocols that own
+emitted write histories and restrict permitted writes. `wp_load_protocol`
+and `wp_store_protocol` open and restore the invariant around an operation,
+returning persistent load/store receipts. Neither rule assumes that a load
+observes the most recently emitted write.
+
+At completion, `publication_observed` combines two location protocols and
+four receipts. Its value guarantee follows from the generic relational
+`publication_reads` lemma. The initial flag value must differ from the
+published flag value; writer and reader agents must differ, and their two
+accesses must be in the stated program order. The final `rf`/`co` obligations
+and consistency come from the accepted execution domain.
+
+The client in `theories/examples/message_passing_wp.v` supplies protocol
+ownership, proves both threads through instruction rules, and closes the
+program proof before applying adequacy. It contains no `rf`, `co`, or cycle
+proof. This is a single-writer value-publication protocol, not a general
+release/acquire ownership-transfer interface.
+
 ## Remaining work
 
 - Define and prove safety for arbitrary execution prefixes. Termination and

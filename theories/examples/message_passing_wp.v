@@ -3,14 +3,14 @@ From iris.base_logic.lib Require Import invariants fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.operational Require Import lkmm_machine.
 From iris_lkmm.logic Require Import wp_publication adequacy.
-From iris_lkmm.examples Require Import message_passing_program.
+From iris_lkmm.examples Require Import message_passing_code.
 Import ListNotations.
 
 (** Client proofs use location protocols and operation receipts for all four
     message-passing variants; both loads are unconditional. *)
 Module MessagePassingWp.
   Import LkmmWpPublication LkmmAdequacy LkmmMachine.
-  Import MessagePassingProgram.
+  Import MessagePassingCode.
 
   Definition Ndata := nroot .@ "mp-data".
   Definition Nflag := nroot .@ "mp-flag".

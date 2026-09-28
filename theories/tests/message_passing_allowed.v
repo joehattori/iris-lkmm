@@ -1,13 +1,135 @@
 From Stdlib Require Import List Lia Relations.Relation_Operators.
 From stdpp Require Import gmap fin_maps tactics.
-From iris_lkmm.lkmm Require Import execution memory_relations rcu_graph publication.
+From iris_lkmm.lkmm Require Import execution memory_relations rcu_graph.
 From iris_lkmm.lang Require Import core_renaming.
-From iris_lkmm.examples Require Import message_passing_program.
+From iris_lkmm.examples Require Import message_passing_code.
+Import ListNotations.
 
-(** Outcome theorems for the four message-passing variants. *)
-Module MessagePassing.
-  Export MessagePassingProgram.
-  Import LkmmCoreRenaming LkmmMemoryRelations RcuGraph.
+(** Existential model regressions. These remain independent of Iris:
+    a universal WP guarantee cannot replace an allowed-execution witness. *)
+Module MessagePassingAllowed.
+  Import LkmmCoreRenaming LkmmMemoryRelations RcuGraph MessagePassingCode.
+  Definition data_write := EAgent 0 0 (LMemory AccessWrite AccessOnce NotRmw 0 1%Z).
+  Definition flag_write sm :=
+    EAgent 0 1 (LMemory AccessWrite (store_access_mode sm) NotRmw 1 1%Z).
+  Definition flag_read lm v :=
+    EAgent 1 0 (LMemory AccessRead (load_access_mode lm) NotRmw 1 v).
+  Definition data_read v := EAgent 1 1 (LMemory AccessRead AccessOnce NotRmw 0 v).
+  Definition sample_events sm lm : event_structure :=
+    {[0 := EInitWrite 0 0%Z; 1 := EInitWrite 1 0%Z;
+      2 := data_write; 3 := flag_write sm; 4 := flag_read lm 1%Z; 5 := data_read 0%Z]}.
+  Definition sample_rf : edge_set := {[(3,4); (0,5)]}.
+  Definition sample_co : edge_set := {[(0,2); (1,3)]}.
+  Definition candidate sm lm := CoreCandidate (sample_events sm lm)
+    sample_rf sample_co ∅ ∅ ∅ ∅.
+
+  (** This outcome uses agent-local instruction positions, never allocation
+      IDs or a chosen schedule. *)
+  Definition bad_outcome lm (C : core_candidate) : Prop :=
+    exists c d,
+      lookup_event C.(candidate_events) c = Some (flag_read lm 1%Z) /\
+      lookup_event C.(candidate_events) d = Some (data_read 0%Z).
+
+  Lemma sample_lookup sm lm i ev : lookup_event (sample_events sm lm) i = Some ev ->
+    (i = 0 /\ ev = EInitWrite 0 0%Z) \/ (i = 1 /\ ev = EInitWrite 1 0%Z) \/
+    (i = 2 /\ ev = data_write) \/ (i = 3 /\ ev = flag_write sm) \/
+    (i = 4 /\ ev = flag_read lm 1%Z) \/ (i = 5 /\ ev = data_read 0%Z).
+  Proof.
+    unfold lookup_event, sample_events.
+    intros H.
+    repeat (apply lookup_insert_Some in H as [[? ?]|[? H]]);
+      try apply lookup_singleton_Some in H; naive_solver.
+  Qed.
+
+  Ltac lookup_cases :=
+    repeat match goal with
+    | H : lookup_event (sample_events _ _) _ = Some _ |- _ =>
+        apply sample_lookup in H;
+        destruct H as [[-> H]|[[-> H]|[[-> H]|[[-> H]|[[-> H]|[-> H]]]]]];
+        unfold data_write, flag_write, flag_read, data_read in H; simplify_eq
+    end.
+
+  Lemma sample_complete_run sm lm : exists actions state,
+    complete_core_run (program sm lm) actions state /\
+    state.(core_events) = sample_events sm lm /\
+    state.(core_rmw) = (∅ : edge_set) /\
+    state.(core_direct_addr) = (∅ : edge_set) /\
+    state.(core_direct_data) = (∅ : edge_set) /\
+    state.(core_direct_ctrl) = (∅ : edge_set).
+  Proof.
+    exists [CoreSilent 0; CoreEmit 0; CoreSilent 0; CoreEmit 0;
+      CoreSilent 1; CoreObserve 1 1%Z; CoreSilent 1; CoreObserve 1 0%Z].
+    eexists. split.
+    - split.
+      + eapply CoreRunCons. { eapply StepSequence; reflexivity. }
+        eapply CoreRunCons. { eapply StepStore; try reflexivity. by eexists. }
+        eapply CoreRunCons. { eapply StepSkipSequence; reflexivity. }
+        eapply CoreRunCons. { eapply StepStore; try reflexivity. by eexists. }
+        eapply CoreRunCons. { eapply StepSequence; reflexivity. }
+        eapply CoreRunCons. { eapply StepLoad; try reflexivity. by eexists. }
+        eapply CoreRunCons. { eapply StepSkipSequence; reflexivity. }
+        eapply CoreRunCons. { eapply StepLoad; try reflexivity. by eexists. }
+        constructor.
+      + intros agent th Hlookup. destruct (decide (agent = 0)) as [->|H0].
+        * simpl in Hlookup. injection Hlookup as <-. done.
+        * destruct (decide (agent = 1)) as [->|H1].
+          -- simpl in Hlookup. injection Hlookup as <-. done.
+          -- simpl in Hlookup. simplify_map_eq.
+    - split_and!; destruct sm, lm; vm_compute; reflexivity.
+  Qed.
+
+  Lemma sample_rf_wf sm lm : rf_wf (sample_events sm lm) sample_rf.
+  Proof.
+    split_and!.
+    - intros w r Hrf. unfold rf, edge_relation, sample_rf in Hrf.
+      assert ((w = 3 /\ r = 4) \/ (w = 0 /\ r = 5)) as [[-> ->]|[-> ->]] by set_solver;
+        eexists _, _, _; split_and!; try reflexivity; eexists; split; reflexivity.
+    - unfold rf_functional, rf, edge_relation, sample_rf. set_solver.
+    - intros r ev Hlookup Hread. lookup_cases; try discriminate.
+      + exists 3. unfold rf, edge_relation, sample_rf. set_solver.
+      + exists 0. unfold rf, edge_relation, sample_rf. set_solver.
+  Qed.
+
+  Lemma sample_co_wf sm lm : co_wf (sample_events sm lm) sample_co.
+  Proof.
+    split_and!.
+    - intros x y Hco. unfold co, edge_relation, sample_co in Hco.
+      assert ((x = 0 /\ y = 2) \/ (x = 1 /\ y = 3)) as [[-> ->]|[-> ->]] by set_solver;
+        eexists _, _; split_and!; try reflexivity; eexists; split; reflexivity.
+    - unfold co_irreflexive, co, edge_relation, sample_co. set_solver.
+    - unfold co_transitive, co, edge_relation, sample_co. set_solver.
+    - intros x y ex ey Hx Hy Hwx Hwy Hloc Hne. lookup_cases;
+        try discriminate; try congruence;
+        unfold same_location, same_attribute in Hloc; vm_compute in Hloc;
+        unfold co, edge_relation, sample_co; set_solver.
+    - intros loc (i & Hloc). unfold event_has_location in Hloc.
+      apply bind_Some in Hloc as (ev & Hlookup & Hloc). lookup_cases;
+        vm_compute in Hloc; injection Hloc as <-;
+        first [exists 0, 0%Z; reflexivity | exists 1, 0%Z; reflexivity].
+    - intros loc x y (vx & Hx) (vy & Hy).
+      apply sample_lookup in Hx, Hy. unfold data_write, flag_write, flag_read, data_read in *.
+      naive_solver.
+    - intros x y loc ev (v & Hx) Hy Hwrite Hloc Hne.
+      apply sample_lookup in Hx. destruct Hx as [[-> Hx]|[[-> Hx]|Hx]];
+        try (unfold data_write, flag_write, flag_read, data_read in Hx; naive_solver);
+        injection Hx; intros; subst loc v; lookup_cases; try discriminate; try congruence;
+        unfold same_location, same_attribute in Hloc; vm_compute in Hloc;
+        unfold co, edge_relation, sample_co; set_solver.
+  Qed.
+
+  Lemma sample_program_graph sm lm : program_graph (program sm lm) (candidate sm lm).
+  Proof.
+    constructor; first apply sample_complete_run.
+    destruct (sample_complete_run sm lm) as (actions & state & [Hrun _] & HE & HR & HA & HD & HC).
+    pose proof (core_run_generated_wf _ _ _ Hrun) as ((Hwf & _) & _ & Hrmw & Haddr & Hdata & Hctrl).
+    unfold core_candidate_wf, candidate; cbn.
+    rewrite HE, HR, HA, HD, HC in *.
+    split_and!; try done; [apply sample_rf_wf | apply sample_co_wf].
+  Qed.
+
+  Lemma sample_bad_outcome sm lm : bad_outcome lm (candidate sm lm).
+  Proof. exists 4, 5. split; reflexivity. Qed.
+
 
   Lemma sample_no_barrier sm lm k i :
     ~ event_has_barrier_kind (sample_events sm lm) k i.
@@ -201,177 +323,6 @@ Module MessagePassing.
         unfold is_gp in *; exfalso; eapply (sample_no_barrier sm lm BarrierSyncRcu); eassumption.
   Qed.
 
-  Lemma filtered_actions_owner t actions :
-    Forall (fun a => core_action_agent a = t) (agent_actions t actions).
-  Proof.
-    unfold agent_actions. induction actions as [|a actions IH]; cbn; first constructor.
-    case_decide; [constructor; done | done].
-  Qed.
-
-  Lemma writer_lookup sm lm i ev : lookup_event (writer_finished sm lm).(core_events) i = Some ev ->
-    ev = EInitWrite 0 0%Z \/ ev = EInitWrite 1 0%Z \/ ev = data_write \/ ev = flag_write sm.
-  Proof.
-    intros H. change (lookup_event {[0 := EInitWrite 0 0%Z; 1 := EInitWrite 1 0%Z;
-      2 := data_write; 3 := flag_write sm]} i = Some ev) in H.
-    unfold lookup_event in H.
-    repeat (apply lookup_insert_Some in H as [[? ?]|[? H]]);
-      try apply lookup_singleton_Some in H; naive_solver.
-  Qed.
-
-  Lemma reader_lookup sm lm v w i ev : lookup_event (reader_finished sm lm v w).(core_events) i = Some ev ->
-    ev = EInitWrite 0 0%Z \/ ev = EInitWrite 1 0%Z \/ ev = flag_read lm v \/ ev = data_read w.
-  Proof.
-    intros H. change (lookup_event {[0 := EInitWrite 0 0%Z; 1 := EInitWrite 1 0%Z;
-      2 := flag_read lm v; 3 := data_read w]} i = Some ev) in H.
-    unfold lookup_event in H.
-    repeat (apply lookup_insert_Some in H as [[? ?]|[? H]]);
-      try apply lookup_singleton_Some in H; naive_solver.
-  Qed.
-
-  (** Replay each agent to account for all writes in any candidate, and
-      recover the two producer events in the original allocation. *)
-  Lemma program_writes sm lm C : program_graph (program sm lm) C ->
-    exists a b,
-      lookup_event C.(candidate_events) a = Some data_write /\
-      lookup_event C.(candidate_events) b = Some (flag_write sm) /\
-      (forall i ev, lookup_event C.(candidate_events) i = Some ev -> is_write ev ->
-        ev = EInitWrite 0 0%Z \/ ev = EInitWrite 1 0%Z \/ ev = data_write \/ ev = flag_write sm).
-  Proof.
-    intros [(actions & final & Hrun & HE & _) Hwf].
-    destruct (complete_core_run_replay_agent_initial _ _ _ 0 Hrun)
-      as (writer & HW & HMW & HCW).
-    assert (writer = writer_finished sm lm) as ->.
-    { eapply writer_replay_exact; [done | apply filtered_actions_owner | done]. }
-    destruct (complete_core_run_replay_agent_initial _ _ _ 1 Hrun)
-      as (reader & HR & HMR & HCR).
-    destruct (reader_replay_exact _ _ _ _ HR (filtered_actions_owner _ _) HCR) as (v & w & ->).
-    assert (exists a, lookup_event final.(core_events) a = Some data_write) as [a Ha].
-    { destruct (proj1 (replay_event_lookup _ _ _ _ _ _ 2 0
-        (LMemory AccessWrite AccessOnce NotRmw 0 1%Z) HMW) eq_refl) as [Hbad|(a & Ha & _)];
-        first discriminate. by exists a. }
-    assert (exists b, lookup_event final.(core_events) b = Some (flag_write sm)) as [b Hb].
-    { destruct (proj1 (replay_event_lookup _ _ _ _ _ _ 3 1
-        (LMemory AccessWrite (store_access_mode sm) NotRmw 1 1%Z) HMW) eq_refl) as [Hbad|(b & Hb & _)];
-        first discriminate. by exists b. }
-    exists a, b. rewrite <- HE. split_and!; try done.
-    intros i ev Hi Hwrite.
-    destruct (core_run_events_source _ _ _ _ _ _ (proj1 Hrun) Hi) as [Hinit|(t & n & label & th & -> & Hth)].
-    - change (lookup_event {[0 := EInitWrite 0 0%Z; 1 := EInitWrite 1 0%Z]} i = Some ev) in Hinit.
-      unfold lookup_event in Hinit.
-      apply lookup_insert_Some in Hinit as [[_ Hinit]|[_ Hinit]];
-        last apply lookup_singleton_Some in Hinit; naive_solver.
-    - destruct (decide (t = 0)) as [->|H0].
-      + apply (writer_lookup sm lm (replay_id final.(core_events) 0 2 i)).
-        apply (proj2 (replay_event_lookup _ _ _ _ _ _ _ _ _ HMW)).
-        right. exists i. split; done.
-      + destruct (decide (t = 1)) as [->|H1].
-        * assert (lookup_event (reader_finished sm lm v w).(core_events)
-            (replay_id final.(core_events) 1 2 i) = Some (EAgent 1 n label)) as Hlookup.
-          { apply (proj2 (replay_event_lookup _ _ _ _ _ _ _ _ _ HMR)).
-            right. exists i. split; done. }
-          apply reader_lookup in Hlookup.
-          unfold flag_read, data_read in Hlookup. destruct Hlookup as [H|[H|[H|H]]];
-            inversion H; subst; discriminate.
-        * cbn in Hth. rewrite !lookup_fmap in Hth. simplify_map_eq.
-  Qed.
-  Lemma memory_marked E i t n kind mode loc val :
-    lookup_event E i = Some (EAgent t n (LMemory kind mode NotRmw loc val)) ->
-    mode <> AccessPlain -> marked E i.
-  Proof.
-    intros Hi Hmode. split; first by eapply lookup_event_in.
-    intros [Hplain _]. apply event_has_access_mode_lookup in Hplain as (ev & Hev & Hplain).
-    rewrite Hi in Hev. injection Hev as <-. cbn in Hplain. congruence.
-  Qed.
-
-  (** The LKMM reason for rejecting MP: propagation from the stale data
-      read back to the flag read, opposed by the acquire's preserved order. *)
-  Lemma mp_cycle C a b c d :
-    lookup_event C.(candidate_events) a = Some data_write ->
-    lookup_event C.(candidate_events) b = Some (flag_write StoreRelease) ->
-    lookup_event C.(candidate_events) c = Some (flag_read LoadAcquire 1%Z) ->
-    lookup_event C.(candidate_events) d = Some (data_read 0%Z) ->
-    rfe C.(candidate_events) C.(candidate_rf) b c ->
-    fre C.(candidate_events) C.(candidate_rf) C.(candidate_co) d a ->
-    ~ lkmm_consistent C.
-  Proof.
-    intros Ha Hb Hc Hd Hrfe Hfre (_ & _ & Hacyclic & _).
-    assert (marked C.(candidate_events) a) as Hma by (eapply memory_marked; [exact Ha|discriminate]).
-    assert (marked C.(candidate_events) b) as Hmb by (eapply memory_marked; [exact Hb|discriminate]).
-    assert (marked C.(candidate_events) c) as Hmc by (eapply memory_marked; [exact Hc|discriminate]).
-    assert (marked C.(candidate_events) d) as Hmd by (eapply memory_marked; [exact Hd|discriminate]).
-    assert (po C.(candidate_events) a b) as Hab.
-    { do 5 eexists. split_and!; [exact Ha|exact Hb|lia]. }
-    assert (po C.(candidate_events) c d) as Hcd.
-    { do 5 eexists. split_and!; [exact Hc|exact Hd|lia]. }
-    assert (same_agent C.(candidate_events) d c) as Hsame.
-    { eapply same_attribute_from_lookup; [exact Hd|exact Hc|reflexivity|reflexivity]. }
-    assert (d <> c) as Hne by (intros ->; rewrite Hd in Hc; discriminate).
-    assert (release C.(candidate_events) C.(candidate_rmw) b) as Hrelease.
-    { unfold release, failed_rmw, event_has_access_mode, event_has_access_kind,
-        event_is_rmw_marked, execution.LkmmExecution.event_attribute.
-      rewrite Hb. cbn. intuition discriminate. }
-    assert (acquire C.(candidate_events) C.(candidate_rmw) c) as Hacquire.
-    { unfold acquire, failed_rmw, event_has_access_mode, event_has_access_kind,
-        event_is_rmw_marked, execution.LkmmExecution.event_attribute.
-      rewrite Hc. cbn. intuition discriminate. }
-    eapply (LkmmPublication.release_acquire_no_stale C.(candidate_events)
-      C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
-      C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl)
-      a b c d); try eassumption.
-    - exists data_write. split; done.
-    - exists (data_read 0%Z). split; done.
-  Qed.
-  Lemma read_source C r t n mode loc val :
-    core_candidate_wf C ->
-    lookup_event C.(candidate_events) r =
-      Some (EAgent t n (LMemory AccessRead mode NotRmw loc val)) ->
-    exists w ev,
-      lookup_event C.(candidate_events) w = Some ev /\ is_write ev /\
-      location_of ev = Some loc /\ value_of ev = Some val /\
-      rf C.(candidate_rf) w r.
-  Proof.
-    intros (_ & Hrf & _) Hr.
-    destruct (rf_wf_total _ _ Hrf r _ Hr eq_refl) as [w Hwr].
-    destruct (rf_wf_edge _ _ _ _ Hrf Hwr) as (ev & rev & v & Hw & Hread & Hwrite & _ & Hloc & Hv & Hrv).
-    rewrite Hr in Hread. injection Hread as <-. cbn in Hrv. injection Hrv as <-.
-    unfold same_location, same_attribute, execution.LkmmExecution.event_attribute in Hloc.
-    rewrite Hw, Hr in Hloc. cbn in Hloc.
-    exists w, ev. split_and!; try done. naive_solver.
-  Qed.
-
-  (** No restriction to a canonical graph, event-ID scheme, or interleaving. *)
-  Theorem mp_release_acquire_forbidden C :
-    program_graph (program StoreRelease LoadAcquire) C ->
-    bad_outcome LoadAcquire C -> ~ lkmm_consistent C.
-  Proof.
-    intros Hprogram (c & d & Hc & Hd).
-    destruct (program_writes _ _ _ Hprogram) as (a & b & Ha & Hb & Hw).
-    pose proof (program_graph_wf _ _ Hprogram) as Hwf.
-    destruct (program_graph_wf _ _ Hprogram) as (HE & HRF & HCO & Hrest).
-    assert (rf C.(candidate_rf) b c) as Hbc.
-    { destruct (read_source _ _ _ _ _ _ _ Hwf Hc) as (w & ev & Hwe & Hkind & Hloc & Hval & Hrf).
-      destruct (Hw w ev Hwe Hkind) as [->|[->|[->| ->]]]; try discriminate.
-      assert (w = b) as -> by (eapply HE; [exact Hwe|exact Hb]). done. }
-    assert (exists i, lookup_event C.(candidate_events) i = Some (EInitWrite 0 0%Z) /\
-      rf C.(candidate_rf) i d) as (i & Hi & Hid).
-    { destruct (read_source _ _ _ _ _ _ _ Hwf Hd) as (w & ev & Hwe & Hkind & Hloc & Hval & Hrf).
-      destruct (Hw w ev Hwe Hkind) as [->|[->|[->| ->]]]; try discriminate.
-      exists w. split; done. }
-    assert (co C.(candidate_co) i a) as Hia.
-    { eapply (co_wf_initial_first _ _ HCO i a 0 data_write).
-      - exists 0%Z. done.
-      - done.
-      - reflexivity.
-      - eapply same_attribute_from_lookup; [exact Hi|exact Ha|reflexivity|reflexivity].
-      - intros ->. rewrite Ha in Hi. discriminate. }
-    eapply mp_cycle; [exact Ha|exact Hb|exact Hc|exact Hd| |].
-    - split; first done. unfold ext, same_agent, same_attribute, execution.LkmmExecution.event_attribute.
-      rewrite Hb, Hc. cbn. naive_solver.
-    - split; first by exists i.
-      unfold ext, same_agent, same_attribute, execution.LkmmExecution.event_attribute.
-      rewrite Hd, Ha. cbn. naive_solver.
-  Qed.
-
   Lemma mp_weakened_allowed sm lm : sm = StoreOnce \/ lm = LoadOnce ->
     exists C, program_graph (program sm lm) C /\ bad_outcome lm C /\ lkmm_consistent C.
   Proof.
@@ -395,4 +346,4 @@ Module MessagePassing.
     program_graph (program StoreOnce LoadAcquire) C /\
     bad_outcome LoadAcquire C /\ lkmm_consistent C.
   Proof. apply mp_weakened_allowed. by left. Qed.
-End MessagePassing.
+End MessagePassingAllowed.

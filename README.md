@@ -27,6 +27,7 @@ flowchart TD
 - [x] Operational completeness up to event-ID renaming
 - [x] Iris weakest-precondition logic with parallel composition
 - [x] Iris adequacy for completed executions
+- [x] Hoare-style message passing through shared-location protocols
 - [x] RCU reclamation rule and a verified reader/updater WP example
 
 ## Main theorems
@@ -95,6 +96,12 @@ Theorem wp_adequacy {Σ : gFunctors} `{!invGpreS Σ, !stateG Σ}
     lkmm_program_graph_obligations final ->
     Q actions final.
 ```
+
+The [message-passing example](theories/examples/message_passing_wp.v) proves
+producer and consumer WPs using shared-location invariants and operation
+receipts. Its closed proof and adequacy corollary establish that observing
+the released flag through an acquire implies observing the published data.
+The underlying LKMM ordering argument is encapsulated in library lemmas.
 
 The [RCU reclamation rule](theories/logic/wp_rcu_client.v),
 `wp_synchronize_reclaim`, recovers protected ownership after retirement and
