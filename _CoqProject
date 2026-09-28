@@ -59,3 +59,5 @@ theories/examples/wp_parallel_examples.v
 theories/examples/adequacy_examples.v
 theories/examples/rcu_replay_examples.v
 theories/examples/core_to_machine_examples.v
+theories/examples/message_passing_program.v
+theories/examples/message_passing.v
