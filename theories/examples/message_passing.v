@@ -1,6 +1,6 @@
 From Stdlib Require Import List Lia Relations.Relation_Operators.
 From stdpp Require Import gmap fin_maps tactics.
-From iris_lkmm.lkmm Require Import execution memory_relations rcu_graph.
+From iris_lkmm.lkmm Require Import execution memory_relations rcu_graph publication.
 From iris_lkmm.lang Require Import core_renaming.
 From iris_lkmm.examples Require Import message_passing_program.
 
@@ -314,32 +314,12 @@ Module MessagePassing.
     { unfold acquire, failed_rmw, event_has_access_mode, event_has_access_kind,
         event_is_rmw_marked, execution.LkmmExecution.event_attribute.
       rewrite Hc. cbn. intuition discriminate. }
-    assert (po_rel C.(candidate_events) C.(candidate_rmw) a b) as Hrel.
-    { exists b. split; last by split.
-      exists a. split; last done. split; first done. exists data_write. split; done. }
-    assert (cumul_fence C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) a b) as Hcumul.
-    { exists b. split; last apply rt_refl.
-      exists b. split; last by split.
-      exists a. split; first by split. left.
-      exists a. split; [by left|by right]. }
-    assert (prop C.(candidate_events) C.(candidate_rmw) C.(candidate_rf) C.(candidate_co) d c) as Hprop.
-    { exists c. split; last by split.
-      exists b. split; last by right.
-      exists b. split; last by split.
-      exists a. split; last by apply rt_step.
-      exists d. split; first by split.
-      right. destruct Hfre as [Hfr Hext]. split; [by right|done]. }
-    assert (candidate_hb C d c) as Hback.
-    { exists c. split; last by split. exists d. split; first by split.
-      right. right. split; last done. split; done. }
-    assert (candidate_hb C c d) as Hforward.
-    { exists d. split; last by split. exists c. split; first by split.
-      left. right. right. split.
-      - left. right. right. exists d. split.
-        + exists c. split; [by split|done].
-        + split; first done. exists (data_read 0%Z). split; done.
-      - unfold same_agent, same_attribute in *. naive_solver. }
-    apply (Hacyclic c). eapply t_trans; apply t_step; eassumption.
+    eapply (LkmmPublication.release_acquire_no_stale C.(candidate_events)
+      C.(candidate_rmw) C.(candidate_rf) C.(candidate_co)
+      C.(candidate_direct_data) C.(candidate_direct_addr) C.(candidate_direct_ctrl)
+      a b c d); try eassumption.
+    - exists data_write. split; done.
+    - exists (data_read 0%Z). split; done.
   Qed.
   Lemma read_source C r t n mode loc val :
     core_candidate_wf C ->

@@ -7,6 +7,7 @@ theories/lkmm/event_renaming.v
 theories/lkmm/relation_renaming.v
 theories/lkmm/execution_graph.v
 theories/lkmm/memory_relations.v
+theories/lkmm/publication.v
 theories/lkmm/memory_renaming.v
 theories/lkmm/rcu_matching.v
 theories/lkmm/rcu_replay.v
