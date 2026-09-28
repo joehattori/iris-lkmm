@@ -20,9 +20,12 @@ Module LkmmAdequacy.
         memory_own γ.(memory_names_of) loc 1
           (write_history (core_initial_events P) loc)).
 
-    Definition agent_wps P G γ (Φ : agent_id -> lkmm_thread_view -> iProp Σ) : iProp Σ :=
+    Definition agent_wps_at P G γ E
+        (Φ : agent_id -> lkmm_thread_view -> iProp Σ) : iProp Σ :=
       [∗ map] agent ↦ body ∈ P.(program_agents),
-        wp P G γ ⊤ agent (initial_thread_view body) (Φ agent).
+        wp P G γ E agent (initial_thread_view body) (Φ agent).
+
+    Definition agent_wps P G γ := agent_wps_at P G γ ⊤.
 
     Definition final_posts P
         (Φ : agent_id -> lkmm_thread_view -> iProp Σ) actions final : iProp Σ :=
@@ -34,16 +37,21 @@ Module LkmmAdequacy.
     (** Setup precedes candidate selection. Each candidate supplies one WP
         per agent and an extraction rule for every accepted trace and final
         state. The extraction rule may retain resources alongside the WPs. *)
-    Definition completed_program_wp
-        P (Q : list lkmm_action -> lkmm_state -> Prop) : iProp Σ :=
-      (∀ γ, initial_resources P γ ={⊤}=∗
+    Definition program_wp
+        P E (Q : list lkmm_action -> lkmm_state -> iProp Σ) : iProp Σ :=
+      (∀ γ, initial_resources P γ ={E}=∗
         all_candidates P (fun G =>
           ∃ Φ : agent_id -> lkmm_thread_view -> iProp Σ,
-            agent_wps P G γ Φ ∗
+            agent_wps_at P G γ E Φ ∗
             (∀ actions final,
               ⌜lkmm_position P G (LkmmExecutionPosition actions final [] final)⌝ -∗
               state_interp γ final ∗ final_posts P Φ actions final
-              ={⊤,∅}=∗ ⌜Q actions final⌝)))%I.
+              ={E,∅}=∗ Q actions final)))%I.
+
+    (** The existing adequacy interface is the pure-postcondition instance. *)
+    Definition completed_program_wp
+        P (Q : list lkmm_action -> lkmm_state -> Prop) : iProp Σ :=
+      program_wp P ⊤ (fun actions final => ⌜Q actions final⌝)%I.
 
     (** Move the mask changes between steps into the surrounding update,
         so generic Iris soundness can consume the guards at the empty mask. *)

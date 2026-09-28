@@ -27,7 +27,9 @@ and a grace period. [Completed-execution adequacy](../theories/logic/adequacy.v)
 extracts pure trace and final-state properties under the completion and
 `rf`/`co` obligations. Safety for arbitrary execution prefixes remains open.
 
-Differential testing against `herd7`, source-language refinement, and the
-`percpu_ref` case study remain future work. SRCU, kernel locks, verification of
-the kernel's RCU implementation, and grace-period liveness are outside the
-selected fragment.
+Four message-passing outcome claims are checked by
+[Rocq proofs](litmus-outcomes.md). Automated checks do not run `herd7` or
+independently validate the upstream correspondence. Source-language refinement
+and the `percpu_ref` case study remain future work. SRCU, kernel locks,
+verification of the kernel's RCU implementation, and grace-period liveness
+are outside the selected fragment.

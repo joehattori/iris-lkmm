@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: Rocq build and regression examples
+    name: Rocq proofs and regressions
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 

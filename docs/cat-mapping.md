@@ -80,5 +80,8 @@ program-execution premise.
 | `linux-kernel.cat:169` | `prop ; rcu-fence ; hb* ; pb* ; [Marked]` | `rb` | Direct relational decomposition using the canonical Bell `marked` predicate. |
 | `linux-kernel.cat:171` | `irreflexive rb` | `rcu_consistent` | Direct predicate. |
 
-This mapping has been compiler-checked only as Rocq code.  It has not yet been
-differentially tested with `herd7` and has not received independent review.
+The Rocq definitions compile, and four message-passing outcome claims are
+proved relative to them; the mapping to CAT/Bell remains manual. See
+[litmus outcome validation](litmus-outcomes.md) for the checked claims.
+Builds and CI do not compare outcomes with an external tool. Independent
+transcription review remains outstanding.

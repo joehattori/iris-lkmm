@@ -18,4 +18,3 @@ clean:
 
 distclean: clean
 	rm -f $(COQMAKEFILE) $(COQMAKEFILE).conf
-

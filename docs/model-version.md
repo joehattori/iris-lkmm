@@ -15,3 +15,7 @@ in `docs/cat-mapping.md`, including the mapping from Linux operations to
 LKMM-Core instructions. The complete memory model and the `percpu_ref` sources
 remain outside the current implementation. No machine-checked CAT translation
 or Linux source-to-Core correspondence is claimed.
+
+The repository records upstream source links and the pinned commit above
+without vendoring the model files. The [litmus outcome proofs](litmus-outcomes.md)
+are checked in Rocq; builds and checks do not require herdtools7.

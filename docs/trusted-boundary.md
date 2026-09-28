@@ -2,15 +2,25 @@
 
 The project trusts the manual transcription of the selected Linux v6.18
 CAT/Bell definitions and the mapping from Linux operations to LKMM-Core.
-[The source mapping](cat-mapping.md) records that correspondence. Differential
-testing and independent review remain outstanding; there is no verified CAT
-interpreter or source-to-Core refinement.
+[The source mapping](cat-mapping.md) records that correspondence. The
+[litmus outcome proofs](litmus-outcomes.md) check four message-passing
+claims relative to the transcribed model. Builds and CI do not compare
+outcomes with an external tool.
+Independent transcription review remains outstanding; there is no verified
+CAT interpreter or source-to-Core refinement. The upstream-litmus-to-Core
+mapping is manual.
 
 The finite candidate completeness construction uses propositional excluded
 middle to partition successor relations into old and new pairs. Operational
 completeness and reverse graph coverage inherit that dependency. Builder and
 operational soundness, Core replay, renaming, and machine lifting add no axioms.
 The relational model is independent of Iris.
+
+The trailing-`?` [existential triples](wp-design.md#existential-execution-triples)
+assert existence of accepted completed operational runs. Their message-passing
+proofs reuse consistent-graph witnesses and operational completeness, inheriting
+its excluded-middle dependency. Iris adequacy connects the witnessed read events
+to the actual final registers. The notation adds no axioms or model changes.
 
 Operational soundness requires explicit completion-time reads-from and coherence
 well-formedness obligations. These are premises about candidate choices;

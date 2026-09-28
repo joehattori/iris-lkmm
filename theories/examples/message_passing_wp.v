@@ -2,20 +2,23 @@ From Stdlib Require Import List Lia.
 From iris.base_logic.lib Require Import invariants fancy_updates.
 From iris.proofmode Require Import proofmode.
 From iris_lkmm.operational Require Import lkmm_machine.
-From iris_lkmm.logic Require Import wp_publication adequacy.
+From iris_lkmm.logic Require Import wp_publication adequacy hoare.
 From iris_lkmm.examples Require Import message_passing_code.
 Import ListNotations.
 
 (** Client proofs use location protocols and operation receipts for all four
     message-passing variants; both loads are unconditional. *)
 Module MessagePassingWp.
-  Import LkmmWpPublication LkmmAdequacy LkmmMachine.
+  Import LkmmWpPublication LkmmAdequacy LkmmMachine LkmmHoare.
   Import MessagePassingCode.
 
   Definition Ndata := nroot .@ "mp-data".
   Definition Nflag := nroot .@ "mp-flag".
   Definition data_allowed := publication_write 0%Z 0 0 AccessOnce 0 1%Z.
   Definition flag_allowed sm := publication_write 0%Z 0 1 (store_access_mode sm) 1 1%Z.
+
+  Definition producer_context sm lm G γ := WpContext (program sm lm) G γ 0.
+  Definition consumer_context sm lm G γ := WpContext (program sm lm) G γ 1.
 
   Definition result_registers (v : lkmm_thread_view) :=
     v.(lkmm_view_core).(view_thread).(thread_registers).
@@ -58,12 +61,12 @@ Module MessagePassingWp.
         load_receipt G γ 1 0 lm 1 r0.(reg_integer) ∗
         load_receipt G γ 1 1 LoadOnce 0 r1.(reg_integer).
 
-    Lemma producer_wp sm lm G γ :
-      shared γ sm -∗
-      wp (program sm lm) G γ ⊤ 0
-        (initial_thread_view (producer sm)) (producer_post γ sm).
+    Lemma producer_spec sm lm G γ :
+      {{{ shared γ sm }}}
+        producer sm @ producer_context sm lm G γ; ⊤
+      {{{ v, RET v; producer_post γ sm v }}}.
     Proof.
-      iIntros "[#Hdata #Hflag]".
+      iIntros (Φ) "[#Hdata #Hflag] HΦ".
       iApply wp_seq. iNext.
       iApply (wp_store_protocol with "Hdata"); try reflexivity; try set_solver.
       { by right. }
@@ -72,8 +75,37 @@ Module MessagePassingWp.
       iApply (wp_store_protocol with "Hflag"); try reflexivity; try set_solver.
       { by right. }
       iNext. iIntros "#Hwrite_flag".
-      rewrite wp_unfold /wp_body /memory_view /producer_post /=.
-      iModIntro. by iFrame "Hwrite_data Hwrite_flag".
+      rewrite wp_unfold /wp_body /memory_view /=.
+      iModIntro. iApply "HΦ". by iFrame "Hwrite_data Hwrite_flag".
+    Qed.
+
+    Lemma consumer_spec sm lm G γ :
+      {{{ shared γ sm }}}
+        consumer lm @ consumer_context sm lm G γ; ⊤
+      {{{ v, RET v; consumer_post G γ lm v }}}.
+    Proof.
+      iIntros (Φ) "[#Hdata #Hflag] HΦ".
+      iApply wp_seq. iNext.
+      iApply (wp_load_protocol with "Hflag"); try reflexivity; try set_solver.
+      iNext. iIntros (flag_read r0) "#Hread_flag".
+      iApply wp_skip_seq. iNext.
+      iApply (wp_load_protocol with "Hdata"); try reflexivity; try set_solver.
+      iNext. iIntros (data_read r1) "#Hread_data".
+      rewrite wp_unfold /wp_body /memory_view /=.
+      iModIntro. iApply "HΦ".
+      iExists (RegValue r0 {[flag_read]}), (RegValue r1 {[data_read]}).
+      iFrame "Hread_flag Hread_data". iPureIntro.
+      rewrite lookup_insert_ne; last done. rewrite !lookup_insert_eq. done.
+    Qed.
+
+    (** The triple specifications feed the existing parallel/adequacy API. *)
+    Lemma producer_wp sm lm G γ :
+      shared γ sm -∗
+      wp (program sm lm) G γ ⊤ 0
+        (initial_thread_view (producer sm)) (producer_post γ sm).
+    Proof.
+      iIntros "Hshared". iApply (producer_spec with "Hshared").
+      iNext. iIntros (v) "Hpost". iExact "Hpost".
     Qed.
 
     Lemma consumer_wp sm lm G γ :
@@ -81,17 +113,8 @@ Module MessagePassingWp.
       wp (program sm lm) G γ ⊤ 1
         (initial_thread_view (consumer lm)) (consumer_post G γ lm).
     Proof.
-      iIntros "[#Hdata #Hflag]".
-      iApply wp_seq. iNext.
-      iApply (wp_load_protocol with "Hflag"); try reflexivity; try set_solver.
-      iNext. iIntros (flag_read r0) "#Hread_flag".
-      iApply wp_skip_seq. iNext.
-      iApply (wp_load_protocol with "Hdata"); try reflexivity; try set_solver.
-      iNext. iIntros (data_read r1) "#Hread_data".
-      rewrite wp_unfold /wp_body /memory_view /consumer_post /result_registers /=.
-      iModIntro. iExists (RegValue r0 {[flag_read]}), (RegValue r1 {[data_read]}).
-      iFrame "Hread_flag Hread_data". iPureIntro.
-      rewrite lookup_insert_ne; last done. rewrite !lookup_insert_eq. done.
+      iIntros "Hshared". iApply (consumer_spec with "Hshared").
+      iNext. iIntros (v) "Hpost". iExact "Hpost".
     Qed.
 
     Definition post sm lm G γ agent :=
@@ -105,19 +128,27 @@ Module MessagePassingWp.
       - iApply big_sepM_singleton. iApply consumer_wp. iExact "Hshared".
     Qed.
 
-    (** Allocate the protocol from the actual initial memory, before G is
-        chosen. Both WPs must work for every consistent candidate. *)
-    Lemma mp_closed :
-      ⊢ completed_program_wp (program StoreRelease LoadAcquire) mp_result.
+    Lemma initial_shared sm lm γ :
+      initial_resources (program sm lm) γ ={⊤}=∗ shared γ sm.
     Proof.
-      iIntros (γ) "[_ Hmemory]".
+      iIntros "[_ Hmemory]".
       iDestruct (big_sepM_delete _ _ 0 with "Hmemory") as "[Hdata Hmemory]"; first reflexivity.
       iDestruct (big_sepM_lookup _ _ 1 with "Hmemory") as "Hflag".
       { rewrite lookup_delete_ne; done. }
       iMod (location_protocol_alloc γ Ndata 0 data_allowed with "Hdata") as "#Hdata".
       { apply initial_history_accepts. by left. }
-      iMod (location_protocol_alloc γ Nflag 1 (flag_allowed StoreRelease) with "Hflag") as "#Hflag".
+      iMod (location_protocol_alloc γ Nflag 1 (flag_allowed sm) with "Hflag") as "#Hflag".
       { apply initial_history_accepts. by left. }
+      iModIntro. by iFrame "Hdata Hflag".
+    Qed.
+
+    (** Allocate the protocol from the actual initial memory, before G is
+        chosen. Both WPs must work for every consistent candidate. *)
+    Lemma mp_closed :
+      ⊢ completed_program_wp (program StoreRelease LoadAcquire) mp_result.
+    Proof.
+      iIntros (γ) "Hinit".
+      iMod (initial_shared with "Hinit") as "[#Hdata #Hflag]".
       iModIntro. iIntros (G HG).
       iExists (post StoreRelease LoadAcquire G γ). iSplitL.
       - iApply message_passing_wps. by iFrame "Hdata Hflag".

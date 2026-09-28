@@ -59,9 +59,12 @@ Define the supported graph and program fragment precisely.
 Validate the transcription through:
 
 - A line-by-line mapping to the pinned upstream files
-- Differential testing against `herd7`
-- Official and project-specific litmus tests
+- Rocq outcome proofs for official and project-specific litmus tests
 - Independent review of translated relations
+
+Automated checks compile the Rocq proofs without running `herd7`. Document
+the pinned upstream source links and litmus-to-Core mappings. Proofs about
+the transcribed model do not establish its correspondence with upstream.
 
 Do not claim machine-checked equivalence with the upstream CAT file unless a formal CAT semantics or verified translation is later added.
 
@@ -224,7 +227,9 @@ Maintain examples covering:
 - Nested RCU read-side sections
 - RCU chains involving propagation
 
-Compare finite outcomes with `herd7` for Linux `v6.18`.
+Check finite outcomes with Rocq existential and forbidden-outcome proofs as
+part of `make check`. Keep the Linux `v6.18` litmus-to-Core mappings explicit;
+automated validation does not execute `herd7`.
 
 ## Case Study Direction
 

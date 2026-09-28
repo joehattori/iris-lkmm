@@ -205,6 +205,29 @@ Module LkmmWp.
         iPureIntro; naive_solver.
     Qed.
 
+    (** An active thread can carry a delayed resource through its first step.
+        The terminal case is excluded: it cannot eliminate a later. *)
+    Lemma wp_frame_later P G γ E agent v Φ R :
+      ~ (thread_complete v.(lkmm_view_core).(view_thread) /\
+        v.(lkmm_view_pending_gp) = None) ->
+      wp P G γ E agent v Φ -∗ ▷ R -∗
+      wp P G γ E agent v (fun v' => Φ v' ∗ R).
+    Proof.
+      intros Hactive. rewrite !wp_unfold /wp_body.
+      destruct v as [[thread index actions] pending].
+      destruct thread as [statement continuation regs].
+      destruct statement, continuation, pending; simpl in *;
+        try (exfalso; apply Hactive; done).
+      all: iIntros "Hwp HR" (prefix s a suffix final) "Hcurrent Hstate";
+        iMod ("Hwp" with "Hcurrent Hstate") as "Hstep".
+      all: iModIntro; iIntros (next) "Hnext";
+        iMod ("Hstep" with "Hnext") as "Hnext".
+      all: iModIntro; iNext;
+        iMod "Hnext" as (v') "(Hview & Hstate & Hthread & Hwp)";
+        iModIntro; iExists v'; iFrame "Hview Hstate Hthread";
+        iApply wp_frame_r; iFrame.
+    Qed.
+
     (** Ordinary steps allocate persistent facts for exactly their new events.
         The wrapper supplies allocation well-formedness from the prefix and
         maintains the thread resources internally. The handler must return

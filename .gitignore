@@ -1,4 +1,6 @@
 /_opam/
+/_build/
+__pycache__/
 /.coq-native/
 /CoqMakefile
 /CoqMakefile.conf
@@ -10,4 +12,3 @@
 *.vio
 *.d
 .lia.cache
-

@@ -102,6 +102,16 @@ producer and consumer WPs using shared-location invariants and operation
 receipts. Its closed proof and adequacy corollary establish that observing
 the released flag through an acquire implies observing the published data.
 The underlying LKMM ordering argument is encapsulated in library lemmas.
+Its thread specifications use Iris's `{{{ Pre }}} body @ c; E
+{{{ v, RET v; Post v }}}` notation; see the
+[Hoare-triple interface](docs/wp-design.md#hoare-triple-notation).
+The [whole-test triples](theories/tests/message_passing_hoare.v) specify all
+four message-passing litmus variants and their final registers.
+The three weaker variants have `{{{ Pre }}} P {{{ result, RET result;
+Post result }}}?` specifications that prove an accepted completed execution
+with `(1:r0=1, 1:r1=0)` exists. The same existential claim is refuted for
+release/acquire using its existing Iris adequacy theorem; see
+[existential triples](docs/wp-design.md#existential-execution-triples).
 
 The [RCU reclamation rule](theories/logic/wp_rcu_client.v),
 `wp_synchronize_reclaim`, recovers protected ownership after retirement and
@@ -126,10 +136,13 @@ structured programs. The relational model is independent of Iris.
 
 The Linux v6.18 CAT/Bell definitions and operation mappings are manually
 transcribed. Their correspondence to upstream remains trusted; completeness
-also uses propositional excluded middle. Differential validation against
-`herd7`, independent transcription review, source-to-Core refinement, and the
-`percpu_ref` case study remain future work. The kernel's RCU implementation
-and grace-period liveness are outside the verification boundary.
+also uses propositional excluded middle. Four message-passing outcome claims
+are checked as Rocq proofs; see the
+[litmus outcome validation](docs/litmus-outcomes.md). Builds and CI do not
+run `herd7`, so these checks do not independently validate the upstream
+correspondence. Independent transcription review, source-to-Core refinement,
+and the `percpu_ref` case study remain future work. The kernel's RCU
+implementation and grace-period liveness are outside the verification boundary.
 
 See the [scope](docs/scope.md), [pinned model version](docs/model-version.md),
 [CAT mapping](docs/cat-mapping.md), and
@@ -162,6 +175,10 @@ Useful checks:
 make check
 opam list --locked
 ```
+
+`make check` includes the message-passing outcome proofs. No `herd7`
+installation or execution is required. The [model version](docs/model-version.md)
+records the pinned upstream sources.
 
 The broad package constraint supports Rocq 9.0.x and 9.1.x. The lock file is
 the reproducible, tested development configuration and should be updated
