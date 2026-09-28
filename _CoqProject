@@ -41,6 +41,7 @@ theories/logic/state_interp.v
 theories/logic/rcu_client.v
 theories/logic/wp.v
 theories/logic/wp_memory.v
+theories/logic/wp_publication.v
 theories/logic/wp_rcu.v
 theories/logic/wp_rcu_client.v
 theories/logic/wp_parallel.v
