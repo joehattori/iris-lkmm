@@ -20,6 +20,26 @@ Module MessagePassingWp.
   Definition result_registers (v : lkmm_thread_view) :=
     v.(lkmm_view_core).(view_thread).(thread_registers).
 
+  Definition mp_result (_ : list lkmm_action) (final : lkmm_state) : Prop :=
+    exists reader r0 r1,
+      final.(lkmm_machine).(machine_core).(core_threads) !! 1 = Some reader /\
+      reader.(thread_registers) !! 0 = Some r0 /\
+      reader.(thread_registers) !! 1 = Some r1 /\
+      (r0.(reg_integer) = 1%Z -> r1.(reg_integer) = 1%Z).
+
+  Lemma initial_history_accepts sm lm loc (allowed : event -> Prop) :
+    allowed (EInitWrite loc 0%Z) ->
+    history_accepts allowed (write_history (core_initial_events (program sm lm)) loc).
+  Proof.
+    intros Hallowed eid ev Hlookup.
+    apply write_history_lookup in Hlookup as [Hlookup [_ Hloc]].
+    change (({[1 := EInitWrite 1 0%Z; 0 := EInitWrite 0 0%Z]} : event_structure) !! eid = Some ev) in Hlookup.
+    apply lookup_insert_Some in Hlookup as [[_ <-]|[_ Hlookup]].
+    - cbn in Hloc. injection Hloc as <-. done.
+    - apply lookup_singleton_Some in Hlookup as [_ <-].
+      cbn in Hloc. injection Hloc as <-. done.
+  Qed.
+
   Section proof.
     Context `{!invGS Σ, !stateG Σ}.
 
@@ -84,5 +104,51 @@ Module MessagePassingWp.
       - iApply producer_wp. iExact "Hshared".
       - iApply big_sepM_singleton. iApply consumer_wp. iExact "Hshared".
     Qed.
+
+    (** Allocate the protocol from the actual initial memory, before G is
+        chosen. Both WPs must work for every consistent candidate. *)
+    Lemma mp_closed :
+      ⊢ completed_program_wp (program StoreRelease LoadAcquire) mp_result.
+    Proof.
+      iIntros (γ) "[_ Hmemory]".
+      iDestruct (big_sepM_delete _ _ 0 with "Hmemory") as "[Hdata Hmemory]"; first reflexivity.
+      iDestruct (big_sepM_lookup _ _ 1 with "Hmemory") as "Hflag".
+      { rewrite lookup_delete_ne; done. }
+      iMod (location_protocol_alloc γ Ndata 0 data_allowed with "Hdata") as "#Hdata".
+      { apply initial_history_accepts. by left. }
+      iMod (location_protocol_alloc γ Nflag 1 (flag_allowed StoreRelease) with "Hflag") as "#Hflag".
+      { apply initial_history_accepts. by left. }
+      iModIntro. iIntros (G HG).
+      iExists (post StoreRelease LoadAcquire G γ). iSplitL.
+      - iApply message_passing_wps. by iFrame "Hdata Hflag".
+      - iIntros (actions final) "%Hposition [Hstate Hposts]".
+        iDestruct (big_sepM_delete _ _ 0 with "Hposts") as "[Hproducer Hposts]"; first reflexivity.
+        iDestruct (big_sepM_lookup _ _ 1 with "Hposts") as "Hconsumer".
+        { rewrite lookup_delete_ne; done. }
+        iDestruct "Hproducer" as (producer_view) "[_ [Hwrite_data Hwrite_flag]]".
+        iDestruct "Hconsumer" as (consumer_view) "[%Hview Hconsumer]".
+        iDestruct "Hconsumer" as (r0 r1) "(%Hregisters & Hread_flag & Hread_data)".
+        iMod (publication_observed with
+          "Hstate Hdata Hflag Hwrite_data Hwrite_flag Hread_flag Hread_data") as %Hresult;
+          try lia; try done.
+        iModIntro. iPureIntro.
+        exists consumer_view.(lkmm_view_core).(view_thread), r0, r1.
+        split; first exact (lookup_lkmm_thread_view_lookup _ _ _ Hview).
+        destruct Hregisters as [Hr0 Hr1]. split_and!; done.
+    Qed.
   End proof.
+
+  Definition mpΣ : gFunctors := #[invΣ; stateΣ].
+
+  (** The public guarantee concerns actual final registers, and is obtained
+      through Iris adequacy. No direct forbidden-outcome theorem is used. *)
+  Theorem mp_release_acquire_adequate actions final :
+    lkmm_run (program StoreRelease LoadAcquire)
+      (initial_lkmm (program StoreRelease LoadAcquire)) actions final ->
+    lkmm_complete final -> lkmm_program_graph_obligations final ->
+    mp_result actions final.
+  Proof.
+    apply (wp_adequacy (Σ := mpΣ)). intros Hinv. apply mp_closed.
+  Qed.
+
 End MessagePassingWp.
